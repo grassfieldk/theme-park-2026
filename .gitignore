@@ -1,7 +1,30 @@
-/original/
-/extracted/
-/recovery/
-/tools/
+# 依存関係とビルド出力
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# 原盤と解析時の作業ディレクトリ
+original/
+extracted/
+recovery/
+
+# Python の実行時生成物
+__pycache__/
+*.py[cod]
+.venv/
+
+# 解析用に取得・展開した外部ツール
+tools/vendor/
+
+# 作業ログ
 *.log
 
-__pycache__/
+# ローカル環境ごとの設定
+.env
+.env.*
+!.env.example
+
+# OS が生成するファイル
+.DS_Store
+Thumbs.db

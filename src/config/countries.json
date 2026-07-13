@@ -1,0 +1,12 @@
+[
+  { "id": "japan", "name": "日本", "map": { "x": 19, "y": 29, "width": 41, "height": 41 } },
+  { "id": "america", "name": "アメリカ", "map": { "x": 9, "y": 9, "width": 61, "height": 61 } },
+  { "id": "brazil", "name": "ブラジル", "map": { "x": 14, "y": 19, "width": 51, "height": 51 } },
+  { "id": "uk", "name": "イギリス", "map": { "x": 19, "y": 29, "width": 41, "height": 41 } },
+  { "id": "france", "name": "フランス", "map": { "x": 14, "y": 19, "width": 51, "height": 51 } },
+  { "id": "egypt", "name": "エジプト", "map": { "x": 14, "y": 19, "width": 51, "height": 51 } },
+  { "id": "russia", "name": "ロシア", "map": { "x": 9, "y": 9, "width": 61, "height": 61 } },
+  { "id": "india", "name": "インド", "map": { "x": 14, "y": 19, "width": 51, "height": 51 } },
+  { "id": "china", "name": "中国", "map": { "x": 9, "y": 9, "width": 61, "height": 61 } },
+  { "id": "australia", "name": "オーストラリア", "map": { "x": 14, "y": 19, "width": 51, "height": 51 } }
+]

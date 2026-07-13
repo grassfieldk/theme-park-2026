@@ -1,0 +1,25 @@
+{
+  "name": "new-theme-park",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "bun@1.3.14",
+  "type": "module",
+  "scripts": {
+    "assets:sync": "bun tools/sync-web-assets.mjs",
+    "dev": "bun ./node_modules/vite/bin/vite.js",
+    "build": "bun ./node_modules/typescript/bin/tsc -b && bun ./node_modules/vite/bin/vite.js build"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "^5.0.0",
+    "phaser": "^3.90.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "typescript": "^5.8.0",
+    "vite": "^7.0.0"
+  }
+}

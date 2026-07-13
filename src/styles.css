@@ -1,0 +1,30 @@
+:root {
+  color: #f2edd8;
+  background: #0f1d2b;
+  font-family: "Noto Sans JP", "Hiragino Sans", "Hiragino Kaku Gothic ProN", sans-serif;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; min-width: 760px; }
+button { font: inherit; }
+
+.app-shell { display: grid; min-height: 100vh; place-items: center; overflow: hidden; }
+.phaser-backdrop { position: fixed; inset: 0; pointer-events: none; }
+.phaser-backdrop canvas { display: block; }
+.menu-card { z-index: 1; width: min(780px, calc(100vw - 64px)); border: 3px solid #e5cb68; background: rgb(26 49 61 / 96%); box-shadow: 8px 8px 0 rgb(6 15 22 / 70%); padding: 34px; }
+.title-card { width: min(520px, calc(100vw - 64px)); text-align: center; }
+.logo-subtitle { margin: 0; color: #e5cb68; font-size: 13px; font-weight: bold; letter-spacing: .18em; }
+h1 { margin: 8px 0 12px; font-size: 30px; }
+.primary-button, .secondary-button, .country-button { color: inherit; cursor: pointer; }
+.primary-button { margin-top: 24px; border: 2px solid #e5cb68; background: #365d68; padding: 12px 32px; font-weight: bold; }
+.primary-button:hover, .primary-button:focus-visible { background: #4d7c80; }
+.control-help { margin: 25px 0 0; color: #bdcbbd; font-size: 13px; }
+.country-card > p:not(.logo-subtitle):not(.control-help) { margin: 0 0 20px; color: #d2dbd2; }
+.country-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+.country-button { display: flex; align-items: baseline; justify-content: space-between; min-height: 48px; border: 2px solid #648d8a; background: #2c4b58; padding: 10px 12px; text-align: left; }
+.country-button small { color: #c6d0c5; }
+.country-button:hover, .country-button:focus-visible, .country-button.selected { border-color: #e5cb68; background: #416876; }
+.selection-status { min-height: 44px; margin-top: 18px; border: 1px solid #527b7c; background: #1a3440; padding: 11px; color: #e5cb68; }
+.country-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 18px; color: #d2dbd2; }
+.secondary-button { border: 1px solid #8da8a2; background: #294651; padding: 7px 16px; }
+.secondary-button:hover, .secondary-button:focus-visible { background: #416876; }
