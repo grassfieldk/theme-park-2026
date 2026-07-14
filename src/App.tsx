@@ -1,10 +1,12 @@
-import { useCallback, useState } from 'react'
+import { lazy, Suspense, useCallback, useState } from 'react'
 import countries from './config/countries.json'
 import game from './config/game.json'
 import { GamepadController, type MenuAction } from './components/GamepadController'
 import { logGameEvent } from './game/log'
 
-type Screen = 'title' | 'country'
+const ParkMap = lazy(() => import('./components/ParkMap'))
+
+type Screen = 'title' | 'country' | 'park'
 const countryColumns = 2
 
 function moveCountry(index: number, input: MenuAction) {
@@ -19,7 +21,7 @@ function moveCountry(index: number, input: MenuAction) {
 export default function App() {
   const [screen, setScreen] = useState<Screen>('title')
   const [selectedCountry, setSelectedCountry] = useState(0)
-  const [confirmedCountry, setConfirmedCountry] = useState<number | null>(null)
+  const [movement, setMovement] = useState({ direction: 'up' as MenuAction, serial: 0 })
 
   const action = useCallback((input: MenuAction) => {
     if (screen === 'title') {
@@ -30,19 +32,26 @@ export default function App() {
       return
     }
 
+    if (screen === 'park') {
+      if (input === 'cancel') setScreen('country')
+      if (input === 'left' || input === 'right' || input === 'up' || input === 'down') {
+        setMovement((current) => ({ direction: input, serial: current.serial + 1 }))
+      }
+      return
+    }
+
     if (input === 'cancel') {
       setScreen('title')
       return
     }
     if (input === 'confirm') {
       logGameEvent('country_selected', { country: countries[selectedCountry].id, input: 'gamepad' })
-      setConfirmedCountry(selectedCountry)
+      setScreen('park')
       return
     }
 
     const nextCountry = moveCountry(selectedCountry, input)
     if (nextCountry === selectedCountry) return
-    setConfirmedCountry(null)
     setSelectedCountry(nextCountry)
   }, [screen, selectedCountry])
 
@@ -62,7 +71,7 @@ export default function App() {
           }}>スタンダードを始める</button>
           <p className="control-help">ゲームパッド: 十字キーで選択　A / START で決定</p>
         </section>
-      ) : (
+      ) : screen === 'country' ? (
         <section className="menu-card country-card" aria-label="国選択画面">
           <p className="logo-subtitle">STANDARD MODE</p>
           <h1>国を選んでください</h1>
@@ -75,7 +84,7 @@ export default function App() {
                 onClick={() => {
                   logGameEvent('country_selected', { country: country.id, input: 'mouse' })
                   setSelectedCountry(index)
-                  setConfirmedCountry(index)
+                  setScreen('park')
                 }}
               >
                 <span>{country.name}</span>
@@ -83,14 +92,24 @@ export default function App() {
               </button>
             ))}
           </div>
-          <div className="selection-status">
-            {confirmedCountry === null ? `${selected.name} を選択中` : `${selected.name} を選択しました`}
-          </div>
+          <div className="selection-status">{selected.name} を選択中</div>
           <div className="country-footer">
             <span>開始時の資金: {game.park.initialCash.toLocaleString()}</span>
             <button className="secondary-button" onClick={() => setScreen('title')}>戻る</button>
           </div>
           <p className="control-help">ゲームパッド: 十字キーで選択　A / START で決定　B で戻る</p>
+        </section>
+      ) : (
+        <section className="park-screen" aria-label="パーク画面">
+          <header className="park-header">
+            <div><p className="logo-subtitle">{selected.name}</p><h1>新テーマパーク</h1></div>
+            <div className="park-status"><span>{game.park.startDate.replaceAll('-', ' 年 ').replace(/ 年 (\d+)$/, ' 月 $1 日')}</span><span>資金: {game.park.initialCash.toLocaleString()}</span></div>
+            <button className="secondary-button" onClick={() => setScreen('country')}>国を選び直す</button>
+          </header>
+          <Suspense fallback={<div className="map-loading">マップを読み込み中...</div>}>
+            <ParkMap country={selected} movement={movement} />
+          </Suspense>
+          <p className="map-help">ドラッグまたはゲームパッドの十字キーでマップを移動</p>
         </section>
       )}
     </main>

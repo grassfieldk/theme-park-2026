@@ -1,3 +1,56 @@
 {
-  "assets": []
+  "assets": [
+    {
+      "source": "images/TEX/UNPACK/1930_offset_005ed17c_32x16_16c.png",
+      "target": "park/ground-tile.png"
+    },
+    {
+      "source": "images/TEX/UNPACK/1982_offset_005f04d0_32x16_16c.png",
+      "target": "park/border-top.png"
+    },
+    {
+      "source": "images/TEX/UNPACK/1983_offset_005f05dc_32x16_16c.png",
+      "target": "park/border-side.png"
+    },
+    {
+      "source": "images/TEX/UNPACK/1984_offset_005f06e8_32x16_16c.png",
+      "target": "park/border-top-left.png"
+    },
+    {
+      "source": "images/TEX/UNPACK/1985_offset_005f07f4_32x16_16c.png",
+      "target": "park/border-top-right.png"
+    },
+    {
+      "source": "images/TEX/UNPACK/1986_offset_005f0900_32x16_16c.png",
+      "target": "park/border-bottom-right.png"
+    },
+    {
+      "source": "images/TEX/UNPACK/1987_offset_005f0a0c_32x16_16c.png",
+      "target": "park/border-bottom-left.png"
+    },
+    {
+      "source": "images/TEX/UNPACK/1988_offset_005f0b44_72x28_16c.png",
+      "target": "park/gate-sign.png"
+    },
+    {
+      "source": "images/TEX/UNPACK/1989_offset_005f0f40_40x56_16c.png",
+      "target": "park/gate-tower.png"
+    },
+    {
+      "source": "images/TEX/UNPACK/1994_offset_005f16fc_32x16_16c.png",
+      "target": "park/entrance-background-1.png"
+    },
+    {
+      "source": "images/TEX/UNPACK/1997_offset_005f19e0_32x16_16c.png",
+      "target": "park/entrance-background-2.png"
+    },
+    {
+      "source": "images/TEX/UNPACK/1998_offset_005f1aec_32x16_16c.png",
+      "target": "park/entrance-background-3.png"
+    },
+    {
+      "source": "images/TEX/UNPACK/1999_offset_005f1c24_32x16_16c.png",
+      "target": "park/entrance-background-4.png"
+    }
+  ]
 }
