@@ -1,12 +1,13 @@
 import { useEffect, useRef } from 'react'
 import game from '../config/game.json'
 
-export type MenuAction = 'up' | 'down' | 'left' | 'right' | 'confirm' | 'cancel'
+export type MenuAction = 'up' | 'down' | 'left' | 'right' | 'confirm' | 'cancel' | 'zoomIn' | 'zoomOut'
 
 type Props = { onAction: (action: MenuAction) => void }
 
 const buttonActions: Array<[number, MenuAction, boolean]> = [
   [12, 'up', true], [13, 'down', true], [14, 'left', true], [15, 'right', true],
+  [4, 'zoomOut', false], [5, 'zoomIn', false],
   [0, 'confirm', false], [9, 'confirm', false], [1, 'cancel', false],
 ]
 

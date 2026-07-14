@@ -147,8 +147,51 @@ export default function ParkMap({ country, movement }: Props) {
         commands.forEach(draw)
 
         const camera = this.cameras.main
-        const focus = point(left + width / 2, top + (height + 7) / 2)
-        camera.setBounds(0, 0, worldWidth, worldHeight).centerOn(focus.x, focus.y)
+        const cameraTopRow = top - game.park.cameraMarginTiles.top
+        const cameraBottomRow = gateRow + 6 + game.park.cameraMarginTiles.bottom
+        const focus = point(gateCenter, gateRow + 1)
+        const cameraTopLeft = point(left, cameraTopRow)
+        const cameraBottomRight = point(right, cameraBottomRow)
+        camera
+          .setZoom(game.park.displayScale)
+          .setBounds(
+            cameraTopLeft.x,
+            cameraTopLeft.y,
+            cameraBottomRight.x - cameraTopLeft.x + tileWidth,
+            cameraBottomRight.y - cameraTopLeft.y + stepY,
+          )
+          .centerOn(focus.x, focus.y)
+
+        const clampCameraToMap = () => {
+          const viewWidth = camera.width / camera.zoom
+          const viewHeight = camera.height / camera.zoom
+          const viewInsetX = (camera.width - viewWidth) / 2
+          const viewInsetY = (camera.height - viewHeight) / 2
+          const maxViewTop = cameraBottomRight.y + stepY - viewHeight
+          const viewTop = Phaser.Math.Clamp(camera.scrollY + viewInsetY, cameraTopLeft.y, maxViewTop)
+          camera.scrollY = viewTop - viewInsetY
+
+          const rowAt = (screenY: number) => (screenY - padding) / stepY
+          const sideMargin = game.park.cameraMarginTiles.side * stepX
+          const minViewLeft = padding + left * stepX + rowAt(viewTop) * rowOffsetX - sideMargin
+          const maxViewLeft = padding + right * stepX + rowAt(viewTop + viewHeight) * rowOffsetX + tileWidth - viewWidth + sideMargin
+          const viewLeft = minViewLeft <= maxViewLeft
+            ? Phaser.Math.Clamp(camera.scrollX + viewInsetX, minViewLeft, maxViewLeft)
+            : (minViewLeft + maxViewLeft) / 2
+          camera.scrollX = viewLeft - viewInsetX
+        }
+        clampCameraToMap()
+        this.events.on('postupdate', clampCameraToMap)
+        this.scale.on('resize', clampCameraToMap)
+        const changeZoom = (amount: number) => {
+          const nextZoom = Phaser.Math.Clamp(
+            Math.round((camera.zoom + amount) * 10) / 10,
+            game.park.minDisplayScale,
+            game.park.displayScale,
+          )
+          camera.setZoom(nextZoom)
+          clampCameraToMap()
+        }
 
         let dragging = false
         let previousX = 0
@@ -165,6 +208,12 @@ export default function ParkMap({ country, movement }: Props) {
           previousX = pointer.x
           previousY = pointer.y
         })
+        this.input.on('wheel', (
+          _pointer: Phaser.Input.Pointer,
+          _gameObjects: Phaser.GameObjects.GameObject[],
+          _deltaX: number,
+          deltaY: number,
+        ) => changeZoom(deltaY > 0 ? -game.park.zoomStep : game.park.zoomStep))
         this.input.on('pointerup', () => { dragging = false })
         this.input.on('gameout', () => { dragging = false })
         this.events.on('pan', (direction: MenuAction) => {
@@ -172,6 +221,8 @@ export default function ParkMap({ country, movement }: Props) {
           if (direction === 'right') camera.scrollX += game.park.cameraPanPixels
           if (direction === 'up') camera.scrollY -= game.park.cameraPanPixels
           if (direction === 'down') camera.scrollY += game.park.cameraPanPixels
+          if (direction === 'zoomIn') changeZoom(game.park.zoomStep)
+          if (direction === 'zoomOut') changeZoom(-game.park.zoomStep)
         })
       }
     }

@@ -34,7 +34,7 @@ export default function App() {
 
     if (screen === 'park') {
       if (input === 'cancel') setScreen('country')
-      if (input === 'left' || input === 'right' || input === 'up' || input === 'down') {
+      if (input === 'left' || input === 'right' || input === 'up' || input === 'down' || input === 'zoomIn' || input === 'zoomOut') {
         setMovement((current) => ({ direction: input, serial: current.serial + 1 }))
       }
       return
@@ -109,7 +109,7 @@ export default function App() {
           <Suspense fallback={<div className="map-loading">マップを読み込み中...</div>}>
             <ParkMap country={selected} movement={movement} />
           </Suspense>
-          <p className="map-help">ドラッグまたはゲームパッドの十字キーでマップを移動</p>
+          <p className="map-help">ドラッグまたは十字キーで移動　ホイールまたは L / R でズーム</p>
         </section>
       )}
     </main>
