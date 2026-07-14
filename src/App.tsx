@@ -61,7 +61,7 @@ export default function App() {
     <main className="app-shell">
       <GamepadController onAction={action} />
       {screen === 'title' ? (
-        <section className="menu-card title-card" aria-label="開始画面">
+        <section className="title-screen" aria-label="開始画面">
           <p className="logo-subtitle">NEW THEME PARK</p>
           <h1>新テーマパーク</h1>
           <p>テーマパーク経営シミュレーション</p>
@@ -101,15 +101,13 @@ export default function App() {
         </section>
       ) : (
         <section className="park-screen" aria-label="パーク画面">
-          <header className="park-header">
-            <div><p className="logo-subtitle">{selected.name}</p><h1>新テーマパーク</h1></div>
-            <div className="park-status"><span>{game.park.startDate.replaceAll('-', ' 年 ').replace(/ 年 (\d+)$/, ' 月 $1 日')}</span><span>資金: {game.park.initialCash.toLocaleString()}</span></div>
-            <button className="secondary-button" onClick={() => setScreen('country')}>国を選び直す</button>
-          </header>
           <Suspense fallback={<div className="map-loading">マップを読み込み中...</div>}>
             <ParkMap country={selected} movement={movement} />
           </Suspense>
-          <p className="map-help">ドラッグまたは十字キーで移動　ホイールまたは L / R でズーム</p>
+          <div className="park-status-overlay">
+            <span>{game.park.startDate.replaceAll('-', ' 年 ').replace(/ 年 (\d+)$/, ' 月 $1 日')}</span>
+            <span>資金: {game.park.initialCash.toLocaleString()}</span>
+          </div>
         </section>
       )}
     </main>

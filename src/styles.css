@@ -12,7 +12,7 @@ button { font: inherit; }
 .phaser-backdrop { position: fixed; inset: 0; pointer-events: none; }
 .phaser-backdrop canvas { display: block; }
 .menu-card { z-index: 1; width: min(780px, calc(100vw - 64px)); border: 3px solid #e5cb68; background: rgb(26 49 61 / 96%); box-shadow: 8px 8px 0 rgb(6 15 22 / 70%); padding: 34px; }
-.title-card { width: min(520px, calc(100vw - 64px)); text-align: center; }
+.title-screen { z-index: 1; width: min(520px, calc(100vw - 64px)); text-align: center; }
 .logo-subtitle { margin: 0; color: #e5cb68; font-size: 13px; font-weight: bold; letter-spacing: .18em; }
 h1 { margin: 8px 0 12px; font-size: 30px; }
 .primary-button, .secondary-button, .country-button { color: inherit; cursor: pointer; }
@@ -28,11 +28,8 @@ h1 { margin: 8px 0 12px; font-size: 30px; }
 .country-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 18px; color: #d2dbd2; }
 .secondary-button { border: 1px solid #8da8a2; background: #294651; padding: 7px 16px; }
 .secondary-button:hover, .secondary-button:focus-visible { background: #416876; }
-.park-screen { z-index: 1; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; width: min(1400px, calc(100vw - 32px)); height: calc(100vh - 32px); border: 3px solid #e5cb68; background: #15232e; box-shadow: 8px 8px 0 rgb(6 15 22 / 70%); }
-.park-header { display: flex; align-items: center; gap: 24px; padding: 12px 18px; border-bottom: 2px solid #648d8a; background: #253f4c; }
-.park-header h1 { margin: 4px 0 0; font-size: 24px; }
-.park-status { display: flex; gap: 24px; margin-left: auto; color: #e5cb68; }
+.park-screen { position: fixed; z-index: 1; inset: 0; background: #15232e; }
 .park-map, .map-loading { min-height: 0; width: 100%; height: 100%; }
 .park-map canvas { display: block; }
 .map-loading { display: grid; place-items: center; color: #d2dbd2; }
-.map-help { margin: 0; padding: 8px 14px; border-top: 1px solid #648d8a; background: #253f4c; color: #c6d0c5; font-size: 13px; }
+.park-status-overlay { position: absolute; top: 16px; right: 16px; display: flex; gap: 20px; border: 1px solid rgb(255 255 255 / 40%); background: rgb(12 20 24 / 75%); padding: 8px 12px; color: #fff; font-size: 14px; }

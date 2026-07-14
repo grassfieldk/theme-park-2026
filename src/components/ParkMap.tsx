@@ -208,14 +208,14 @@ export default function ParkMap({ country, movement }: Props) {
           previousX = pointer.x
           previousY = pointer.y
         })
+        this.input.on('pointerup', () => { dragging = false })
+        this.input.on('gameout', () => { dragging = false })
         this.input.on('wheel', (
           _pointer: Phaser.Input.Pointer,
           _gameObjects: Phaser.GameObjects.GameObject[],
           _deltaX: number,
           deltaY: number,
         ) => changeZoom(deltaY > 0 ? -game.park.zoomStep : game.park.zoomStep))
-        this.input.on('pointerup', () => { dragging = false })
-        this.input.on('gameout', () => { dragging = false })
         this.events.on('pan', (direction: MenuAction) => {
           if (direction === 'left') camera.scrollX -= game.park.cameraPanPixels
           if (direction === 'right') camera.scrollX += game.park.cameraPanPixels
