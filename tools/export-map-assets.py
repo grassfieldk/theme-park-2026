@@ -14,6 +14,7 @@ RESOURCE_OFFSET = 6_206_612
 RESOURCE_SIZE = 33_932
 RESOURCE_UPLOAD_OFFSET = 0xE10
 ASSETS = {
+    **{f"road-frame-{index}.png": 0x2C + index * 0x14 for index in range(16)},
     "ground-tile.png": 0x144,
     "gate-base-2.png": 0x40,
     "gate-base-3.png": 0x2C,

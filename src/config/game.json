@@ -8,6 +8,10 @@
     "displayScale": 2,
     "minDisplayScale": 1,
     "zoomStep": 0.2,
+    "frontBuildableRows": 3,
+    "frontSelectableRows": 4,
+    "cursorCameraMarginTiles": 2,
+    "pointerDragThresholdPixels": 4,
     "cameraMarginTiles": { "top": 4, "bottom": 1, "side": 4 }
   },
   "input": { "initialRepeatDelayMs": 600, "repeatIntervalMs":  60 },

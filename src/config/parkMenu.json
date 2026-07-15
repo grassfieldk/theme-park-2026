@@ -1,0 +1,22 @@
+{
+  "main": [
+    { "id": "roads", "label": "道路関連", "description": "お客さんが移動する施設を作れます。", "enabled": true },
+    { "id": "attractions", "label": "アトラクション設置", "description": "お客さんが乗るアトラクションを作れます。", "enabled": false },
+    { "id": "shops", "label": "ショップ設置", "description": "お客さんが買いものやゲームができるショップを作れます。", "enabled": false },
+    { "id": "facilities", "label": "設備設置", "description": "お客さんがパークで快適に遊べる設備を作れます。", "enabled": false },
+    { "id": "staff", "label": "スタッフ雇用", "description": "パークではたらくスタッフを雇えます。", "enabled": false },
+    { "id": "management", "label": "経営", "description": "パークの経営に関する仕事ができます。", "enabled": false },
+    { "id": "data", "label": "各種データ表示", "description": "パークのくわしい情報を見られます。", "enabled": false },
+    { "id": "system", "label": "システム", "description": "ゲームのセーブや設定ができます。", "enabled": false }
+  ],
+  "roads": [
+    { "id": "path", "label": "歩道設置", "description": "お客さんが歩くための歩道を作れます。", "enabled": true },
+    { "id": "queue", "label": "整列歩道設置", "description": "アトラクションの入口に並ぶための整列歩道を作れます。", "enabled": false },
+    { "id": "skywalk", "label": "空中遊歩道設置", "description": "空中遊歩道を作れます。", "enabled": false },
+    { "id": "one-way", "label": "一方通行設置", "description": "お客さんの動きを制御する一方通行を作れます。", "enabled": false },
+    { "id": "sign", "label": "案内標識設置", "description": "アトラクションやショップを案内する標識を作れます。", "enabled": false },
+    { "id": "stairs", "label": "階段設置", "description": "段差を上り下りするための階段を作れます。", "enabled": false },
+    { "id": "monorail-station", "label": "モノレール乗車口設置", "description": "モノレールの出入口を作れます。", "enabled": false },
+    { "id": "monorail-track", "label": "モノレールコース設置", "description": "モノレールのコースを作れます。", "enabled": false }
+  ]
+}

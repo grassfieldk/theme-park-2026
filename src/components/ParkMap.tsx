@@ -11,12 +11,14 @@ type Country = {
 
 type Props = {
   country: Country
-  movement: { direction: MenuAction, serial: number }
+  movement: { events: Array<{ direction: MenuAction, serial: number }> }
+  pathBuildMode: boolean
 }
 
-export default function ParkMap({ country, movement }: Props) {
+export default function ParkMap({ country, movement, pathBuildMode }: Props) {
   const host = useRef<HTMLDivElement>(null)
   const phaserGame = useRef<Phaser.Game | null>(null)
+  const lastMovementSerial = useRef(0)
 
   useEffect(() => {
     if (!host.current) return
@@ -33,6 +35,9 @@ export default function ParkMap({ country, movement }: Props) {
       }
 
       preload() {
+        for (let index = 0; index < 16; index += 1) {
+          this.load.image(`road-frame-${index}`, `/assets/park/road-frame-${index}.png`)
+        }
         this.load.image('ground-tile', '/assets/park/ground-tile.png')
         this.load.image('gate-base-2', '/assets/park/gate-base-2.png')
         this.load.image('gate-base-3', '/assets/park/gate-base-3.png')
@@ -63,6 +68,8 @@ export default function ParkMap({ country, movement }: Props) {
       }
 
       create() {
+        let isPathBuildMode = pathBuildMode
+        let confirmHeld = false
         const ground = this.add.renderTexture(0, 0, worldWidth, worldHeight).setOrigin(0)
         const { x: left, y: top, width, height } = country.map
         const right = left + width - 1
@@ -70,6 +77,8 @@ export default function ParkMap({ country, movement }: Props) {
         const gateLeft = left + (width - 5) / 2
         const gateRow = top + height
         const gateCenter = left + Math.floor(width / 2)
+        const buildableBottom = bottom + game.park.frontBuildableRows
+        const selectionBottom = bottom + game.park.frontSelectableRows
         type DrawCommand = {
           key: string
           x: number
@@ -146,6 +155,61 @@ export default function ParkMap({ country, movement }: Props) {
         commands.sort((a, b) => b.depth - a.depth || a.order - b.order)
         commands.forEach(draw)
 
+        const roadFrameByMask = [0, 2, 4, 0, 3, 10, 11, 7, 5, 13, 12, 9, 1, 6, 8, 15]
+        const roads = new Set<string>()
+        const tileKey = (x: number, y: number) => `${x},${y}`
+        const isLockedEntranceTile = (x: number, y: number) => (
+          (y === bottom && (x === gateLeft + 1 || x === gateLeft + 3))
+          || ((y === gateRow || y === gateRow + 1) && (x === gateLeft + 1 || x === gateLeft + 3))
+          || (y === gateRow + 2 && x >= gateLeft + 1 && x <= gateLeft + 3)
+        )
+        const isBuildableTile = (x: number, y: number) => (
+          x > left && x < right
+          && ((y > top && y < bottom) || (y === bottom && x === gateCenter) || (y > bottom && y <= buildableBottom))
+          && !isLockedEntranceTile(x, y)
+        )
+        const hasRoadConnection = (x: number, y: number) => roads.has(tileKey(x, y)) || isLockedEntranceTile(x, y)
+        const roadMaskAt = (x: number, y: number) => (
+          (hasRoadConnection(x + 1, y) ? 1 : 0)
+          | (hasRoadConnection(x - 1, y) ? 2 : 0)
+          | (hasRoadConnection(x, y + 1) ? 4 : 0)
+          | (hasRoadConnection(x, y - 1) ? 8 : 0)
+        )
+        const fixedRoadKeys = new Set(['gate-base-2', 'gate-base-3', 'gate-base-6', 'gate-base-17', 'gate-base-19'])
+        const foregroundCommands = commands.filter(({ key }) => key !== 'ground-tile' && !fixedRoadKeys.has(key))
+        const redrawRoadTiles = (x: number, y: number) => {
+          const affectedTiles = [[x, y], [x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]]
+          affectedTiles.forEach(([tileX, tileY]) => {
+            if (!isBuildableTile(tileX, tileY) && !isLockedEntranceTile(tileX, tileY)) return
+            const position = point(tileX, tileY)
+            ground.draw('ground-tile', position.x, position.y)
+            if (roads.has(tileKey(tileX, tileY)) || isLockedEntranceTile(tileX, tileY)) {
+              ground.draw(`road-frame-${roadFrameByMask[roadMaskAt(tileX, tileY)]}`, position.x, position.y)
+            }
+          })
+          foregroundCommands.forEach(draw)
+        }
+
+        const cursorPosition = { x: gateLeft + 1, y: bottom - 1 }
+        const cursor = this.add.graphics().setDepth(1)
+        cursor.fillStyle(0xffef70, 0.2)
+        cursor.lineStyle(1, 0xffef70, 1)
+        const cursorShape = [
+          new Phaser.Geom.Point(0, 0),
+          new Phaser.Geom.Point(stepX, 0),
+          new Phaser.Geom.Point(stepX + rowOffsetX, stepY),
+          new Phaser.Geom.Point(rowOffsetX, stepY),
+        ]
+        cursor.fillPoints(cursorShape, true)
+        cursor.strokePoints(cursorShape, true)
+        const placeCursor = (x: number, y: number) => {
+          cursorPosition.x = Phaser.Math.Clamp(x, left, right)
+          cursorPosition.y = Phaser.Math.Clamp(y, top, selectionBottom)
+          const position = point(cursorPosition.x, cursorPosition.y)
+          cursor.setPosition(position.x, position.y)
+        }
+        placeCursor(cursorPosition.x, cursorPosition.y)
+
         const camera = this.cameras.main
         const cameraTopRow = top - game.park.cameraMarginTiles.top
         const cameraBottomRow = gateRow + 6 + game.park.cameraMarginTiles.bottom
@@ -180,6 +244,50 @@ export default function ParkMap({ country, movement }: Props) {
             : (minViewLeft + maxViewLeft) / 2
           camera.scrollX = viewLeft - viewInsetX
         }
+        const keepCursorVisible = () => {
+          const viewWidth = camera.width / camera.zoom
+          const viewHeight = camera.height / camera.zoom
+          const viewInsetX = (camera.width - viewWidth) / 2
+          const viewInsetY = (camera.height - viewHeight) / 2
+          const margin = game.park.cursorCameraMarginTiles * tileWidth
+          const position = point(cursorPosition.x, cursorPosition.y)
+          const viewLeft = camera.scrollX + viewInsetX
+          const viewTop = camera.scrollY + viewInsetY
+          if (position.x < viewLeft + margin) camera.scrollX -= viewLeft + margin - position.x
+          if (position.x + stepX > viewLeft + viewWidth - margin) camera.scrollX += position.x + stepX - (viewLeft + viewWidth - margin)
+          if (position.y < viewTop + margin) camera.scrollY -= viewTop + margin - position.y
+          if (position.y + stepY > viewTop + viewHeight - margin) camera.scrollY += position.y + stepY - (viewTop + viewHeight - margin)
+          clampCameraToMap()
+        }
+        const moveCursor = (direction: MenuAction) => {
+          if (direction === 'left') placeCursor(cursorPosition.x - 1, cursorPosition.y)
+          if (direction === 'right') placeCursor(cursorPosition.x + 1, cursorPosition.y)
+          if (direction === 'up') placeCursor(cursorPosition.x, cursorPosition.y - 1)
+          if (direction === 'down') placeCursor(cursorPosition.x, cursorPosition.y + 1)
+          keepCursorVisible()
+        }
+        const placeRoad = () => {
+          const { x, y } = cursorPosition
+          if (!isBuildableTile(x, y)) return
+          const key = tileKey(x, y)
+          if (roads.has(key)) return
+          roads.add(key)
+          redrawRoadTiles(x, y)
+        }
+        const removeRoad = () => {
+          if (!isBuildableTile(cursorPosition.x, cursorPosition.y)) return
+          if (!roads.delete(tileKey(cursorPosition.x, cursorPosition.y))) return
+          redrawRoadTiles(cursorPosition.x, cursorPosition.y)
+        }
+        const selectTileAtPointer = (pointer: Phaser.Input.Pointer) => {
+          const world = pointer.positionToCamera(camera) as Phaser.Math.Vector2
+          const y = Math.floor((world.y - padding) / stepY)
+          const localY = world.y - padding - y * stepY
+          const x = Math.floor((world.x - padding - y * rowOffsetX - Math.floor(localY / 2)) / stepX)
+          if (x < left || x > right || y < top || y > selectionBottom) return false
+          placeCursor(x, y)
+          return true
+        }
         clampCameraToMap()
         this.events.on('postupdate', clampCameraToMap)
         this.scale.on('resize', clampCameraToMap)
@@ -196,19 +304,31 @@ export default function ParkMap({ country, movement }: Props) {
         let dragging = false
         let previousX = 0
         let previousY = 0
+        let dragDistance = 0
+        this.input.mouse?.disableContextMenu()
         this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+          if (pointer.button !== 1) return
           dragging = true
           previousX = pointer.x
           previousY = pointer.y
+          dragDistance = 0
         })
         this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
           if (!dragging || !pointer.isDown) return
-          camera.scrollX -= (pointer.x - previousX) / camera.zoom
-          camera.scrollY -= (pointer.y - previousY) / camera.zoom
+          const deltaX = pointer.x - previousX
+          const deltaY = pointer.y - previousY
+          dragDistance += Math.hypot(deltaX, deltaY)
+          camera.scrollX -= deltaX / camera.zoom
+          camera.scrollY -= deltaY / camera.zoom
           previousX = pointer.x
           previousY = pointer.y
         })
-        this.input.on('pointerup', () => { dragging = false })
+        this.input.on('pointerup', (pointer: Phaser.Input.Pointer) => {
+          if (pointer.button === 0 && selectTileAtPointer(pointer) && isPathBuildMode) {
+            placeRoad()
+          }
+          if (pointer.button === 1) dragging = false
+        })
         this.input.on('gameout', () => { dragging = false })
         this.input.on('wheel', (
           _pointer: Phaser.Input.Pointer,
@@ -217,12 +337,22 @@ export default function ParkMap({ country, movement }: Props) {
           deltaY: number,
         ) => changeZoom(deltaY > 0 ? -game.park.zoomStep : game.park.zoomStep))
         this.events.on('pan', (direction: MenuAction) => {
-          if (direction === 'left') camera.scrollX -= game.park.cameraPanPixels
-          if (direction === 'right') camera.scrollX += game.park.cameraPanPixels
-          if (direction === 'up') camera.scrollY -= game.park.cameraPanPixels
-          if (direction === 'down') camera.scrollY += game.park.cameraPanPixels
+          if (direction === 'left' || direction === 'right' || direction === 'up' || direction === 'down') {
+            moveCursor(direction)
+            if (confirmHeld && isPathBuildMode) placeRoad()
+          }
+          if (direction === 'confirm') {
+            confirmHeld = true
+            placeRoad()
+          }
+          if (direction === 'confirmRelease') confirmHeld = false
+          if (direction === 'remove') removeRoad()
           if (direction === 'zoomIn') changeZoom(game.park.zoomStep)
           if (direction === 'zoomOut') changeZoom(-game.park.zoomStep)
+        })
+        this.events.on('path-build-mode', (active: boolean) => {
+          isPathBuildMode = active
+          if (!active) confirmHeld = false
         })
       }
     }
@@ -243,9 +373,16 @@ export default function ParkMap({ country, movement }: Props) {
   }, [country])
 
   useEffect(() => {
-    if (!movement.serial) return
-    phaserGame.current?.scene.getScene('park').events.emit('pan', movement.direction)
+    const pending = movement.events.filter(({ serial }) => serial > lastMovementSerial.current)
+    pending.forEach(({ direction }) => {
+      phaserGame.current?.scene.getScene('park')?.events.emit('pan', direction)
+    })
+    if (pending.length > 0) lastMovementSerial.current = pending[pending.length - 1].serial
   }, [movement])
+
+  useEffect(() => {
+    phaserGame.current?.scene.getScene('park')?.events.emit('path-build-mode', pathBuildMode)
+  }, [pathBuildMode])
 
   return <div className="park-map" ref={host} aria-label={`${country.name} のパークマップ`} />
 }

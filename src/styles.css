@@ -33,3 +33,10 @@ h1 { margin: 8px 0 12px; font-size: 30px; }
 .park-map canvas { display: block; }
 .map-loading { display: grid; place-items: center; color: #d2dbd2; }
 .park-status-overlay { position: absolute; top: 16px; right: 16px; display: flex; gap: 20px; border: 1px solid rgb(255 255 255 / 40%); background: rgb(12 20 24 / 75%); padding: 8px 12px; color: #fff; font-size: 14px; }
+.park-menu { position: absolute; right: 16px; bottom: 16px; left: 16px; color: #fff; }
+.park-menu-description { width: fit-content; max-width: 520px; margin: 0 auto 6px; border: 2px solid #e8d175; background: rgb(15 36 55 / 94%); padding: 7px 12px; font-size: 13px; }
+.park-menu-items { display: flex; justify-content: center; gap: 3px; }
+.park-menu-item { width: 88px; min-height: 52px; border: 2px solid #84aab4; background: rgb(20 61 91 / 96%); padding: 5px; color: #fff; cursor: pointer; font-size: 12px; line-height: 1.25; }
+.park-menu-item[aria-disabled="true"] { color: #9ba8ab; }
+.park-menu-item.selected { border-color: #ffe36e; background: #276f9a; color: #fff; }
+.build-mode-overlay { position: absolute; top: 16px; left: 16px; border: 2px solid #e8d175; background: rgb(15 36 55 / 90%); padding: 7px 12px; color: #fff; font-size: 13px; }
