@@ -14,7 +14,7 @@
     "pointerDragThresholdPixels": 4,
     "cameraMarginTiles": { "top": 4, "bottom": 1, "side": 4 }
   },
-  "input": { "initialRepeatDelayMs": 600, "repeatIntervalMs":  60 },
+  "input": { "initialRepeatDelayMs": 400, "repeatIntervalMs":  60 },
   "speeds": [
     { "id": "slow", "label": "低速", "ratio": 1 },
     { "id": "normal", "label": "標準", "ratio": 2 },

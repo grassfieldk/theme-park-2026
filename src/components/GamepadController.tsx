@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 import game from '../config/game.json'
 
-export type MenuAction = 'up' | 'down' | 'left' | 'right' | 'confirm' | 'confirmRelease' | 'cancel' | 'menu' | 'remove' | 'zoomIn' | 'zoomOut'
+export type MenuAction = 'up' | 'down' | 'left' | 'right' | 'confirm' | 'confirmRelease' | 'cancel' | 'menu' | 'start' | 'remove' | 'zoomIn' | 'zoomOut'
 type Direction = Extract<MenuAction, 'up' | 'down' | 'left' | 'right'>
 
 type Props = { onAction: (action: MenuAction) => void }
@@ -9,7 +9,7 @@ type Props = { onAction: (action: MenuAction) => void }
 const buttonActions: Array<[number, MenuAction, boolean, MenuAction?]> = [
   [4, 'zoomOut', false], [5, 'zoomIn', false],
   [2, 'remove', false], [3, 'menu', false],
-  [0, 'confirm', false, 'confirmRelease'], [9, 'confirm', false], [1, 'cancel', false],
+  [0, 'confirm', false, 'confirmRelease'], [9, 'start', false], [1, 'cancel', false],
 ]
 
 export function GamepadController({ onAction }: Props) {

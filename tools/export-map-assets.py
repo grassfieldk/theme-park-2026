@@ -13,8 +13,12 @@ DESTINATION = ROOT / "public/assets/park"
 RESOURCE_OFFSET = 6_206_612
 RESOURCE_SIZE = 33_932
 RESOURCE_UPLOAD_OFFSET = 0xE10
+QUEUE_FRAME_START = 76
 ASSETS = {
-    **{f"road-frame-{index}.png": 0x2C + index * 0x14 for index in range(16)},
+    **{f"road-frame-{index}.png": 0x2C + index * 0x14 for index in range(17)},
+    **{f"build-base-frame-{index}.png": 0x978 + index * 0x14 for index in range(13)},
+    **{f"facility-entrance-frame-{index}.png": 0x928 + index * 0x14 for index in range(4)},
+    **{f"facility-exit-frame-{index}.png": 0xA18 + index * 0x14 for index in range(4)},
     "ground-tile.png": 0x144,
     "gate-base-2.png": 0x40,
     "gate-base-3.png": 0x2C,
@@ -88,7 +92,7 @@ def load_vram(resource: bytes) -> list[int]:
         offset += length
 
 
-def export_asset(resource: bytes, vram: list[int], descriptor_offset: int, destination: Path) -> None:
+def descriptor_pixels(resource: bytes, vram: list[int], descriptor_offset: int) -> tuple[int, int, bytes]:
     descriptor = resource[descriptor_offset : descriptor_offset + 20]
     texture_page = struct.unpack_from("<H", descriptor, 6)[0]
     u, v, width, height = descriptor[8:12]
@@ -99,19 +103,32 @@ def export_asset(resource: bytes, vram: list[int], descriptor_offset: int, desti
     clut_y = clut >> 6
     palette = [psx_color(vram[clut_y * 1024 + clut_x + index]) for index in range(16)]
     pixels = bytearray()
-    for y in range(height):
-        for x in range(width):
-            word = vram[(texture_y + y) * 1024 + texture_x + (x // 4)]
-            pixels.extend(palette[(word >> ((x % 4) * 4)) & 0xF])
-    write_png(destination, width, height, bytes(pixels))
+    for pixel_y in range(height):
+        for pixel_x in range(width):
+            word = vram[(texture_y + pixel_y) * 1024 + texture_x + (pixel_x // 4)]
+            pixels.extend(palette[(word >> ((pixel_x % 4) * 4)) & 0xF])
+    return width, height, bytes(pixels)
+
+
+def export_asset(resource: bytes, vram: list[int], descriptor_offset: int, destination: Path) -> None:
+    width, height, pixels = descriptor_pixels(resource, vram, descriptor_offset)
+    write_png(destination, width, height, pixels)
+
+
+def export_queue_assets(resource: bytes, vram: list[int]) -> None:
+    for frame in range(14):
+        descriptor_offset = 0x2C + (QUEUE_FRAME_START + frame) * 0x14
+        export_asset(resource, vram, descriptor_offset, DESTINATION / f"queue-frame-{frame}.png")
 
 
 def main() -> None:
-    data = SOURCE.read_bytes()[RESOURCE_OFFSET : RESOURCE_OFFSET + RESOURCE_SIZE]
+    source = SOURCE.read_bytes()
+    data = source[RESOURCE_OFFSET : RESOURCE_OFFSET + RESOURCE_SIZE]
     vram = load_vram(data)
     DESTINATION.mkdir(parents=True, exist_ok=True)
     for name, descriptor in ASSETS.items():
         export_asset(data, vram, descriptor, DESTINATION / name)
+    export_queue_assets(data, vram)
 
 
 if __name__ == "__main__":
