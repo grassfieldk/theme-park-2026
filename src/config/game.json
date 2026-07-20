@@ -1,13 +1,13 @@
 {
   "park": {
     "initialCash": 300000,
-    "startDate": "1996-04-01",
+    "startDate": "2026-04-01",
     "visitorLimit": 350,
     "mapGrid": { "width": 80, "height": 80, "stepX": 22, "stepY": 16, "rowOffsetX": 8, "tileWidth": 32 },
     "cameraPanPixels": 160,
     "displayScale": 2,
     "minDisplayScale": 1,
-    "zoomStep": 0.2,
+    "zoomStep": 0.5,
     "frontBuildableRows": 3,
     "frontSelectableRows": 4,
     "cursorCameraMarginTiles": 2,

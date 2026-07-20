@@ -1,7 +1,10 @@
+import { useEffect, useRef } from 'react'
+
 type Item = {
   id: string
   label: string
   description: string
+  iconSrc?: string
   enabled: boolean
 }
 
@@ -13,12 +16,15 @@ type Props = {
 }
 
 export default function ParkMenu({ items, selectedIndex, onSelect, onConfirm }: Props) {
-  const selected = items[selectedIndex]
+  const listRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    listRef.current?.children[selectedIndex]?.scrollIntoView({ block: 'nearest' })
+  }, [selectedIndex])
 
   return (
     <nav className="park-menu" aria-label="パークメニュー">
-      <div className="park-menu-description">{selected.description}</div>
-      <div className="park-menu-items">
+      <div className="park-menu-items" ref={listRef}>
         {items.map((item, index) => (
           <button
             className={index === selectedIndex ? 'park-menu-item selected' : 'park-menu-item'}
@@ -26,9 +32,13 @@ export default function ParkMenu({ items, selectedIndex, onSelect, onConfirm }: 
             aria-current={index === selectedIndex ? 'true' : undefined}
             aria-disabled={!item.enabled}
             onFocus={() => onSelect(index)}
+            onMouseEnter={() => onSelect(index)}
             onClick={() => onConfirm(index)}
           >
-            {item.label}
+            {item.iconSrc ? (
+              <img className="park-menu-icon" src={item.iconSrc} alt="" />
+            ) : null}
+            <span>{item.label}</span>
           </button>
         ))}
       </div>
