@@ -17,7 +17,7 @@
 - [パークマップ](02_park-map.md): タイル領域、正面ゲート、道路接続
 - [モードと時間](03_game-modes-and-time.md): モード選択、開始時の時間、進行処理
 - [シナリオ](04_scenarios.md): 国別の初期状態と達成条件
-- [施設](10_facilities.md): 76 種類の施設名と分類
+- [施設](10_facilities.md): 76 種類の施設名と分類、設備 20 種類
 - [経済](11_economy.md): 設置費、維持費、料金
 - [施設の配置と撤去](12_facility-runtime.md): 配置時と撤去時の挙動
 - [施設仕様](13_facility-specifications.md): 面積、能力、定員、開発費
