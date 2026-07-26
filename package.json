@@ -5,7 +5,7 @@
   "packageManager": "bun@1.3.14",
   "type": "module",
   "scripts": {
-    "assets:sync": "bun tools/sync-web-assets.mjs && python tools/export-map-assets.py && python tools/export-facility-assets.py && python tools/export-menu-assets.py && python tools/export-shop-assets.py && python tools/export-attraction-icons.py",
+    "assets:sync": "bun tools/sync-web-assets.mjs && python tools/export-map-assets.py && python tools/export-facility-assets.py && python tools/export-menu-assets.py && python tools/export-shop-assets.py && python tools/export-facility-assets-scenery.py && python tools/export-attraction-icons.py",
     "dev": "bun ./node_modules/vite/bin/vite.js",
     "build": "bun ./node_modules/typescript/bin/tsc -b && bun ./node_modules/vite/bin/vite.js build"
   },

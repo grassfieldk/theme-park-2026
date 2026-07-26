@@ -3,7 +3,7 @@
     { "id": "roads", "label": "道路関連", "description": "お客さんが移動する施設を作れます。", "icon": 0, "enabled": true },
     { "id": "attractions", "label": "アトラクション設置", "description": "お客さんが乗るアトラクションを作れます。", "icon": 1, "enabled": true },
     { "id": "shops", "label": "ショップ設置", "description": "お客さんが買いものやゲームができるショップを作れます。", "icon": 2, "enabled": true },
-    { "id": "facilities", "label": "設備設置", "description": "お客さんがパークで快適に遊べる設備を作れます。", "icon": 3, "enabled": false },
+    { "id": "facilities", "label": "設備設置", "description": "設備を作れます。パークをきれいにかざりお客さんを楽しませます。", "icon": 3, "enabled": true },
     { "id": "staff", "label": "スタッフ雇用", "description": "パークではたらくスタッフを雇えます。", "icon": 4, "enabled": false },
     { "id": "management", "label": "経営", "description": "パークの経営に関する仕事ができます。", "icon": 5, "enabled": false },
     { "id": "data", "label": "各種データ表示", "description": "パークのくわしい情報を見られます。", "icon": 6, "enabled": false },

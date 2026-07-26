@@ -2,6 +2,7 @@ import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
 import Phaser from 'phaser'
 import attractions from '../config/attractions.json'
 import shops from '../config/shops.json'
+import facilities from '../config/facilities.json'
 import game from '../config/game.json'
 import type { MenuAction } from './GamepadController'
 
@@ -17,6 +18,7 @@ type Props = {
   attractionBuild: Attraction | null
   attractionBuildStep: AttractionBuildStep
   shopBuild: Shop | null
+  facilityBuild: Facility | null
   availableCash: number
   onAttractionPlaced: (cost: number) => void
   onAttractionPlacementCancelled: (cost: number) => void
@@ -24,6 +26,8 @@ type Props = {
   onShopPlaced: (cost: number) => void
   onShopBuildStep: (step: 'body' | 'direction') => void
   onShopComplete: () => void
+  onFacilityPlaced: (cost: number) => void
+  onFacilityBuildStep: (step: 'body' | 'direction') => void
   onBuildMessage: (message: string) => void
 }
 
@@ -33,6 +37,7 @@ export type ParkMapHandle = {
 
 type Attraction = (typeof attractions)[number]
 type Shop = (typeof shops)[number]
+type Facility = (typeof facilities)[number]
 type Footprint = { width: number, height: number, constructionCost: number }
 type AttractionBuildStep = 'body' | 'entrance' | 'exit'
 type RoadBuildMode = 'path' | 'queue' | null
@@ -57,6 +62,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
   attractionBuild,
   attractionBuildStep,
   shopBuild,
+  facilityBuild,
   availableCash,
   onAttractionPlaced,
   onAttractionPlacementCancelled,
@@ -64,6 +70,8 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
   onShopPlaced,
   onShopBuildStep,
   onShopComplete,
+  onFacilityPlaced,
+  onFacilityBuildStep,
   onBuildMessage,
 }: Props, ref) {
   const host = useRef<HTMLDivElement>(null)
@@ -74,6 +82,8 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
   const shopPlacedHandler = useRef(onShopPlaced)
   const shopStepHandler = useRef(onShopBuildStep)
   const shopCompleteHandler = useRef(onShopComplete)
+  const facilityPlacedHandler = useRef(onFacilityPlaced)
+  const facilityStepHandler = useRef(onFacilityBuildStep)
   const buildMessageHandler = useRef(onBuildMessage)
   attractionPlacedHandler.current = onAttractionPlaced
   attractionCancelledHandler.current = onAttractionPlacementCancelled
@@ -81,6 +91,8 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
   shopPlacedHandler.current = onShopPlaced
   shopStepHandler.current = onShopBuildStep
   shopCompleteHandler.current = onShopComplete
+  facilityPlacedHandler.current = onFacilityPlaced
+  facilityStepHandler.current = onFacilityBuildStep
   buildMessageHandler.current = onBuildMessage
 
   useImperativeHandle(ref, () => ({
@@ -108,6 +120,11 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         shops.forEach((shop) => {
           for (let direction = 0; direction < shop.directions; direction += 1) {
             this.load.image(`shop-${shop.id}-${direction}`, `${shop.assetBase}-${direction}.png`)
+          }
+        })
+        facilities.forEach((facility) => {
+          for (let frame = 0; frame < facility.frames; frame += 1) {
+            this.load.image(`facility-${facility.id}-${frame}`, `${facility.assetBase}-${frame}.png`)
           }
         })
         for (let index = 0; index < 13; index += 1) {
@@ -161,6 +178,10 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         let shopStep: 'body' | 'direction' = 'body'
         type PendingShop = { x: number, y: number, cost: number, image: Phaser.GameObjects.Image, baseImages: Phaser.GameObjects.Image[] }
         let pendingShop: PendingShop | null = null
+        let activeFacility = facilityBuild
+        let facilityDirection = 0
+        let facilityStep: 'body' | 'direction' = 'body'
+        let pendingFacility: { x: number, y: number } | null = null
         let currentCash = availableCash
         let confirmHeld = false
         const ground = this.add.renderTexture(0, 0, worldWidth, worldHeight).setOrigin(0)
@@ -475,6 +496,252 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         )
         const canPlacePath = canPlaceRoad
         const canPlaceQueue = canPlaceRoad
+        // 設備の設置方法は place / directional / fence / pond / building の 5 種類。
+        // 柵の連結表とイケの隅マスク表は原作テーブルそのまま(recovery/specs/facility-scenery.md)
+        const fenceFrameByMask = [15, 11, 12, 0, 14, 2, 3, 9, 13, 5, 4, 7, 1, 8, 10, 6]
+        const pondFrameByCorner = [-1, 6, 5, 14, 4, 2, 0, 11, 7, 1, 3, 10, 13, 9, 12, 8]
+        const pondCornerByFrame = [6, 9, 5, 10, 4, 2, 1, 8, 15, 13, 11, 7, 14, 12, 3]
+        const pondNeighbours: Array<[number, number]> = [[-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [0, 1], [1, 1]]
+        const pondNeighbourCorner = [4, 6, 2, 5, 10, 1, 9, 8]
+        const pondCornerNeed = [11, 208, 104, 22]
+        const pondCornerBit = [8, 4, 2, 1]
+        // 隅ビットごとに、その隅を共有する 3 マスと相手側の隅ビット(左上・右下・左下・右上の順)
+        const pondCornerShare: Array<Array<[number, number, number]>> = [
+          [[-1, -1, 4], [0, -1, 2], [-1, 0, 1]],
+          [[1, 1, 8], [1, 0, 2], [0, 1, 1]],
+          [[-1, 1, 1], [-1, 0, 4], [0, 1, 8]],
+          [[1, -1, 2], [0, -1, 4], [1, 0, 8]],
+        ]
+        type PlacedFacility = { facility: Facility, frame: number, image: Phaser.GameObjects.Image }
+        const placedFacilities = new Map<string, PlacedFacility>()
+        const placedBuildings = new Set<string>()
+        const facilityFootprint = (facility: Facility): Footprint => (
+          { width: facility.width, height: facility.height, constructionCost: facility.constructionCost }
+        )
+        const facilityAt = (x: number, y: number) => placedFacilities.get(tileKey(x, y))
+        const isFenceAt = (x: number, y: number) => facilityAt(x, y)?.facility.placement === 'fence'
+        const isPondAt = (x: number, y: number) => facilityAt(x, y)?.facility.placement === 'pond'
+        // 柵 3 種は互いにつながるので、種類ではなく設置方法で隣接を判定する
+        const fenceMaskAt = (x: number, y: number) => (
+          (isFenceAt(x + 1, y) ? 1 : 0)
+          | (isFenceAt(x - 1, y) ? 2 : 0)
+          | (isFenceAt(x, y + 1) ? 4 : 0)
+          | (isFenceAt(x, y - 1) ? 8 : 0)
+        )
+        const pondCornerAt = (x: number, y: number) => (
+          isPondAt(x, y) ? (pondCornerByFrame[facilityAt(x, y)!.frame] ?? 0) : 0
+        )
+        const facilityFrameAt = (facility: Facility, x: number, y: number) => {
+          if (facility.placement === 'fence') return fenceFrameByMask[fenceMaskAt(x, y)]
+          if (facility.placement === 'pond') return pondFrameByCorner[15]
+          if (facility.placement === 'directional') return facilityDirection % facility.frames
+          return 0
+        }
+        // 設備スプライトは footprint の前(下)タイルを基準にする。原作のオブジェクトセルが
+        // ここに当たり、imageOffsets はそのセルからの相対で抽出している。中心合わせにすると
+        // 2×2 以上で右上へずれるので point(x, y) をそのまま基準にする
+        const facilityImagePosition = (facility: Facility, frame: number, x: number, y: number) => {
+          const offset = facility.imageOffsets[frame] ?? facility.imageOffsets[0]
+          const base = point(x, y)
+          return { x: base.x - offset.x, y: base.y - offset.y }
+        }
+        const setFacilityFrame = (x: number, y: number, frame: number) => {
+          const placed = facilityAt(x, y)
+          if (!placed || frame < 0 || frame === placed.frame) return
+          placed.frame = frame
+          const position = facilityImagePosition(placed.facility, frame, x, y)
+          placed.image.setTexture(`facility-${placed.facility.id}-${frame}`).setPosition(position.x, position.y)
+        }
+        const removeFacility = (x: number, y: number) => {
+          const placed = facilityAt(x, y)
+          if (!placed) return
+          placed.image.destroy()
+          placedFacilities.delete(tileKey(x, y))
+          for (let offsetY = 0; offsetY < placed.facility.height; offsetY += 1) {
+            for (let offsetX = 0; offsetX < placed.facility.width; offsetX += 1) {
+              occupiedByAttraction.delete(tileKey(x + offsetX, y - offsetY))
+            }
+          }
+        }
+        const refreshFenceTile = (x: number, y: number) => {
+          if (!isFenceAt(x, y)) return
+          setFacilityFrame(x, y, fenceFrameByMask[fenceMaskAt(x, y)])
+        }
+        // イケは 8 近傍から 4 隅のマスクを組み立て、隅を共有する 3 マスにも同じ隅を伝える
+        const refreshPondTile = (x: number, y: number) => {
+          if (!isPondAt(x, y)) return
+          let bits = 0
+          pondNeighbours.forEach(([offsetX, offsetY], index) => {
+            if ((pondNeighbourCorner[index] & pondCornerAt(x + offsetX, y + offsetY)) !== 0) bits |= 1 << index
+          })
+          let mask = 0
+          pondCornerNeed.forEach((need, index) => {
+            if ((need & bits) === need) mask |= pondCornerBit[index]
+          })
+          if (mask === 0) {
+            removeFacility(x, y)
+            return
+          }
+          setFacilityFrame(x, y, pondFrameByCorner[mask])
+          pondCornerBit.forEach((bit, index) => {
+            if ((mask & bit) === 0) return
+            pondCornerShare[index].forEach(([offsetX, offsetY, shared]) => {
+              const corner = pondCornerAt(x + offsetX, y + offsetY)
+              if (corner === 0) return
+              setFacilityFrame(x + offsetX, y + offsetY, pondFrameByCorner[corner | shared])
+            })
+          })
+        }
+        const canPlaceFacilityTile = (facility: Facility, x: number, y: number) => (
+          isPondAt(x, y) ? facility.placement === 'pond' : canPlaceAttraction(facilityFootprint(facility), x, y)
+        )
+        const canPlaceFacility = (facility: Facility, x: number, y: number) => {
+          if (facility.placement === 'building' && placedBuildings.has(facility.id)) return false
+          // イケは 1 回の設置で中心とその 8 近傍が水面になるため、3 × 3 が空いている必要がある
+          if (facility.placement === 'pond') {
+            for (let offsetY = -1; offsetY <= 1; offsetY += 1) {
+              for (let offsetX = -1; offsetX <= 1; offsetX += 1) {
+                if (!canPlaceFacilityTile(facility, x + offsetX, y + offsetY)) return false
+              }
+            }
+            return true
+          }
+          return canPlaceAttraction(facilityFootprint(facility), x, y)
+        }
+        const addFacility = (facility: Facility, frame: number, x: number, y: number) => {
+          for (let offsetY = 0; offsetY < facility.height; offsetY += 1) {
+            for (let offsetX = 0; offsetX < facility.width; offsetX += 1) {
+              occupiedByAttraction.add(tileKey(x + offsetX, y - offsetY))
+            }
+          }
+          const position = facilityImagePosition(facility, frame, x, y)
+          const image = this.add.image(position.x, position.y, `facility-${facility.id}-${frame}`).setOrigin(0)
+            .setDepth(renderDepthAt('facility', x, y))
+          placedFacilities.set(tileKey(x, y), { facility, frame, image })
+        }
+        const placePond = (facility: Facility, x: number, y: number) => {
+          const full = pondFrameByCorner[15]
+          for (let offsetY = -1; offsetY <= 1; offsetY += 1) {
+            for (let offsetX = -1; offsetX <= 1; offsetX += 1) {
+              if (isPondAt(x + offsetX, y + offsetY)) setFacilityFrame(x + offsetX, y + offsetY, full)
+              else addFacility(facility, full, x + offsetX, y + offsetY)
+            }
+          }
+          refreshPondTile(x, y)
+          pondNeighbours.forEach(([offsetX, offsetY]) => refreshPondTile(x + offsetX, y + offsetY))
+        }
+        const placeFacility = () => {
+          const facility = activeFacility
+          if (!facility || facilityStep !== 'body') return
+          const { x, y } = cursorPosition
+          if (!canPlaceFacility(facility, x, y)) {
+            buildMessageHandler.current(
+              facility.placement === 'building' && placedBuildings.has(facility.id) ? 'すでに設置されています。'
+                : currentCash < facility.constructionCost ? '資金が足りないので設置できません。'
+                  : 'その場所には設置できません。')
+            return
+          }
+          buildMessageHandler.current('')
+          // 設置費を課金。柵はドラッグ 1 マスごと、イケは 1 回の設置ごとに 1 回課金される
+          currentCash -= facility.constructionCost
+          facilityPlacedHandler.current(facility.constructionCost)
+          if (facility.placement === 'pond') {
+            placePond(facility, x, y)
+            drawCursor()
+            return
+          }
+          addFacility(facility, facilityFrameAt(facility, x, y), x, y)
+          if (facility.placement === 'fence') {
+            refreshFenceTile(x, y)
+            refreshFenceTile(x + 1, y)
+            refreshFenceTile(x - 1, y)
+            refreshFenceTile(x, y + 1)
+            refreshFenceTile(x, y - 1)
+          }
+          if (facility.placement === 'building') placedBuildings.add(facility.id)
+          if (facility.placement === 'directional') {
+            pendingFacility = { x, y }
+            facilityStep = 'direction'
+            facilityStepHandler.current('direction')
+            drawFacilityArrow()
+          }
+          drawCursor()
+        }
+        // 向きを選ぶ設備はショップと同じ手順。向き番号とタイル方向の対応もショップに合わせる
+        const facilityDirectionStep = (direction: number) => (
+          { 0: { x: 0, y: 1 }, 1: { x: 0, y: -1 }, 2: { x: -1, y: 0 }, 3: { x: 1, y: 0 } }[direction] ?? { x: 0, y: 1 }
+        )
+        const drawFacilityArrow = () => {
+          const facility = activeFacility
+          shopArrow.clear()
+          if (facilityStep !== 'direction' || !pendingFacility || !facility) {
+            shopArrow.setVisible(false)
+            return
+          }
+          const step = facilityDirectionStep(facilityDirection)
+          const centerX = pendingFacility.x + facility.width / 2 + step.x
+          const centerY = pendingFacility.y - facility.height / 2 + 1 + step.y
+          const sideX = -step.y
+          const sideY = step.x
+          const arrow = () => {
+            const q = (along: number, side: number) => {
+              const projected = point(centerX + step.x * along + sideX * side, centerY + step.y * along + sideY * side)
+              return new Phaser.Geom.Point(projected.x, projected.y)
+            }
+            return [q(0.4, 0), q(-0.32, 0.34), q(-0.32, -0.34)]
+          }
+          shopArrow.setVisible(true)
+          shopArrow.fillStyle(0xffe36e, 0.75)
+          shopArrow.fillPoints(arrow(), true)
+          shopArrow.lineStyle(1, 0xffe36e, 0.85)
+          shopArrow.strokePoints(arrow(), true, true)
+        }
+        const setFacilityDirection = (direction: number) => {
+          const facility = activeFacility
+          if (!facility || facilityStep !== 'direction' || !pendingFacility) return
+          if (direction >= facility.frames) return
+          facilityDirection = direction
+          setFacilityFrame(pendingFacility.x, pendingFacility.y, direction)
+          drawFacilityArrow()
+        }
+        const facilityDirectionAtPointer = (px: number, py: number) => {
+          const facility = activeFacility
+          if (!facility || !pendingFacility) return facilityDirection
+          const centerTileX = pendingFacility.x + facility.width / 2
+          const centerTileY = pendingFacility.y - facility.height / 2 + 1
+          const center = point(centerTileX, centerTileY)
+          const pointerAngle = Math.atan2(py - center.y, px - center.x)
+          let best = facilityDirection
+          let bestDelta = Infinity
+          for (let direction = 0; direction < facility.frames; direction += 1) {
+            const step = facilityDirectionStep(direction)
+            // 方向はタイル座標で 1 マス進めてから投影する(画面座標を再投影しない)
+            const target = point(centerTileX + step.x, centerTileY + step.y)
+            const angle = Math.atan2(target.y - center.y, target.x - center.x)
+            const delta = Math.abs(Phaser.Math.Angle.Wrap(angle - pointerAngle))
+            if (delta < bestDelta) { bestDelta = delta; best = direction }
+          }
+          return best
+        }
+        const finishFacilityDirection = () => {
+          if (facilityStep !== 'direction') return
+          pendingFacility = null
+          facilityStep = 'body'
+          facilityStepHandler.current('body')
+          drawFacilityArrow()
+          drawCursor()
+        }
+        const isPaintFacility = (facility: Facility | null) => (
+          facility !== null && (facility.placement === 'fence' || facility.placement === 'pond')
+        )
+        const cancelFacilityDirection = () => {
+          if (facilityStep !== 'direction' || !pendingFacility || !activeFacility) return
+          removeFacility(pendingFacility.x, pendingFacility.y)
+          // 向き選択を取り消したら設置費を払い戻す(ショップと同じ)
+          currentCash += activeFacility.constructionCost
+          attractionCancelledHandler.current(activeFacility.constructionCost)
+          finishFacilityDirection()
+        }
         const drawCursor = () => {
           cursor.clear()
           const attraction = activeAttraction
@@ -482,22 +749,38 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           const placingShopBody = shop && shopStep === 'body'
           const placingBody = attraction && activeAttractionBuildStep === 'body'
           const placingAccess = attraction && activeAttractionBuildStep !== 'body'
-          const footprint: Footprint | null = placingBody ? attraction : placingShopBody ? shop : null
+          // 設備もアトラクション/ショップと同じプレビュー経路に載せる(設置予定地に実物を表示)
+          const placingFacility = activeFacility && facilityStep === 'body' ? activeFacility : null
+          const facilityFrame = placingFacility ? facilityFrameAt(placingFacility, cursorPosition.x, cursorPosition.y) : 0
+          const footprint: Footprint | null = placingBody
+            ? attraction
+            : placingShopBody
+              ? shop
+              : placingFacility
+                ? facilityFootprint(placingFacility)
+                : null
           const previewImage = placingBody
             ? { key: attraction.id, offset: attraction.imageOffset }
             : placingShopBody
               ? { key: `shop-${shop.id}-${shopDirection}`, offset: shop.imageOffsets[shopDirection] }
-              : null
+              : placingFacility
+                ? {
+                  key: `facility-${placingFacility.id}-${facilityFrame}`,
+                  offset: placingFacility.imageOffsets[facilityFrame] ?? placingFacility.imageOffsets[0],
+                }
+                : null
           const attractionOrigin = footprint ? attractionOriginAtCursor(footprint) : null
-          const valid = footprint && attractionOrigin
-            ? canPlaceAttraction(footprint, attractionOrigin.x, attractionOrigin.y)
-            : placingAccess
-              ? canPlaceAccess(cursorPosition.x, cursorPosition.y)
-              : activeRoadBuildMode === 'path'
-                ? canPlacePath(cursorPosition.x, cursorPosition.y)
-                : activeRoadBuildMode === 'queue'
-                  ? canPlaceQueue(cursorPosition.x, cursorPosition.y)
-                  : true
+          const valid = placingFacility
+            ? canPlaceFacility(placingFacility, cursorPosition.x, cursorPosition.y)
+            : footprint && attractionOrigin
+              ? canPlaceAttraction(footprint, attractionOrigin.x, attractionOrigin.y)
+              : placingAccess
+                ? canPlaceAccess(cursorPosition.x, cursorPosition.y)
+                : activeRoadBuildMode === 'path'
+                  ? canPlacePath(cursorPosition.x, cursorPosition.y)
+                  : activeRoadBuildMode === 'queue'
+                    ? canPlaceQueue(cursorPosition.x, cursorPosition.y)
+                    : true
           const color = valid ? 0xffef70 : 0xff6048
           cursor.fillStyle(color, 0.2)
           cursor.lineStyle(1, color, 1)
@@ -538,7 +821,10 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             attractionPreview = this.add.image(0, 0, previewImage.key).setOrigin(0)
           }
           if (footprint && previewImage && attractionPreview && attractionOrigin) {
-            const position = attractionImagePosition(footprint, previewImage.offset, attractionOrigin.x, attractionOrigin.y)
+            // 設備は placeFacility と同じ前タイル基準、アトラクション/ショップは中心基準
+            const position = placingFacility
+              ? facilityImagePosition(placingFacility, facilityFrame, attractionOrigin.x, attractionOrigin.y)
+              : attractionImagePosition(footprint, previewImage.offset, attractionOrigin.x, attractionOrigin.y)
             attractionPreview.setPosition(position.x, position.y).setVisible(true)
               .setDepth(renderDepthAt('facility', attractionOrigin.x, attractionOrigin.y))
               .setAlpha(valid ? 0.7 : 0.4).setTint(valid ? 0xffffff : 0xff6048)
@@ -994,6 +1280,41 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           }
           drawCursor()
         }
+        // カーソルタイルを覆う設備(複数マス設備は原点以外を指しても対象にする)を探す
+        const facilityCoveringTile = (x: number, y: number) => {
+          for (const [key, placed] of placedFacilities) {
+            const [anchorX, anchorY] = key.split(',').map(Number)
+            if (x >= anchorX && x < anchorX + placed.facility.width
+              && y <= anchorY && y > anchorY - placed.facility.height) {
+              return { anchorX, anchorY, placed }
+            }
+          }
+          return null
+        }
+        const removeFacilityAtCursor = () => {
+          const found = facilityCoveringTile(cursorPosition.x, cursorPosition.y)
+          if (!found) return
+          const { anchorX, anchorY, placed } = found
+          const facility = placed.facility
+          removeFacility(anchorX, anchorY)
+          if (facility.placement === 'building') placedBuildings.delete(facility.id)
+          // 連結系は撤去後に周囲のフレームを組み直す
+          if (facility.placement === 'fence') {
+            refreshFenceTile(anchorX + 1, anchorY)
+            refreshFenceTile(anchorX - 1, anchorY)
+            refreshFenceTile(anchorX, anchorY + 1)
+            refreshFenceTile(anchorX, anchorY - 1)
+          }
+          if (facility.placement === 'pond') {
+            pondNeighbours.forEach(([offsetX, offsetY]) => refreshPondTile(anchorX + offsetX, anchorY + offsetY))
+          }
+          drawCursor()
+        }
+        // 道路・設備どちらの設置モードでも □ でカーソル上の道路と設備を削除する
+        const removeAtCursor = () => {
+          removeRoad()
+          removeFacilityAtCursor()
+        }
         const selectTileAtPointer = (pointer: Phaser.Input.Pointer) => {
           const world = pointer.positionToCamera(camera) as Phaser.Math.Vector2
           const y = Math.floor((world.y - padding) / stepY)
@@ -1044,7 +1365,16 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             setShopDirection(shopDirectionAtPointer(world.x, world.y))
             return
           }
-          if (activeRoadBuildMode || activeAttraction || activeShop) selectTileAtPointer(pointer)
+          if (activeFacility && facilityStep === 'direction') {
+            const world = pointer.positionToCamera(camera) as Phaser.Math.Vector2
+            setFacilityDirection(facilityDirectionAtPointer(world.x, world.y))
+            return
+          }
+          if (activeRoadBuildMode || activeAttraction || activeShop || activeFacility) {
+            const moved = selectTileAtPointer(pointer)
+            // 柵とイケはドラッグで連続して置ける
+            if (moved && pointer.isDown && pointer.button === 0 && isPaintFacility(activeFacility)) placeFacility()
+          }
         })
         this.input.on('pointerup', (pointer: Phaser.Input.Pointer) => {
           if (pointer.button === 0) {
@@ -1053,8 +1383,14 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
               setShopDirection(shopDirectionAtPointer(world.x, world.y))
               confirmShopDirection()
             }
+            else if (activeFacility && facilityStep === 'direction') {
+              const world = pointer.positionToCamera(camera) as Phaser.Math.Vector2
+              setFacilityDirection(facilityDirectionAtPointer(world.x, world.y))
+              finishFacilityDirection()
+            }
             else if (selectTileAtPointer(pointer)) {
               if (activeRoadBuildMode) placeRoad()
+              else if (activeFacility) placeFacility()
               else if (activeShop) placeShop()
               else if (activeAttractionBuildStep === 'body') placeAttraction()
               else placeAttractionAccess()
@@ -1072,21 +1408,25 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         this.events.on('pan', (direction: MenuAction) => {
           if (direction === 'left' || direction === 'right' || direction === 'up' || direction === 'down') {
             if (activeShop && shopStep === 'direction') setShopDirection(directionByPad[direction])
+            else if (activeFacility && facilityStep === 'direction') setFacilityDirection(directionByPad[direction])
             else {
               moveCursor(direction)
               if (confirmHeld && activeRoadBuildMode) placeRoad()
+              if (confirmHeld && isPaintFacility(activeFacility)) placeFacility()
             }
           }
           if (direction === 'confirm') {
             confirmHeld = true
             if (activeRoadBuildMode) placeRoad()
+            else if (activeFacility) facilityStep === 'direction' ? finishFacilityDirection() : placeFacility()
             else if (activeShop) shopStep === 'direction' ? confirmShopDirection() : placeShop()
             else if (activeAttractionBuildStep === 'body') placeAttraction()
             else placeAttractionAccess()
           }
           if (direction === 'confirmRelease') confirmHeld = false
           if (direction === 'cancel' && activeShop && shopStep === 'direction') cancelShopDirection()
-          if (direction === 'remove' && activeRoadBuildMode) removeRoad()
+          if (direction === 'cancel' && activeFacility && facilityStep === 'direction') cancelFacilityDirection()
+          if (direction === 'remove' && (activeRoadBuildMode || (activeFacility && facilityStep === 'body'))) removeAtCursor()
           if (direction === 'zoomIn') changeZoom(game.park.zoomStep)
           if (direction === 'zoomOut') changeZoom(-game.park.zoomStep)
         })
@@ -1125,6 +1465,13 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           confirmHeld = false
           drawCursor()
         })
+        this.events.on('facility-build-mode', (facility: Facility | null) => {
+          if (facilityStep === 'direction') cancelFacilityDirection()
+          facilityDirection = 0
+          activeFacility = facility
+          confirmHeld = false
+          drawCursor()
+        })
         this.events.on('available-cash', (cash: number) => {
           currentCash = cash
           drawCursor()
@@ -1158,6 +1505,10 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
   useEffect(() => {
     phaserGame.current?.scene.getScene('park')?.events.emit('shop-build-mode', shopBuild)
   }, [shopBuild])
+
+  useEffect(() => {
+    phaserGame.current?.scene.getScene('park')?.events.emit('facility-build-mode', facilityBuild)
+  }, [facilityBuild])
 
   useEffect(() => {
     phaserGame.current?.scene.getScene('park')?.events.emit('attraction-build-step', attractionBuildStep)
