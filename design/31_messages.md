@@ -1,6 +1,6 @@
 # メッセージカタログ
 
-原作から抽出した画面文言を、メッセージ ID 順に記載する。
+画面文言をメッセージ ID 順に記載する。
 
 
 ## 一覧
@@ -715,10 +715,3 @@
 |  937 | さめちゃん                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 |  938 | モッチー                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 |  939 | ジャイアントレイ                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-
-
-## 解析リファレンス
-
-- 元データ: `recovery/manifests/messages-raw.json`
-- 復号結果: `recovery/manifests/messages-decoded.json`
-- 復号スクリプト: `tools/analysis/decode_messages.py`

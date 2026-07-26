@@ -1,6 +1,7 @@
 # ミニゲーム
 
 パークへ出かける操作では、4 種類のミニゲームを遊べる。
+ゲームショップとしての設定項目は [ショップ](15_shops.md) に記載する。
 
 
 ## ラッキーショット
@@ -34,9 +35,3 @@
 血液型、星座、占う内容を選ぶ。占う内容は 6 種類から選択し、結果は水晶玉に表示される。
 
 選択は方向キーと ○ ボタンで行う。× ボタンで直前の質問へ戻る。
-
-
-## 解析リファレンス
-
-- ミニゲーム処理: `recovery/code/overlays/SUBGAME1.BIN/`、`recovery/code/overlays/SUBGAME2.BIN/`、`recovery/code/overlays/SUBGAME3.BIN/`、`recovery/code/overlays/SUBGAME4.BIN/`
-- ミニゲームのルール文: `recovery/manifests/messages-decoded.json`
