@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import countries from './config/countries.json'
 import attractions from './config/attractions.json'
 import shops from './config/shops.json'
@@ -9,6 +9,7 @@ import { GamepadController, type MenuAction } from './components/GamepadControll
 import type { ParkMapHandle } from './components/ParkMap'
 import ParkMenu from './components/ParkMenu'
 import { logGameEvent } from './game/log'
+import { forCountry } from './game/availability'
 
 const ParkMap = lazy(() => import('./components/ParkMap'))
 
@@ -74,6 +75,12 @@ export default function App() {
     }
   }, [])
 
+  const selected = countries[selectedCountry]
+  // 国ごとに設置できるものだけを一覧に出す(countryAvailability.json)
+  const countryAttractions = useMemo(() => forCountry(attractions, 'attractions', selected.id), [selected.id])
+  const countryShops = useMemo(() => forCountry(shops, 'shops', selected.id), [selected.id])
+  const countryFacilities = useMemo(() => forCountry(facilities, 'facilities', selected.id), [selected.id])
+
   const action = useCallback((input: MenuAction) => {
     if (screen === 'title') {
       if (input === 'up' || input === 'down') {
@@ -124,7 +131,7 @@ export default function App() {
           setAttractionBuildStep('body')
           setParkMode('attractionBuild')
         }
-        else setAttractionMenuIndex((current) => moveMenu(current, input, attractions.length))
+        else setAttractionMenuIndex((current) => moveMenu(current, input, countryAttractions.length))
         return
       }
       if (parkMode === 'attractionBuild' && input === 'cancel') {
@@ -134,7 +141,7 @@ export default function App() {
       if (parkMode === 'shopMenu') {
         if (input === 'cancel') setParkMode('mainMenu')
         else if (input === 'confirm') setParkMode('shopBuild')
-        else setShopMenuIndex((current) => moveMenu(current, input, shops.length))
+        else setShopMenuIndex((current) => moveMenu(current, input, countryShops.length))
         return
       }
       if (parkMode === 'shopBuild' && input === 'cancel') {
@@ -145,7 +152,7 @@ export default function App() {
       if (parkMode === 'facilityMenu') {
         if (input === 'cancel') setParkMode('mainMenu')
         else if (input === 'confirm') setParkMode('facilityBuild')
-        else setFacilityMenuIndex((current) => moveMenu(current, input, facilities.length))
+        else setFacilityMenuIndex((current) => moveMenu(current, input, countryFacilities.length))
         return
       }
       if (parkMode === 'facilityBuild' && input === 'cancel') {
@@ -167,6 +174,9 @@ export default function App() {
     }
     if (input === 'confirm') {
       logGameEvent('country_selected', { country: countries[selectedCountry].id })
+      setAttractionMenuIndex(0)
+      setShopMenuIndex(0)
+      setFacilityMenuIndex(0)
       setParkMode('map')
       setCash(game.park.initialCash)
       setScreen('park')
@@ -176,9 +186,8 @@ export default function App() {
     const nextCountry = moveCountry(selectedCountry, input)
     if (nextCountry === selectedCountry) return
     setSelectedCountry(nextCountry)
-  }, [screen, selectedCountry, parkMode, mainMenuIndex, roadMenuIndex, shopBuildStep, facilityBuildStep, titleStep, titleIndex, activateTitleItem])
+  }, [screen, selectedCountry, parkMode, mainMenuIndex, roadMenuIndex, shopBuildStep, facilityBuildStep, titleStep, titleIndex, activateTitleItem, countryAttractions, countryShops, countryFacilities])
 
-  const selected = countries[selectedCountry]
 
   useEffect(() => setBuildMessage(''), [parkMode])
 
@@ -188,7 +197,7 @@ export default function App() {
       iconSrc: `/assets/park/menu-icon-${item.icon}.png`,
     }))
     : parkMode === 'attractionMenu'
-      ? attractions.map((attraction) => ({
+      ? countryAttractions.map((attraction) => ({
         id: attraction.id,
         label: attraction.name,
         description: `設置費 ${attraction.constructionCost.toLocaleString()}　${attraction.width} × ${attraction.height} マス`,
@@ -196,7 +205,7 @@ export default function App() {
         enabled: true,
       }))
       : parkMode === 'shopMenu'
-        ? shops.map((shop) => ({
+        ? countryShops.map((shop) => ({
           id: shop.id,
           label: shop.name,
           description: `設置費 ${shop.constructionCost.toLocaleString()}　${shop.width} × ${shop.height} マス`,
@@ -204,7 +213,7 @@ export default function App() {
           enabled: true,
         }))
         : parkMode === 'facilityMenu'
-          ? facilities.map((facility) => ({
+          ? countryFacilities.map((facility) => ({
             id: facility.id,
             label: facility.name,
             description: `${facility.width} × ${facility.height} マス`,
@@ -219,16 +228,16 @@ export default function App() {
       ? '整列歩道設置中'
       : parkMode === 'attractionBuild'
         ? attractionBuildStep === 'body'
-          ? `${attractions[attractionMenuIndex].name} 設置中`
+          ? `${countryAttractions[attractionMenuIndex].name} 設置中`
           : attractionBuildStep === 'entrance' ? '入口設置中' : '出口設置中'
         : parkMode === 'shopBuild'
-          ? shopBuildStep === 'direction' && shops[shopMenuIndex].directions > 1
+          ? shopBuildStep === 'direction' && countryShops[shopMenuIndex].directions > 1
             ? '向きを選んでください'
-            : `${shops[shopMenuIndex].name} 設置中`
+            : `${countryShops[shopMenuIndex].name} 設置中`
           : parkMode === 'facilityBuild'
             ? facilityBuildStep === 'direction'
               ? '向きを選んでください'
-              : `${facilities[facilityMenuIndex].name} 設置中`
+              : `${countryFacilities[facilityMenuIndex].name} 設置中`
             : ''
   const statusBarText = menuItems ? menuItems[menuSelectedIndex]?.description ?? '' : buildMessage || buildModeLabel
 
@@ -290,10 +299,10 @@ export default function App() {
               ref={parkMap}
               country={selected}
               roadBuildMode={parkMode === 'pathBuild' ? 'path' : parkMode === 'queueBuild' || parkMode === 'attractionQueueBuild' ? 'queue' : null}
-              attractionBuild={parkMode === 'attractionBuild' ? attractions[attractionMenuIndex] : null}
+              attractionBuild={parkMode === 'attractionBuild' ? countryAttractions[attractionMenuIndex] : null}
               attractionBuildStep={attractionBuildStep}
-              shopBuild={parkMode === 'shopBuild' ? shops[shopMenuIndex] : null}
-              facilityBuild={parkMode === 'facilityBuild' ? facilities[facilityMenuIndex] : null}
+              shopBuild={parkMode === 'shopBuild' ? countryShops[shopMenuIndex] : null}
+              facilityBuild={parkMode === 'facilityBuild' ? countryFacilities[facilityMenuIndex] : null}
               onFacilityPlaced={(cost) => setCash((current) => current - cost)}
               onFacilityBuildStep={setFacilityBuildStep}
               availableCash={cash}
