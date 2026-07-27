@@ -15,9 +15,30 @@
     "cameraMarginTiles": { "top": 4, "bottom": 1, "side": 4 }
   },
   "input": { "initialRepeatDelayMs": 400, "repeatIntervalMs":  60 },
+  "time": { "defaultSpeedIndex": 1, "framesPerSecond": 60 },
+  "guests": {
+    "admissionFee": 100,
+    "stayDays": 18,
+    "types": [
+      { "id": "kids", "label": "キッズ", "people": 1, "banks": [0, 1], "tilesPerDay": 18 },
+      { "id": "young", "label": "ヤング", "people": 1, "banks": [2, 3], "tilesPerDay": 16 },
+      { "id": "couple", "label": "カップル", "people": 2, "banks": [4, 5], "tilesPerDay": 14 },
+      { "id": "family", "label": "ファミリー", "people": 3, "banks": [6, 7], "tilesPerDay": 12 }
+    ]
+  },
+  "bus": {
+    "intervalDays": 2,
+    "capacity": 15,
+    "tilesPerDay": 30,
+    "stopDays": 0.6,
+    "boardsPerDay": 42,
+    "anchor": { "x": 2, "y": 16 },
+    "size": { "width": 32, "height": 32 },
+    "gauge": { "width": 24, "height": 4, "offsetY": 2 }
+  },
   "speeds": [
-    { "id": "slow", "label": "低速", "ratio": 1 },
-    { "id": "normal", "label": "標準", "ratio": 2 },
-    { "id": "fast", "label": "高速", "ratio": 4 }
+    { "id": "slow", "label": "低速", "secondsPerDay": 6 },
+    { "id": "normal", "label": "標準", "secondsPerDay": 4 },
+    { "id": "fast", "label": "高速", "secondsPerDay": 2 }
   ]
 }

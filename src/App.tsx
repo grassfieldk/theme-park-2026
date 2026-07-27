@@ -10,6 +10,7 @@ import type { ParkMapHandle } from './components/ParkMap'
 import ParkMenu from './components/ParkMenu'
 import { logGameEvent } from './game/log'
 import { forCountry } from './game/availability'
+import { dateFromElapsed, formatDate, gameDaysPerMs } from './game/clock'
 
 const ParkMap = lazy(() => import('./components/ParkMap'))
 
@@ -62,6 +63,40 @@ export default function App() {
   const [titleStep, setTitleStep] = useState<'menu' | 'mode'>('menu')
   const [titleIndex, setTitleIndex] = useState(0)
   const [buildMessage, setBuildMessage] = useState('')
+  const [speedIndex, setSpeedIndex] = useState(game.time.defaultSpeedIndex)
+  const [guestCount, setGuestCount] = useState(0)
+  const [clock, setClock] = useState(() => dateFromElapsed(0))
+  const elapsedDays = useRef(0)
+
+  // パーク画面にいる間だけ日付を進める。表示は日が変わったときだけ更新する
+  const secondsPerDay = game.speeds[speedIndex].secondsPerDay
+  useEffect(() => {
+    if (screen !== 'park') return
+    const daysPerMs = gameDaysPerMs(secondsPerDay)
+    // 来園者の演算と同じ刻み幅・同じ上限で進めることで、日付と園内の動きがずれないようにする
+    const stepMs = 1000 / game.time.framesPerSecond
+    const maxPendingMs = stepMs * 15
+    let frame = 0
+    let previous = performance.now()
+    let pending = 0
+    let shownDay = -1
+    const tick = (now: number) => {
+      frame = requestAnimationFrame(tick)
+      pending = Math.min(pending + (now - previous), maxPendingMs)
+      previous = now
+      if (pending < stepMs) return
+      const steps = Math.floor(pending / stepMs)
+      pending -= steps * stepMs
+      elapsedDays.current += steps * stepMs * daysPerMs
+      const day = Math.floor(elapsedDays.current)
+      if (day !== shownDay) {
+        shownDay = day
+        setClock(dateFromElapsed(elapsedDays.current))
+      }
+    }
+    frame = requestAnimationFrame(tick)
+    return () => cancelAnimationFrame(frame)
+  }, [screen, secondsPerDay])
 
   const activateTitleItem = useCallback((step: 'menu' | 'mode', index: number) => {
     if (!titleMenus[step][index]?.enabled) return
@@ -177,6 +212,9 @@ export default function App() {
       setAttractionMenuIndex(0)
       setShopMenuIndex(0)
       setFacilityMenuIndex(0)
+      elapsedDays.current = 0
+      setClock(dateFromElapsed(0))
+      setGuestCount(0)
       setParkMode('map')
       setCash(game.park.initialCash)
       setScreen('park')
@@ -322,11 +360,27 @@ export default function App() {
               onShopBuildStep={setShopBuildStep}
               onShopComplete={() => setParkMode('shopMenu')}
               onBuildMessage={setBuildMessage}
+              secondsPerDay={secondsPerDay}
+              onAdmissionPaid={(fee) => setCash((current) => current + fee)}
+              onGuestCountChange={setGuestCount}
             />
           </Suspense>
           <div className="park-status-overlay">
-            <span>{game.park.startDate.replaceAll('-', ' 年 ').replace(/ 年 (\d+)$/, ' 月 $1 日')}</span>
+            <span>{formatDate(clock)}</span>
             <span>資金: {cash.toLocaleString()}</span>
+            <span>来園者: {guestCount.toLocaleString()}</span>
+            <span className="park-speed">
+              {game.speeds.map((speed, index) => (
+                <button
+                  key={speed.id}
+                  type="button"
+                  className={index === speedIndex ? 'park-speed-button selected' : 'park-speed-button'}
+                  onClick={() => setSpeedIndex(index)}
+                >
+                  {speed.label}
+                </button>
+              ))}
+            </span>
           </div>
           {menuItems ? (
             <ParkMenu

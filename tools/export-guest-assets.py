@@ -1,0 +1,216 @@
+"""原作の来園者・スタッフのスプライトを Web 用 PNG として出力する。
+
+所在はコードから確定した(recovery/specs/guest-sprites.md)。
+
+- 見た目のバンク表は `DAT_8010e244`(main EXE、4 byte × 54)。各要素は UNPACK リソース
+  402 / 403 / 404 をロードした先(0x80012458 / 0x80019248 / 0x80020f10)を指す。
+- `FUN_801e6204`(D2MAIN)が `バンク番号 = 種別 - 1` を書き、
+  `func_0x800b06d4(DAT_8010e244[バンク番号], ハンドル, 0, 0)` でスプライトを結び付ける。
+- テクスチャは国別に `TEX/PEOPLEA/B/C.BIN` を VRAM へ展開したもの(`FUN_800ae9a4`)。
+  日本・インド・中国・オーストラリア = A、アメリカ・ブラジル・イギリス・フランス・ロシア = B、
+  エジプト = C。
+- バンク先頭の 4 グループが 4 方向の歩行(各 4 コマ)。右向きは左向きの UV を
+  descriptor の flags 0x0100(左右反転)で使い回す。
+- 来園者は種別 1〜8 = バンク 0〜7。`DAT_801facb7`(種別 → 人数)が 1,1,1,1,2,2,3,3。
+"""
+
+from __future__ import annotations
+
+import json
+import struct
+from pathlib import Path
+
+from PIL import Image
+
+ROOT = Path(__file__).resolve().parent.parent
+EXE = ROOT / "recovery" / "disc" / "SLPS_008.10"
+PAK = ROOT / "recovery" / "disc" / "TEX" / "UNPACK.PAK"
+MANIFEST = ROOT / "recovery" / "manifests" / "unpack-pak.json"
+PEOPLE_DIR = ROOT / "recovery" / "disc" / "TEX"
+DESTINATION = ROOT / "public" / "assets" / "park" / "guests"
+CONFIG = ROOT / "src" / "config" / "guestSprites.json"
+
+BANK_TABLE_VADDR = 0x8010E244
+BANK_COUNT = 54
+# リソース番号 → ロード先アドレス(FUN_800ae9a4 の FUN_800ae7bc 呼び出し)
+RESOURCE_ADDRESS = {402: 0x80012458, 403: 0x80019248, 404: 0x80020F10}
+# 国 → PEOPLE ファイル(FUN_800ae9a4 の分岐)
+PEOPLE_BY_COUNTRY = {
+    "japan": "A", "india": "A", "china": "A", "australia": "A",
+    "america": "B", "brazil": "B", "uk": "B", "france": "B", "russia": "B",
+    "egypt": "C",
+}
+WALK_GROUPS = 4
+WALK_FRAMES = 4
+FLIP_X = 0x0100
+# 来園者は種別 1〜8 = バンク 0〜7。`DAT_801facb7`(種別 → 人数)が 1,1,1,1,2,2,3,3 で、
+# キッズ・ヤング = 1 人、カップル = 2 人、ファミリー = 3 人に対応する。
+# バンク 8 以降はスタッフやアウトローなど別のキャラクターなのでここでは出力しない。
+GUEST_BANKS = range(8)
+
+
+def exe_offset(vaddr: int) -> int:
+    return 0x800 + vaddr - 0x800A7000
+
+
+def psx_color(value: int) -> tuple[int, int, int, int]:
+    if value == 0:
+        return 0, 0, 0, 0
+    return (
+        (value & 0x1F) * 255 // 31,
+        ((value >> 5) & 0x1F) * 255 // 31,
+        ((value >> 10) & 0x1F) * 255 // 31,
+        255,
+    )
+
+
+def build_vram(people: bytes) -> list[int]:
+    """PEOPLE?.BIN の転送ブロックを VRAM(1024 × 512 の 16bit)へ並べる。"""
+    vram = [0] * (1024 * 512)
+    offset = 4
+    while offset + 12 <= len(people):
+        header, x, y, width, height = struct.unpack_from("<I4H", people, offset)
+        size = header & 0xFFFFFF
+        if size < 12 or offset + size > len(people):
+            break
+        expected = width * height * 2
+        if expected and offset + 12 + expected <= len(people):
+            values = struct.unpack_from(f"<{width * height}H", people, offset + 12)
+            for row in range(height):
+                start = (y + row) * 1024 + x
+                vram[start : start + width] = values[row * width : (row + 1) * width]
+        offset += size
+    return vram
+
+
+def read_part(bank: bytes, vram: list[int], offset: int):
+    flags, offset_x, offset_y, texture_page = struct.unpack_from("<HhhH", bank, offset)
+    u, v, width, height = bank[offset + 8], bank[offset + 9], bank[offset + 10], bank[offset + 11]
+    clut = struct.unpack_from("<H", bank, offset + 12)[0]
+    depth = (texture_page >> 7) & 3
+    pixels_per_word = 4 if depth == 0 else 2
+    texture_x = (texture_page & 0xF) * 64 + u // pixels_per_word
+    texture_y = (256 if texture_page & 0x10 else 0) + v
+    clut_x, clut_y = (clut & 0x3F) * 16, clut >> 6
+    palette = [psx_color(vram[clut_y * 1024 + clut_x + index]) for index in range(16 if depth == 0 else 256)]
+    image = Image.new("RGBA", (max(1, width), max(1, height)))
+    out = image.load()
+    for py in range(height):
+        for px in range(width):
+            word = vram[(texture_y + py) * 1024 + texture_x + px // pixels_per_word]
+            shift = (px % pixels_per_word) * (4 if depth == 0 else 8)
+            out[px, py] = palette[(word >> shift) & (0xF if depth == 0 else 0xFF)]
+    # 右向きは左向きと同じ UV を左右反転して使う(flags の 0x0100)
+    if flags & FLIP_X:
+        image = image.transpose(Image.FLIP_LEFT_RIGHT)
+    return flags, offset_x, offset_y, image
+
+
+def compose_frame(bank: bytes, vram: list[int], descriptor_offset: int):
+    parts = []
+    offset = descriptor_offset
+    for _guard in range(32):
+        flags, offset_x, offset_y, image = read_part(bank, vram, offset)
+        parts.append((offset_x, offset_y, image))
+        if flags & 0x8000:
+            break
+        offset += 20
+    left = min(-offset_x for offset_x, _oy, _im in parts)
+    top = min(-offset_y for _ox, offset_y, _im in parts)
+    right = max(-offset_x + im.width for offset_x, _oy, im in parts)
+    bottom = max(-offset_y + im.height for _ox, offset_y, im in parts)
+    output = Image.new("RGBA", (max(1, right - left), max(1, bottom - top)))
+    # 部品は奥から手前の順に並んでいる(ファミリーなら向きに応じて子供が先頭または末尾)
+    for offset_x, offset_y, image in parts:
+        output.alpha_composite(image, (-offset_x - left, -offset_y - top))
+    return output, -left, -top
+
+
+def read_banks(exe: bytes, resources: dict[int, bytes]):
+    """バンク表を読み、(リソース番号, バンク先頭オフセット) を返す。"""
+    banks = []
+    for index in range(BANK_COUNT):
+        pointer = struct.unpack_from("<I", exe, exe_offset(BANK_TABLE_VADDR) + index * 4)[0]
+        found = None
+        for resource_id, address in RESOURCE_ADDRESS.items():
+            if address <= pointer < address + len(resources[resource_id]):
+                found = (resource_id, pointer - address)
+        banks.append(found)
+    return banks
+
+
+def main() -> None:
+    exe = EXE.read_bytes()
+    pak = PAK.read_bytes()
+    entries = {entry["id"]: entry for entry in json.loads(MANIFEST.read_text(encoding="utf-8"))["resources"]}
+    resources = {
+        resource_id: pak[entries[resource_id]["offset"] : entries[resource_id]["offset"] + entries[resource_id]["size"]]
+        for resource_id in RESOURCE_ADDRESS
+    }
+    banks = read_banks(exe, resources)
+
+    DESTINATION.mkdir(parents=True, exist_ok=True)
+    for previous in DESTINATION.glob("*.png"):
+        previous.unlink()
+
+    sets = {}
+    for people_set in sorted(set(PEOPLE_BY_COUNTRY.values())):
+        vram = build_vram((PEOPLE_DIR / f"PEOPLE{people_set}.BIN").read_bytes())
+        exported = []
+        for index, bank in enumerate(banks):
+            if bank is None or index not in GUEST_BANKS:
+                continue
+            resource_id, start = bank
+            data = resources[resource_id]
+            group_count = struct.unpack_from("<H", data, start)[0]
+            if group_count < WALK_GROUPS:
+                continue
+            group_offsets = [struct.unpack_from("<H", data, start + 2 + g * 2)[0] for g in range(group_count)]
+            body = data[start:]
+            # 4 方向 × 4 コマを 1 枚のシートにまとめる(リクエスト数を抑えるため)
+            composed = []
+            for direction in range(WALK_GROUPS):
+                table = group_offsets[direction]
+                frame_count = (group_offsets[direction + 1] - table) // 4
+                if frame_count != WALK_FRAMES:
+                    composed = []
+                    break
+                for frame in range(frame_count):
+                    descriptor = struct.unpack_from("<H", body, table + frame * 4 + 2)[0]
+                    composed.append(compose_frame(body, vram, descriptor))
+            if not composed:
+                continue
+            anchor_x = max(anchor for _im, anchor, _ay in composed)
+            anchor_y = max(anchor for _im, _ax, anchor in composed)
+            cell_width = max(anchor_x + image.width - ax for image, ax, _ay in composed)
+            cell_height = max(anchor_y + image.height - ay for image, _ax, ay in composed)
+            sheet = Image.new("RGBA", (cell_width * WALK_FRAMES, cell_height * WALK_GROUPS))
+            for position, (image, ax, ay) in enumerate(composed):
+                column = position % WALK_FRAMES
+                row = position // WALK_FRAMES
+                sheet.alpha_composite(image, (column * cell_width + anchor_x - ax, row * cell_height + anchor_y - ay))
+            sheet.save(DESTINATION / f"{people_set.lower()}-{index}.png")
+            exported.append({
+                "bank": index,
+                "frameWidth": cell_width,
+                "frameHeight": cell_height,
+                "anchorX": anchor_x,
+                "anchorY": anchor_y,
+            })
+        sets[people_set.lower()] = exported
+        print(f"PEOPLE{people_set}: {len(exported)} banks")
+
+    config = {
+        "_note": [
+            "来園者のスプライト。set は国ごとの PEOPLE ファイル、bank は見た目の種類。",
+            "1 枚のシートに 4 行(方向)× 4 列(コマ)。方向は 0=下 1=上 2=左 3=右。",
+            "画像は /assets/park/guests/{set}-{bank}.png。anchorX/anchorY は足元の基準点。",
+        ],
+        "peopleSetByCountry": PEOPLE_BY_COUNTRY,
+        "sets": sets,
+    }
+    CONFIG.write_text(json.dumps(config, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+
+
+if __name__ == "__main__":
+    main()

@@ -36,6 +36,9 @@ h1 { margin: 8px 0 12px; font-size: 30px; }
 .park-map canvas { display: block; }
 .map-loading { display: grid; place-items: center; color: #d2dbd2; }
 .park-status-overlay { position: absolute; top: 12px; right: 12px; display: flex; gap: 20px; border: 1px solid rgb(132 170 180 / 45%); border-radius: 3px; background: rgb(12 26 40 / 88%); backdrop-filter: blur(6px); padding: 8px 12px; color: #fff; font-size: 14px; }
+.park-speed { display: flex; gap: 4px; }
+.park-speed-button { border: 1px solid rgb(132 170 180 / 45%); border-radius: 3px; background: transparent; padding: 0 8px; color: #b9c6cc; cursor: pointer; font-size: 12px; line-height: 20px; }
+.park-speed-button.selected { border-color: rgb(232 209 117 / 70%); background: rgb(64 118 158 / 75%); color: #fff; }
 .park-menu { position: absolute; bottom: 44px; left: 12px; display: flex; flex-direction: column; color: #fff; }
 .park-menu-items { display: flex; flex-direction: column; width: 224px; max-height: calc(100vh - 140px); border: 1px solid rgb(132 170 180 / 45%); border-radius: 3px; background: rgb(12 26 40 / 88%); backdrop-filter: blur(6px); box-shadow: 0 6px 18px rgb(0 0 0 / 35%); overflow: hidden auto; }
 .park-menu-item { display: flex; align-items: center; gap: 8px; border: 0; background: transparent; padding: 6px; color: #f2edd8; cursor: pointer; font-size: 13px; line-height: 1.25; text-align: left; transition: background-color .12s ease; }

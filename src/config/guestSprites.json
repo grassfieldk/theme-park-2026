@@ -1,0 +1,195 @@
+{
+ "_note": [
+  "来園者のスプライト。set は国ごとの PEOPLE ファイル、bank は見た目の種類。",
+  "1 枚のシートに 4 行(方向)× 4 列(コマ)。方向は 0=下 1=上 2=左 3=右。",
+  "画像は /assets/park/guests/{set}-{bank}.png。anchorX/anchorY は足元の基準点。"
+ ],
+ "peopleSetByCountry": {
+  "japan": "A",
+  "india": "A",
+  "china": "A",
+  "australia": "A",
+  "america": "B",
+  "brazil": "B",
+  "uk": "B",
+  "france": "B",
+  "russia": "B",
+  "egypt": "C"
+ },
+ "sets": {
+  "a": [
+   {
+    "bank": 0,
+    "frameWidth": 18,
+    "frameHeight": 22,
+    "anchorX": 8,
+    "anchorY": 21
+   },
+   {
+    "bank": 1,
+    "frameWidth": 18,
+    "frameHeight": 22,
+    "anchorX": 8,
+    "anchorY": 21
+   },
+   {
+    "bank": 2,
+    "frameWidth": 18,
+    "frameHeight": 25,
+    "anchorX": 8,
+    "anchorY": 24
+   },
+   {
+    "bank": 3,
+    "frameWidth": 18,
+    "frameHeight": 25,
+    "anchorX": 8,
+    "anchorY": 24
+   },
+   {
+    "bank": 4,
+    "frameWidth": 26,
+    "frameHeight": 25,
+    "anchorX": 13,
+    "anchorY": 24
+   },
+   {
+    "bank": 5,
+    "frameWidth": 26,
+    "frameHeight": 25,
+    "anchorX": 13,
+    "anchorY": 24
+   },
+   {
+    "bank": 6,
+    "frameWidth": 28,
+    "frameHeight": 28,
+    "anchorX": 14,
+    "anchorY": 25
+   },
+   {
+    "bank": 7,
+    "frameWidth": 28,
+    "frameHeight": 28,
+    "anchorX": 14,
+    "anchorY": 25
+   }
+  ],
+  "b": [
+   {
+    "bank": 0,
+    "frameWidth": 18,
+    "frameHeight": 22,
+    "anchorX": 8,
+    "anchorY": 21
+   },
+   {
+    "bank": 1,
+    "frameWidth": 18,
+    "frameHeight": 22,
+    "anchorX": 8,
+    "anchorY": 21
+   },
+   {
+    "bank": 2,
+    "frameWidth": 18,
+    "frameHeight": 25,
+    "anchorX": 8,
+    "anchorY": 24
+   },
+   {
+    "bank": 3,
+    "frameWidth": 18,
+    "frameHeight": 25,
+    "anchorX": 8,
+    "anchorY": 24
+   },
+   {
+    "bank": 4,
+    "frameWidth": 26,
+    "frameHeight": 25,
+    "anchorX": 13,
+    "anchorY": 24
+   },
+   {
+    "bank": 5,
+    "frameWidth": 26,
+    "frameHeight": 25,
+    "anchorX": 13,
+    "anchorY": 24
+   },
+   {
+    "bank": 6,
+    "frameWidth": 28,
+    "frameHeight": 28,
+    "anchorX": 14,
+    "anchorY": 25
+   },
+   {
+    "bank": 7,
+    "frameWidth": 28,
+    "frameHeight": 28,
+    "anchorX": 14,
+    "anchorY": 25
+   }
+  ],
+  "c": [
+   {
+    "bank": 0,
+    "frameWidth": 18,
+    "frameHeight": 22,
+    "anchorX": 8,
+    "anchorY": 21
+   },
+   {
+    "bank": 1,
+    "frameWidth": 18,
+    "frameHeight": 22,
+    "anchorX": 8,
+    "anchorY": 21
+   },
+   {
+    "bank": 2,
+    "frameWidth": 18,
+    "frameHeight": 25,
+    "anchorX": 8,
+    "anchorY": 24
+   },
+   {
+    "bank": 3,
+    "frameWidth": 18,
+    "frameHeight": 25,
+    "anchorX": 8,
+    "anchorY": 24
+   },
+   {
+    "bank": 4,
+    "frameWidth": 26,
+    "frameHeight": 25,
+    "anchorX": 13,
+    "anchorY": 24
+   },
+   {
+    "bank": 5,
+    "frameWidth": 26,
+    "frameHeight": 25,
+    "anchorX": 13,
+    "anchorY": 24
+   },
+   {
+    "bank": 6,
+    "frameWidth": 28,
+    "frameHeight": 28,
+    "anchorX": 14,
+    "anchorY": 25
+   },
+   {
+    "bank": 7,
+    "frameWidth": 28,
+    "frameHeight": 28,
+    "anchorX": 14,
+    "anchorY": 25
+   }
+  ]
+ }
+}

@@ -1,10 +1,13 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react'
+
 import Phaser from 'phaser'
 import attractions from '../config/attractions.json'
 import shops from '../config/shops.json'
 import facilities from '../config/facilities.json'
 import game from '../config/game.json'
 import type { MenuAction } from './GamepadController'
+import guestSprites from '../config/guestSprites.json'
+import { gameDaysPerMs } from '../game/clock'
 
 type Country = {
   id: string
@@ -28,6 +31,9 @@ type Props = {
   onShopComplete: () => void
   onFacilityPlaced: (cost: number) => void
   onFacilityBuildStep: (step: 'body' | 'direction') => void
+  secondsPerDay: number
+  onAdmissionPaid: (fee: number) => void
+  onGuestCountChange: (count: number) => void
   onBuildMessage: (message: string) => void
 }
 
@@ -38,6 +44,7 @@ export type ParkMapHandle = {
 type Attraction = (typeof attractions)[number]
 type Shop = (typeof shops)[number]
 type Facility = (typeof facilities)[number]
+type GuestBank = { bank: number, frameWidth: number, frameHeight: number, anchorX: number, anchorY: number }
 type Footprint = { width: number, height: number, constructionCost: number }
 type AttractionBuildStep = 'body' | 'entrance' | 'exit'
 type RoadBuildMode = 'path' | 'queue' | null
@@ -72,9 +79,13 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
   onShopComplete,
   onFacilityPlaced,
   onFacilityBuildStep,
+  secondsPerDay,
+  onAdmissionPaid,
+  onGuestCountChange,
   onBuildMessage,
 }: Props, ref) {
   const host = useRef<HTMLDivElement>(null)
+  const initialSecondsPerDay = useRef(secondsPerDay)
   const phaserGame = useRef<Phaser.Game | null>(null)
   const attractionPlacedHandler = useRef(onAttractionPlaced)
   const attractionCancelledHandler = useRef(onAttractionPlacementCancelled)
@@ -84,6 +95,8 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
   const shopCompleteHandler = useRef(onShopComplete)
   const facilityPlacedHandler = useRef(onFacilityPlaced)
   const facilityStepHandler = useRef(onFacilityBuildStep)
+  const admissionHandler = useRef(onAdmissionPaid)
+  const guestCountHandler = useRef(onGuestCountChange)
   const buildMessageHandler = useRef(onBuildMessage)
   attractionPlacedHandler.current = onAttractionPlaced
   attractionCancelledHandler.current = onAttractionPlacementCancelled
@@ -93,6 +106,8 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
   shopCompleteHandler.current = onShopComplete
   facilityPlacedHandler.current = onFacilityPlaced
   facilityStepHandler.current = onFacilityBuildStep
+  admissionHandler.current = onAdmissionPaid
+  guestCountHandler.current = onGuestCountChange
   buildMessageHandler.current = onBuildMessage
 
   useImperativeHandle(ref, () => ({
@@ -110,9 +125,32 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
     const worldHeight = gridHeight * stepY + padding * 2
     const point = (x: number, y: number) => ({ x: padding + x * stepX + y * rowOffsetX, y: padding + y * stepY })
 
+    const peopleSetByCountry = guestSprites.peopleSetByCountry as Record<string, string>
+    const peopleSet = (peopleSetByCountry[country.id] ?? 'A').toLowerCase()
+    const guestBanks = (guestSprites.sets as Record<string, GuestBank[]>)[peopleSet] ?? []
+    const guestBankById = new Map(guestBanks.map((bank) => [bank.bank, bank]))
+
+    // 演算は画面の更新間隔と切り離し、この刻み幅で必要な回数だけ進める。
+    // どの環境でも 1 回あたりの進む量が同じになり、毎秒の回数も一定になる
+    const stepMs = 1000 / game.time.framesPerSecond
+    // 画面を離れていた後などに一気に取り戻そうとして固まらないよう、1 回の更新で進める上限を設ける
+    const maxStepsPerFrame = 15
+
     class ParkScene extends Phaser.Scene {
+      // create() 内のクロージャに来園者の更新処理を持たせ、update() から呼ぶ
+      simulate: (deltaMs: number) => void = () => {}
+      private pendingMs = 0
+
       constructor() {
         super('park')
+      }
+
+      update(_time: number, delta: number) {
+        this.pendingMs = Math.min(this.pendingMs + delta, stepMs * maxStepsPerFrame)
+        while (this.pendingMs >= stepMs) {
+          this.pendingMs -= stepMs
+          this.simulate(stepMs)
+        }
       }
 
       preload() {
@@ -126,6 +164,13 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           for (let frame = 0; frame < facility.frames; frame += 1) {
             this.load.image(`facility-${facility.id}-${frame}`, `${facility.assetBase}-${frame}.png`)
           }
+        })
+        // 来園者は国ごとの PEOPLE セットを使う。1 枚に 4 方向 × 4 コマ
+        guestBanks.forEach((bank) => {
+          this.load.spritesheet(`guest-${bank.bank}`, `/assets/park/guests/${peopleSet}-${bank.bank}.png`, {
+            frameWidth: bank.frameWidth,
+            frameHeight: bank.frameHeight,
+          })
         })
         for (let index = 0; index < 13; index += 1) {
           this.load.image(`build-base-frame-${index}`, `/assets/park/build-base-frame-${index}.png`)
@@ -183,6 +228,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         let facilityStep: 'body' | 'direction' = 'body'
         let pendingFacility: { x: number, y: number } | null = null
         let currentCash = availableCash
+        let daysPerMs = gameDaysPerMs(initialSecondsPerDay.current)
         let confirmHeld = false
         const ground = this.add.renderTexture(0, 0, worldWidth, worldHeight).setOrigin(0)
         const { x: left, y: top, width, height } = country.map
@@ -212,6 +258,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           overlay: 400_000,
         } as const
         type RenderLayer = keyof typeof layerDepth
+        // 重ね順は下(y が大きい)ほど手前で、同じ行なら左(x が小さい)ほど手前
         const positionDepthAt = (x: number, y: number) => 10 + gridWidth * 7 + y * 200 - x * 7
         const renderDepthAt = (layer: RenderLayer, x: number, y: number) => layerDepth[layer] + positionDepthAt(x, y)
         const depthAt = (x: number, y: number) => -positionDepthAt(x, y)
@@ -240,8 +287,8 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         for (let y = 0; y < gridHeight; y += 1) {
           for (let x = 0; x < gridWidth; x += 1) {
             const entranceTile = entranceTileKey(x, y)
-            const isBusStop = y === gateRow + 5 && x === gateCenter
-            if (!isBusStop) queue('ground-tile', x, y)
+            const isGateBarrierTile = y === gateRow + 5 && x === gateCenter
+            if (!isGateBarrierTile) queue('ground-tile', x, y)
             if (entranceTile) queue(entranceTile, x, y)
             if (x < left || x > right || y < top || y > bottom) continue
             if (y === top && x === left) queue('border-top-left', x, y)
@@ -273,7 +320,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         queue('gate-left-roof', gateLeft, gateRow + 1, leftDepth, 13, 64)
 
         queue('gate-sign-base', gateLeft + 2, gateRow + 1, depthAt(gateLeft + 2, gateRow + 1) - 1, -4, 20)
-        queue('entrance-special-50', gateCenter, gateRow + 3, depthAt(gateCenter, gateRow + 3) - 1, -7, 5)
+        queue('entrance-special-50', gateCenter, gateRow + 3, depthAt(gateCenter, gateRow + 3) - 1, -10, 8)
         queue('entrance-background-3', gateCenter, gateRow + 5, depthAt(gateCenter, gateRow + 5) + 7)
 
         commands.sort((a, b) => b.depth - a.depth || a.order - b.order)
@@ -307,6 +354,9 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         const queueMaskByState = [0, 3, 12, 5, 6, 10, 9, 4, 8, 1, 2, 0, 0]
         const queueFrameByState = [13, 0, 1, 2, 3, 4, 5, 1, 1, 0, 0, 0, 6]
         const roads = new Set<string>()
+        // ショップ設置時に自動で敷かれる道。見た目と接続は通常の歩道と同じだが、
+        // 通るのはそのショップを利用する客だけなので、ふだんの歩行では通り道にしない
+        const shopRoads = new Set<string>()
         const roadImages = new Map<string, Phaser.GameObjects.Image>()
         const queueRoads = new Set<string>()
         const queueStates = new Map<string, number>()
@@ -364,8 +414,9 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         const redrawRoadTiles = (x: number, y: number) => {
           const affectedTiles = [[x, y], [x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]]
           affectedTiles.forEach(([tileX, tileY]) => {
-            if (!isBuildableTile(tileX, tileY) && !isLockedEntranceTile(tileX, tileY)) return
             const key = tileKey(tileX, tileY)
+            // ショップ前の道は敷地扱い(建設不可)だが、歩道としての絵は描く
+            if (!isBuildableTile(tileX, tileY) && !isLockedEntranceTile(tileX, tileY) && !shopRoads.has(key)) return
             const connected = roads.has(key) || isLockedEntranceTile(tileX, tileY)
             const currentImage = roadImages.get(key)
             if (!connected) {
@@ -1084,8 +1135,9 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           shopArrow.lineStyle(1, 0xffe36e, 0.85)
           shopArrow.strokePoints(arrow(), true, true)
         }
-        // 設置完了時、ショップ中心から向いている方向へ footprint 前端まで通常歩道を敷く
-        // (5×5 なら中心を含め 3 マス)。敷地内タイルは占有を解除して歩道として描画する
+        // 設置完了時、ショップ中心から向いている方向へ footprint 前端まで歩道を敷く
+        // (5×5 なら中心を含め 3 マス)。この道はショップの敷地の一部なので占有マークは残したまま、
+        // 見た目と道のつながりだけ歩道として扱う
         const layShopWalkway = (shop: Shop, shopX: number, shopY: number, direction: number) => {
           const step = { 0: { x: 0, y: 1 }, 1: { x: 0, y: -1 }, 2: { x: -1, y: 0 }, 3: { x: 1, y: 0 } }[direction] ?? { x: 0, y: 1 }
           const centerX = shopX + Math.floor(shop.width / 2)
@@ -1095,8 +1147,8 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           for (let i = 0; i <= reach; i += 1) {
             const tileX = centerX + step.x * i
             const tileY = centerY + step.y * i
-            occupiedByAttraction.delete(tileKey(tileX, tileY))
             roads.add(tileKey(tileX, tileY))
+            shopRoads.add(tileKey(tileX, tileY))
             laid.push([tileX, tileY])
           }
           laid.forEach(([tileX, tileY]) => {
@@ -1232,6 +1284,8 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         const removeRoad = () => {
           if (!isBuildableTile(cursorPosition.x, cursorPosition.y)) return
           const key = tileKey(cursorPosition.x, cursorPosition.y)
+          // ショップ前の道はショップの敷地なので、道路の撤去では消せない
+          if (shopRoads.has(key)) return
           if (roads.delete(key)) {
             redrawRoadTiles(cursorPosition.x, cursorPosition.y)
             redrawQueueTiles(cursorPosition.x, cursorPosition.y)
@@ -1476,6 +1530,405 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           currentCash = cash
           drawCursor()
         })
+        this.events.on('seconds-per-day', (value: number) => { daysPerMs = gameDaysPerMs(value) })
+
+        // ---- 来園者 ----
+        // バスはゲート下の道路(busRow)を走って busHaltX で停まり、
+        // 来園者は U 字路中央下の看板マス(busStop)に並んで乗り降りする
+        const busRow = gateRow + 4
+        const busStop = { x: gateCenter, y: gateRow + 3 }
+        const busHaltX = busStop.x - 1
+        // U 字路(固定のゲート構造)の中央下のマス。バスから降りた客はここに現れる
+        const gateCrossing = { x: gateCenter, y: gateRow + 2 }
+        const guestConfig = game.guests
+        const busConfig = game.bus
+        const isSignTile = (x: number, y: number) => x === busStop.x && y === busStop.y
+
+        // 来園者は 4 つの段階を一方向に進む。
+        // walking(マス目を歩く) → queued(看板前で待つ) → toSign(看板へ) → toBus(バスへ乗り消える)
+        type GuestPhase = 'walking' | 'queued' | 'toSign' | 'toBus'
+        type Guest = {
+          type: number
+          bank: GuestBank
+          // 1 日あたり何マス歩くか。種類ごとの設定値をそのまま持つ
+          tilesPerDay: number
+          phase: GuestPhase
+          // walking 用。マス間を progress(0〜1)で補間する
+          fromX: number
+          fromY: number
+          toX: number
+          toY: number
+          progress: number
+          previousX: number
+          previousY: number
+          // walking 以外で使う自由座標と、待ち行列の何番目か
+          queueX: number
+          queueY: number
+          queueSlot: number
+          facing: number
+          walked: number
+          paid: boolean
+          leaveAtDay: number
+          image: Phaser.GameObjects.Sprite
+        }
+        const guests: Guest[] = []
+        let elapsedDays = 0
+
+        const guestNeighbours = [{ x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: -1 }]
+        const wideAreaCorners = [[0, 0], [-1, 0], [0, -1], [-1, -1]]
+        type Walkable = (x: number, y: number) => boolean
+        // 入園済み(paid)で帰宅中でない客は、ゲート構造にも看板マスにも戻らない。
+        // ショップ前の道はそのショップを利用する客だけが入るので、ここでは歩ける場所に含めない
+        const walkableFor = (guest: Guest, leaving: boolean): Walkable => {
+          const allowGate = !guest.paid || leaving
+          return (x, y) => {
+            const key = tileKey(x, y)
+            return (
+              (roads.has(key) && !shopRoads.has(key))
+              || (allowGate && isLockedEntranceTile(x, y))
+              || (leaving && isSignTile(x, y))
+            )
+          }
+        }
+        // 現在地を含む 2×2 の4マスが全部歩けるブロックが1つでもあれば、広場や幅の広い道にいるとみなす。
+        // 分岐点は斜めに他の道が接するだけで周囲マスの数は増えるので、正方形が埋まっているかで見る
+        const isWideArea = (x: number, y: number, walkable: Walkable) => (
+          wideAreaCorners.some(([ox, oy]) => (
+            walkable(x + ox, y + oy) && walkable(x + ox + 1, y + oy)
+            && walkable(x + ox, y + oy + 1) && walkable(x + ox + 1, y + oy + 1)
+          ))
+        )
+        // 進行方向をスプライトの向きに直す(0=下 1=上 2=左 3=右)。動いていなければ下向き
+        const directionOf = (dx: number, dy: number) => {
+          if (Math.abs(dx) >= Math.abs(dy)) return dx > 0 ? 3 : dx < 0 ? 2 : 0
+          return dy > 0 ? 0 : 1
+        }
+
+        // 待ち行列は看板マスを空け、先頭が左右 1 マス、以降 0.5 マス間隔で交互に外へ広がる。
+        // マップの端に達したらそれ以上は広がらず端に溜まる
+        const queueSlotX = (slot: number) => {
+          const side = slot % 2 === 0 ? 1 : -1
+          const rank = Math.floor(slot / 2) + 2
+          return Math.min(right, Math.max(left, busStop.x + side * rank * 0.5))
+        }
+        // 並び順は毎フレーム 1 回だけ数える(客ごとに数え直すと客数の 2 乗になる)
+        const refreshQueueSlots = () => {
+          let slot = 0
+          for (const guest of guests) {
+            if (guest.phase !== 'queued') continue
+            guest.queueSlot = slot
+            slot += 1
+          }
+        }
+        const queueTargetOf = (guest: Guest) => {
+          if (guest.phase === 'toBus') return { x: busStop.x, y: busStop.y + 1 }
+          if (guest.phase === 'toSign') return { x: busStop.x, y: busStop.y }
+          return { x: queueSlotX(guest.queueSlot), y: busStop.y }
+        }
+
+        const drawGuest = (guest: Guest, x: number, y: number, tileX: number, tileY: number) => {
+          const position = point(x + 0.4, y + 0.53)
+          guest.image.setFrame(guest.facing * 4 + (Math.floor(guest.walked * 4) % 4))
+            .setPosition(position.x - guest.bank.anchorX, position.y - guest.bank.anchorY)
+            .setDepth(renderDepthAt('facility', tileX, tileY))
+        }
+        const placeGuestImage = (guest: Guest) => {
+          if (guest.phase !== 'walking') {
+            drawGuest(guest, guest.queueX, guest.queueY, Math.round(guest.queueX), Math.round(guest.queueY))
+            return
+          }
+          // point は x・y に対して線形なので、マス座標で補間してから投影してよい
+          const x = guest.fromX + (guest.toX - guest.fromX) * guest.progress
+          const y = guest.fromY + (guest.toY - guest.fromY) * guest.progress
+          const leading = guest.progress < 0.5
+          drawGuest(guest, x, y, leading ? guest.fromX : guest.toX, leading ? guest.fromY : guest.toY)
+        }
+
+        // 道路が撤去されるなどして完全に孤立した場合、歩ける道は無視して最寄りの道路のマスへ直線的に進む
+        const strandedRoadStep = (guest: Guest) => {
+          let best: { x: number, y: number } | null = null
+          let bestDistance = Infinity
+          for (const key of roads) {
+            if (shopRoads.has(key)) continue
+            const comma = key.indexOf(',')
+            const roadX = Number(key.slice(0, comma))
+            const roadY = Number(key.slice(comma + 1))
+            const distance = Math.abs(roadX - guest.toX) + Math.abs(roadY - guest.toY)
+            if (distance >= bestDistance) continue
+            bestDistance = distance
+            best = { x: roadX, y: roadY }
+          }
+          if (!best) return null
+          const dx = best.x - guest.toX
+          const dy = best.y - guest.toY
+          if (dx === 0 && dy === 0) return best
+          return Math.abs(dx) >= Math.abs(dy)
+            ? { x: guest.toX + Math.sign(dx), y: guest.toY }
+            : { x: guest.toX, y: guest.toY + Math.sign(dy) }
+        }
+        // 帰る客はバス停へ近づく方向を選び、それ以外は来た道以外から無作為に選ぶ
+        const chooseGuestStep = (guest: Guest, leaving: boolean) => {
+          const walkable = walkableFor(guest, leaving)
+          const options = guestNeighbours
+            .map(({ x, y }) => ({ x: guest.toX + x, y: guest.toY + y }))
+            .filter(({ x, y }) => walkable(x, y))
+          if (options.length === 0) return strandedRoadStep(guest)
+          const forward = options.filter(({ x, y }) => !(x === guest.previousX && y === guest.previousY))
+          const pool = forward.length > 0 ? forward : options
+          if (leaving) {
+            // 交差点(選択肢が複数)でのみ最短方向を選び直す。一本道は後ろ以外に選択肢がないので直進が保たれる
+            const distance = ({ x, y }: { x: number, y: number }) => Math.abs(x - busStop.x) + Math.abs(y - busStop.y)
+            return pool.reduce((best, option) => distance(option) < distance(best) ? option : best)
+          }
+          const dx = guest.fromX - guest.previousX
+          const dy = guest.fromY - guest.previousY
+          if ((dx !== 0 || dy !== 0) && isWideArea(guest.fromX, guest.fromY, walkable)) {
+            const straight = pool.find(({ x, y }) => x === guest.fromX + dx && y === guest.fromY + dy)
+            if (straight) return straight
+          }
+          return pool[Math.floor(Math.random() * pool.length)]
+        }
+
+        const spawnGuest = () => {
+          if (guests.length >= game.park.visitorLimit) return false
+          const type = Math.floor(Math.random() * guestConfig.types.length)
+          const banks = guestConfig.types[type].banks.filter((id) => guestBankById.has(id))
+          if (banks.length === 0) return false
+          const bank = guestBankById.get(banks[Math.floor(Math.random() * banks.length)])!
+          const guest: Guest = {
+            type,
+            bank,
+            tilesPerDay: guestConfig.types[type].tilesPerDay,
+            phase: 'walking',
+            fromX: gateCrossing.x,
+            fromY: gateCrossing.y,
+            toX: gateCrossing.x,
+            toY: gateCrossing.y,
+            // 1 にしておくと次の更新で即座に進む先を選ぶ
+            progress: 1,
+            previousX: gateCrossing.x,
+            previousY: gateCrossing.y,
+            queueX: gateCrossing.x,
+            queueY: gateCrossing.y,
+            queueSlot: 0,
+            facing: 0,
+            walked: 0,
+            paid: false,
+            leaveAtDay: elapsedDays + guestConfig.stayDays,
+            image: this.add.sprite(0, 0, `guest-${bank.bank}`).setOrigin(0, 0),
+          }
+          guests.push(guest)
+          placeGuestImage(guest)
+          return true
+        }
+        const removeGuest = (index: number) => {
+          guests[index].image.destroy()
+          guests.splice(index, 1)
+        }
+
+        // マス目を歩く客を 1 フレーム分進める
+        const updateWalkingGuest = (guest: Guest, step: number) => {
+          const leaving = elapsedDays >= guest.leaveAtDay
+          guest.walked += step
+          guest.progress += step
+          while (guest.progress >= 1) {
+            guest.progress -= 1
+            guest.previousX = guest.fromX
+            guest.previousY = guest.fromY
+            guest.fromX = guest.toX
+            guest.fromY = guest.toY
+            // 敷地内に道路が敷かれ、実際にそこへ足を踏み入れた時点で入場料を払う
+            if (!guest.paid && roads.has(tileKey(guest.fromX, guest.fromY))) {
+              guest.paid = true
+              admissionHandler.current(guestConfig.admissionFee)
+            }
+            // 看板マスに着いた帰る客は、ここから待ち行列の位置まで歩く
+            if (leaving && isSignTile(guest.fromX, guest.fromY)) {
+              guest.phase = 'queued'
+              guest.queueX = guest.fromX
+              guest.queueY = guest.fromY
+              guest.progress = 0
+              guest.toX = guest.fromX
+              guest.toY = guest.fromY
+              return
+            }
+            const next = chooseGuestStep(guest, leaving)
+            if (!next) {
+              guest.progress = 0
+              break
+            }
+            guest.toX = next.x
+            guest.toY = next.y
+          }
+          guest.facing = directionOf(guest.toX - guest.fromX, guest.toY - guest.fromY)
+        }
+        // 看板前の客を目標地点へ近づける。バスに乗り込んだら true(呼び出し側が取り除く)
+        const updateQueuedGuest = (guest: Guest, days: number) => {
+          const target = queueTargetOf(guest)
+          const dx = target.x - guest.queueX
+          const dy = target.y - guest.queueY
+          const distance = Math.hypot(dx, dy)
+          const maxStep = guest.tilesPerDay * days
+          if (distance > maxStep) {
+            guest.queueX += (dx / distance) * maxStep
+            guest.queueY += (dy / distance) * maxStep
+            guest.walked += maxStep
+            guest.facing = directionOf(dx, dy)
+            return false
+          }
+          guest.queueX = target.x
+          guest.queueY = target.y
+          if (guest.phase === 'toBus') return true
+          if (guest.phase === 'toSign') {
+            // 看板の中心に着いたら下を向き、そのまま 1 マス進んでバスに乗る
+            guest.phase = 'toBus'
+            guest.facing = 0
+            return false
+          }
+          // 待機中は看板(中央)を向く
+          guest.facing = directionOf(busStop.x - guest.queueX, 0)
+          return false
+        }
+
+        // ---- バス ----
+        type Bus = {
+          x: number
+          state: 'arriving' | 'stopped' | 'leaving'
+          timer: number
+          unloaded: number
+          unloadDone: boolean
+          boarded: number
+          // 原作のバスのテクスチャが未特定のため、車体は暫定の矩形で描いている
+          image: Phaser.GameObjects.Rectangle
+          gaugeBack: Phaser.GameObjects.Rectangle
+          gaugeFill: Phaser.GameObjects.Rectangle
+        }
+        let bus: Bus | null = null
+        const busEnterX = left - 3
+        const busExitX = right + 3
+        const placeBusImage = (current: Bus) => {
+          const position = point(current.x + 0.5, busRow + 0.5)
+          const originX = position.x - busConfig.anchor.x
+          const originY = position.y - busConfig.anchor.y
+          const column = Math.round(current.x)
+          current.image.setPosition(originX, originY).setDepth(renderDepthAt('facility', column, busRow))
+          // 乗車率のバーは車体の中央下に置く
+          const gauge = busConfig.gauge
+          const gaugeX = originX + (busConfig.size.width - gauge.width) / 2
+          const gaugeY = originY + busConfig.size.height + gauge.offsetY
+          const filled = gauge.width * Math.min(1, current.boarded / busConfig.capacity)
+          const gaugeDepth = renderDepthAt('overlay', column, busRow)
+          current.gaugeBack.setPosition(gaugeX, gaugeY).setDepth(gaugeDepth)
+          current.gaugeFill
+            .setPosition(gaugeX, gaugeY)
+            .setSize(filled, gauge.height)
+            .setVisible(filled > 0)
+            .setDepth(gaugeDepth + 1)
+        }
+        // 乗車が決まった客はその場から看板・バスへ歩いて乗り込む(実際に消えるのは到着時)
+        const boardWaitingGuest = () => {
+          const guest = guests.find((candidate) => candidate.phase === 'queued')
+          if (!guest) return false
+          guest.phase = 'toSign'
+          return true
+        }
+        const updateBus = (days: number) => {
+          if (!bus) return
+          if (bus.state === 'arriving') {
+            bus.x += busConfig.tilesPerDay * days
+            if (bus.x >= busHaltX) {
+              bus.x = busHaltX
+              bus.state = 'stopped'
+              bus.timer = 0
+            }
+          }
+          else if (bus.state === 'stopped') {
+            bus.timer += days
+            // 停車中は一定の間隔で 1 人ずつ降ろし、待っている客を 1 人ずつ乗せる
+            const slots = Math.floor(bus.timer * busConfig.boardsPerDay)
+            while (!bus.unloadDone && bus.unloaded + bus.boarded < slots) {
+              if (!spawnGuest()) {
+                bus.unloadDone = true
+                break
+              }
+              bus.unloaded += 1
+              if (bus.unloaded >= busConfig.capacity) bus.unloadDone = true
+            }
+            while (bus.boarded < busConfig.capacity && bus.unloaded + bus.boarded < slots) {
+              if (!boardWaitingGuest()) break
+              bus.boarded += 1
+            }
+            // 定員に達していない限り、待っている客も歩いている途中の客も乗り終えるまで発車しない
+            const atStop = guests.some((guest) => guest.phase !== 'walking')
+            const boardDone = bus.boarded >= busConfig.capacity || !atStop
+            if (bus.timer >= busConfig.stopDays && bus.unloadDone && boardDone) bus.state = 'leaving'
+          }
+          else {
+            bus.x += busConfig.tilesPerDay * days
+            if (bus.x > busExitX) {
+              bus.image.destroy()
+              bus.gaugeBack.destroy()
+              bus.gaugeFill.destroy()
+              bus = null
+              return
+            }
+          }
+          placeBusImage(bus)
+        }
+        const spawnBus = () => {
+          bus = {
+            x: busEnterX,
+            state: 'arriving',
+            timer: 0,
+            unloaded: 0,
+            unloadDone: false,
+            boarded: 0,
+            image: this.add
+              .rectangle(0, 0, busConfig.size.width, busConfig.size.height, 0xd8d8d8)
+              .setOrigin(0, 0)
+              .setStrokeStyle(1, 0x404040),
+            gaugeBack: this.add
+              .rectangle(0, 0, busConfig.gauge.width, busConfig.gauge.height, 0x000000, 0.6)
+              .setOrigin(0, 0),
+            gaugeFill: this.add
+              .rectangle(0, 0, busConfig.gauge.width, busConfig.gauge.height, 0x4ade80)
+              .setOrigin(0, 0),
+          }
+          placeBusImage(bus)
+        }
+
+        // 来園者もバスもゲーム内の日数で動く。速度を上げれば日付と同じだけ速くなる
+        let busTimerDays = 0
+        let reportedGuestCount = -1
+        this.simulate = (deltaMs: number) => {
+          const days = deltaMs * daysPerMs
+          if (days <= 0) return
+          elapsedDays += days
+          // 前のバスが去ってから次の間隔で、左手からバスが入ってくる
+          if (!bus) {
+            busTimerDays += days
+            if (busTimerDays >= busConfig.intervalDays) {
+              busTimerDays = 0
+              spawnBus()
+            }
+          }
+          updateBus(days)
+
+          refreshQueueSlots()
+          for (let index = guests.length - 1; index >= 0; index -= 1) {
+            const guest = guests[index]
+            if (guest.phase === 'walking') updateWalkingGuest(guest, guest.tilesPerDay * days)
+            else if (updateQueuedGuest(guest, days)) {
+              removeGuest(index)
+              continue
+            }
+            placeGuestImage(guest)
+          }
+          if (guests.length !== reportedGuestCount) {
+            reportedGuestCount = guests.length
+            guestCountHandler.current(guests.length)
+          }
+        }
       }
     }
 
@@ -1484,6 +1937,10 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
       parent: host.current,
       backgroundColor: '#1d2d2a',
       pixelArt: true,
+      // 描画は画面の更新に任せて間引かない。ディスプレイの更新間隔と上限が近いと
+      // 描画する回とそうでない回が交互に出て画面がちらつくため。
+      // 演算の回数は update() 側で固定してあるので、描画が何回でも進み方は変わらない
+      fps: { target: game.time.framesPerSecond },
       scale: { mode: Phaser.Scale.RESIZE, width: '100%', height: '100%' },
       scene: ParkScene,
     })
@@ -1509,6 +1966,11 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
   useEffect(() => {
     phaserGame.current?.scene.getScene('park')?.events.emit('facility-build-mode', facilityBuild)
   }, [facilityBuild])
+
+  useEffect(() => {
+    initialSecondsPerDay.current = secondsPerDay
+    phaserGame.current?.scene.getScene('park')?.events.emit('seconds-per-day', secondsPerDay)
+  }, [secondsPerDay])
 
   useEffect(() => {
     phaserGame.current?.scene.getScene('park')?.events.emit('attraction-build-step', attractionBuildStep)
