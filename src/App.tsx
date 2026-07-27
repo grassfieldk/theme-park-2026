@@ -11,6 +11,7 @@ import ParkMenu from './components/ParkMenu'
 import { logGameEvent } from './game/log'
 import { forCountry } from './game/availability'
 import { dateFromElapsed, formatDate, gameDaysPerMs } from './game/clock'
+import { readSave, writeSave, SAVE_VERSION, type ParkSnapshot, type SaveMode } from './game/save'
 
 const ParkMap = lazy(() => import('./components/ParkMap'))
 
@@ -19,17 +20,6 @@ type ParkMode = 'map' | 'mainMenu' | 'roadMenu' | 'pathBuild' | 'queueBuild' | '
 const mainMenuModeById: Record<string, ParkMode> = { roads: 'roadMenu', attractions: 'attractionMenu', shops: 'shopMenu', facilities: 'facilityMenu' }
 type AttractionBuildStep = 'body' | 'entrance' | 'exit'
 const countryColumns = 2
-const titleMenus = {
-  menu: [
-    { id: 'new', label: 'ニューゲーム', enabled: true },
-    { id: 'load', label: 'ロードゲーム', enabled: false },
-    { id: 'training', label: 'トレーニング', enabled: false },
-  ],
-  mode: [
-    { id: 'standard', label: 'スタンダード', enabled: true },
-    { id: 'scenario', label: 'シナリオ', enabled: false },
-  ],
-} as const
 
 function moveMenu(index: number, input: MenuAction, length: number) {
   if (input === 'left' || input === 'up') return (index - 1 + length) % length
@@ -67,6 +57,27 @@ export default function App() {
   const [guestCount, setGuestCount] = useState(0)
   const [clock, setClock] = useState(() => dateFromElapsed(0))
   const elapsedDays = useRef(0)
+  const [mode, setMode] = useState<SaveMode>('standard')
+  const [savedGame, setSavedGame] = useState(() => readSave('standard', null))
+  // セーブから再開するときだけ中身が入る。ニューゲームでは null
+  const [loadedPark, setLoadedPark] = useState<ParkSnapshot | null>(null)
+
+  const titleMenus = useMemo(() => ({
+    menu: [
+      { id: 'new', label: 'ニューゲーム', enabled: true },
+      { id: 'load', label: 'ロードゲーム', enabled: savedGame !== null },
+      { id: 'training', label: 'トレーニング', enabled: false },
+    ],
+    mode: [
+      { id: 'standard', label: 'スタンダード', enabled: true },
+      { id: 'scenario', label: 'シナリオ', enabled: false },
+    ],
+  }), [savedGame])
+
+  // タイトルに戻るたびに、続きから始められるかを見直す
+  useEffect(() => {
+    if (screen === 'title') setSavedGame(readSave(mode, null))
+  }, [screen, mode])
 
   // パーク画面にいる間だけ日付を進める。表示は日が変わったときだけ更新する
   const secondsPerDay = game.speeds[speedIndex].secondsPerDay
@@ -98,17 +109,60 @@ export default function App() {
     return () => cancelAnimationFrame(frame)
   }, [screen, secondsPerDay])
 
+  // セーブデータの続きから park 画面に入る
+  const startLoadedGame = useCallback(() => {
+    if (!savedGame) return
+    const countryIndex = countries.findIndex((entry) => entry.id === savedGame.countryId)
+    setSelectedCountry(countryIndex < 0 ? 0 : countryIndex)
+    setMode(savedGame.mode)
+    setCash(savedGame.cash)
+    setSpeedIndex(savedGame.speedIndex)
+    elapsedDays.current = savedGame.elapsedDays
+    setClock(dateFromElapsed(savedGame.elapsedDays))
+    setGuestCount(0)
+    setAttractionMenuIndex(0)
+    setShopMenuIndex(0)
+    setFacilityMenuIndex(0)
+    setParkMode('map')
+    setLoadedPark(savedGame.park)
+    logGameEvent('game_loaded', { mode: savedGame.mode, country: savedGame.countryId })
+    setScreen('park')
+  }, [savedGame])
+
+  // 選んだ国で最初から始める
+  const startNewGame = useCallback((countryIndex: number) => {
+    logGameEvent('country_selected', { country: countries[countryIndex].id })
+    setSelectedCountry(countryIndex)
+    setAttractionMenuIndex(0)
+    setShopMenuIndex(0)
+    setFacilityMenuIndex(0)
+    elapsedDays.current = 0
+    setClock(dateFromElapsed(0))
+    setGuestCount(0)
+    setParkMode('map')
+    setCash(game.park.initialCash)
+    setLoadedPark(null)
+    setScreen('park')
+  }, [])
+
   const activateTitleItem = useCallback((step: 'menu' | 'mode', index: number) => {
-    if (!titleMenus[step][index]?.enabled) return
+    const item = titleMenus[step][index]
+    if (!item?.enabled) return
     if (step === 'menu') {
+      if (item.id === 'load') {
+        startLoadedGame()
+        return
+      }
       setTitleStep('mode')
       setTitleIndex(0)
+      return
     }
-    else {
-      logGameEvent('mode_selected', { mode: 'standard' })
-      setScreen('country')
-    }
-  }, [])
+    const selectedMode = item.id as SaveMode
+    setMode(selectedMode)
+    setLoadedPark(null)
+    logGameEvent('mode_selected', { mode: selectedMode })
+    setScreen('country')
+  }, [titleMenus, startLoadedGame])
 
   const selected = countries[selectedCountry]
   // 国ごとに設置できるものだけを一覧に出す(countryAvailability.json)
@@ -208,26 +262,38 @@ export default function App() {
       return
     }
     if (input === 'confirm') {
-      logGameEvent('country_selected', { country: countries[selectedCountry].id })
-      setAttractionMenuIndex(0)
-      setShopMenuIndex(0)
-      setFacilityMenuIndex(0)
-      elapsedDays.current = 0
-      setClock(dateFromElapsed(0))
-      setGuestCount(0)
-      setParkMode('map')
-      setCash(game.park.initialCash)
-      setScreen('park')
+      startNewGame(selectedCountry)
       return
     }
 
     const nextCountry = moveCountry(selectedCountry, input)
     if (nextCountry === selectedCountry) return
     setSelectedCountry(nextCountry)
-  }, [screen, selectedCountry, parkMode, mainMenuIndex, roadMenuIndex, shopBuildStep, facilityBuildStep, titleStep, titleIndex, activateTitleItem, countryAttractions, countryShops, countryFacilities])
+  }, [screen, selectedCountry, parkMode, mainMenuIndex, roadMenuIndex, shopBuildStep, facilityBuildStep, titleStep, titleIndex, activateTitleItem, startNewGame, countryAttractions, countryShops, countryFacilities])
 
 
   useEffect(() => setBuildMessage(''), [parkMode])
+
+  // オートセーブ。日付が変わったときだけ書き込む(clock は日が変わったときにしか更新されない)
+  const autoSaveState = useRef({ mode, cash, speedIndex, countryId: selected.id })
+  autoSaveState.current = { mode, cash, speedIndex, countryId: selected.id }
+  useEffect(() => {
+    if (screen !== 'park') return
+    const park = parkMap.current?.snapshot()
+    if (!park) return
+    const { mode: saveMode, cash: savedCash, speedIndex: savedSpeed, countryId } = autoSaveState.current
+    writeSave({
+      version: SAVE_VERSION,
+      mode: saveMode,
+      scenarioId: null,
+      countryId,
+      elapsedDays: elapsedDays.current,
+      cash: savedCash,
+      speedIndex: savedSpeed,
+      savedAt: new Date().toISOString(),
+      park,
+    })
+  }, [screen, clock])
 
   const menuItems = parkMode === 'mainMenu' || parkMode === 'roadMenu'
     ? (parkMode === 'mainMenu' ? parkMenu.main : parkMenu.roads).map((item) => ({
@@ -316,13 +382,7 @@ export default function App() {
               <button
                 className={index === selectedCountry ? 'country-button selected' : 'country-button'}
                 key={country.id}
-                onClick={() => {
-                  logGameEvent('country_selected', { country: country.id })
-                  setSelectedCountry(index)
-                  setParkMode('map')
-                  setCash(game.park.initialCash)
-                  setScreen('park')
-                }}
+                onClick={() => startNewGame(index)}
               >
                 <span>{country.name}</span>
                 <small>{country.map.width} × {country.map.height}</small>
@@ -363,6 +423,7 @@ export default function App() {
               secondsPerDay={secondsPerDay}
               onAdmissionPaid={(fee) => setCash((current) => current + fee)}
               onGuestCountChange={setGuestCount}
+              initialPark={loadedPark}
             />
           </Suspense>
           <div className="park-status-overlay">

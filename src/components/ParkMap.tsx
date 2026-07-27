@@ -8,6 +8,7 @@ import game from '../config/game.json'
 import type { MenuAction } from './GamepadController'
 import guestSprites from '../config/guestSprites.json'
 import { gameDaysPerMs } from '../game/clock'
+import type { ParkSnapshot } from '../game/save'
 
 type Country = {
   id: string
@@ -35,10 +36,14 @@ type Props = {
   onAdmissionPaid: (fee: number) => void
   onGuestCountChange: (count: number) => void
   onBuildMessage: (message: string) => void
+  /** セーブデータから再開するときの園の中身。新規開始なら null */
+  initialPark: ParkSnapshot | null
 }
 
 export type ParkMapHandle = {
   handleAction: (action: MenuAction) => void
+  /** 現在の園の中身を書き出す。まだ読み込みが終わっていなければ null */
+  snapshot: () => ParkSnapshot | null
 }
 
 type Attraction = (typeof attractions)[number]
@@ -50,6 +55,7 @@ type AttractionBuildStep = 'body' | 'entrance' | 'exit'
 type RoadBuildMode = 'path' | 'queue' | null
 type AccessPoint = { x: number, y: number, image: Phaser.GameObjects.Image }
 type PlacedAttraction = {
+  id: string
   x: number
   y: number
   width: number
@@ -83,8 +89,12 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
   onAdmissionPaid,
   onGuestCountChange,
   onBuildMessage,
+  initialPark,
 }: Props, ref) {
   const host = useRef<HTMLDivElement>(null)
+  // 再開データはマップを組み立てるときに 1 回だけ使う
+  const initialParkData = useRef(initialPark)
+  const takeSnapshot = useRef<(() => ParkSnapshot) | null>(null)
   const initialSecondsPerDay = useRef(secondsPerDay)
   const phaserGame = useRef<Phaser.Game | null>(null)
   const attractionPlacedHandler = useRef(onAttractionPlaced)
@@ -113,6 +123,9 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
   useImperativeHandle(ref, () => ({
     handleAction(action) {
       phaserGame.current?.scene.getScene('park')?.events.emit('pan', action)
+    },
+    snapshot() {
+      return takeSnapshot.current?.() ?? null
     },
   }), [])
 
@@ -223,6 +236,8 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         let shopStep: 'body' | 'direction' = 'body'
         type PendingShop = { x: number, y: number, cost: number, image: Phaser.GameObjects.Image, baseImages: Phaser.GameObjects.Image[] }
         let pendingShop: PendingShop | null = null
+        // 設置済みのショップ。向きが決まった時点で記録する
+        const placedShops: Array<{ id: string, x: number, y: number, direction: number }> = []
         let activeFacility = facilityBuild
         let facilityDirection = 0
         let facilityStep: 'body' | 'direction' = 'body'
@@ -1027,19 +1042,10 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           }
           drawCursor()
         }
-        const placeAttraction = () => {
-          const attraction = activeAttraction
-          if (!attraction) return
-          const { x: bottomX, y: bottomY } = attractionOriginAtCursor(attraction)
-          if (!canPlaceAttraction(attraction, bottomX, bottomY)) {
-            buildMessageHandler.current(currentCash < attraction.constructionCost
-              ? '資金が足りないので設置できません。'
-              : 'その場所には設置できません。')
-            return
-          }
-          buildMessageHandler.current('')
-          const x = bottomX
-          const y = bottomY - attraction.height + 1
+        // アトラクション本体を置く。設置操作とセーブデータからの復元で共通に使う
+        const addAttraction = (attraction: Attraction, x: number, y: number) => {
+          const bottomX = x
+          const bottomY = y + attraction.height - 1
           for (let offsetY = 0; offsetY < attraction.height; offsetY += 1) {
             for (let offsetX = 0; offsetX < attraction.width; offsetX += 1) {
               occupiedByAttraction.add(tileKey(x + offsetX, y + offsetY))
@@ -1059,7 +1065,8 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           const imagePosition = attractionImagePosition(attraction, attraction.imageOffset, bottomX, bottomY)
           const image = this.add.image(imagePosition.x, imagePosition.y, attraction.id)
             .setOrigin(0).setDepth(renderDepthAt('facility', bottomX, bottomY))
-          const placed = {
+          const placed: PlacedAttraction = {
+            id: attraction.id,
             x,
             y,
             width: attraction.width,
@@ -1069,7 +1076,22 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             baseImages,
           }
           placedAttractions.push(placed)
-          pendingAttraction = placed
+          return placed
+        }
+        const placeAttraction = () => {
+          const attraction = activeAttraction
+          if (!attraction) return
+          const { x: bottomX, y: bottomY } = attractionOriginAtCursor(attraction)
+          if (!canPlaceAttraction(attraction, bottomX, bottomY)) {
+            buildMessageHandler.current(currentCash < attraction.constructionCost
+              ? '資金が足りないので設置できません。'
+              : 'その場所には設置できません。')
+            return
+          }
+          buildMessageHandler.current('')
+          const x = bottomX
+          const y = bottomY - attraction.height + 1
+          pendingAttraction = addAttraction(attraction, x, y)
           currentCash -= attraction.constructionCost
           attractionPlacedHandler.current(attraction.constructionCost)
           activeAttractionBuildStep = 'entrance'
@@ -1156,6 +1178,25 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             redrawQueueTiles(tileX, tileY)
           })
         }
+        // ショップ本体を置く。設置操作とセーブデータからの復元で共通に使う
+        const addShopBody = (shop: Shop, x: number, y: number, direction: number) => {
+          const bottomX = x
+          const bottomY = y + shop.height - 1
+          // ショップは地面の盛り上げベースを敷かない(占有マークのみ)
+          for (let offsetY = 0; offsetY < shop.height; offsetY += 1) {
+            for (let offsetX = 0; offsetX < shop.width; offsetX += 1) {
+              occupiedByAttraction.add(tileKey(x + offsetX, y + offsetY))
+            }
+          }
+          const imagePosition = attractionImagePosition(shop, shop.imageOffsets[direction], bottomX, bottomY)
+          return this.add.image(imagePosition.x, imagePosition.y, `shop-${shop.id}-${direction}`)
+            .setOrigin(0).setDepth(renderDepthAt('facility', bottomX, bottomY))
+        }
+        // 向きが確定したショップを記録し、前の道を敷く
+        const completeShop = (shop: Shop, x: number, y: number, direction: number) => {
+          placedShops.push({ id: shop.id, x, y, direction })
+          layShopWalkway(shop, x, y, direction)
+        }
         const placeShop = () => {
           const shop = activeShop
           if (!shop || shopStep !== 'body') return
@@ -1169,17 +1210,8 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           buildMessageHandler.current('')
           const x = bottomX
           const y = bottomY - shop.height + 1
-          // ショップは地面の盛り上げベースを敷かない(占有マークのみ)
-          const baseImages: Phaser.GameObjects.Image[] = []
-          for (let offsetY = 0; offsetY < shop.height; offsetY += 1) {
-            for (let offsetX = 0; offsetX < shop.width; offsetX += 1) {
-              occupiedByAttraction.add(tileKey(x + offsetX, y + offsetY))
-            }
-          }
-          const imagePosition = attractionImagePosition(shop, shop.imageOffsets[shopDirection], bottomX, bottomY)
-          const image = this.add.image(imagePosition.x, imagePosition.y, `shop-${shop.id}-${shopDirection}`)
-            .setOrigin(0).setDepth(renderDepthAt('facility', bottomX, bottomY))
-          pendingShop = { x, y, cost: shop.constructionCost, image, baseImages }
+          const image = addShopBody(shop, x, y, shopDirection)
+          pendingShop = { x, y, cost: shop.constructionCost, image, baseImages: [] }
           currentCash -= shop.constructionCost
           shopPlacedHandler.current(shop.constructionCost)
           if (shop.directions > 1) {
@@ -1188,7 +1220,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             drawShopArrow()
           }
           else {
-            layShopWalkway(shop, x, y, shopDirection)
+            completeShop(shop, x, y, shopDirection)
             pendingShop = null
             shopCompleteHandler.current()
           }
@@ -1204,7 +1236,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         const confirmShopDirection = () => {
           const shop = activeShop
           if (shopStep !== 'direction' || !pendingShop || !shop) return
-          layShopWalkway(shop, pendingShop.x, pendingShop.y, shopDirection)
+          completeShop(shop, pendingShop.x, pendingShop.y, shopDirection)
           pendingShop = null
           shopStep = 'body'
           shopStepHandler.current('body')
@@ -1246,17 +1278,13 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           }
           return best
         }
-        const placeAttractionAccess = () => {
-          const facility = pendingAttraction
-          const { x, y } = cursorPosition
-          if (!facility) return
-          if (!canPlaceAccess(x, y)) {
-            buildMessageHandler.current('その場所には設置できません。')
-            return
-          }
-          buildMessageHandler.current('')
-          const accessStep = activeAttractionBuildStep === 'entrance' ? 'entrance' : 'exit'
-          const frame = accessFrameAt(facility, x, y)
+        // 入口・出口の絵を置く。設置操作とセーブデータからの復元で共通に使う
+        const addAttractionAccess = (
+          accessStep: Exclude<AttractionBuildStep, 'body'>,
+          x: number,
+          y: number,
+          frame: number,
+        ) => {
           const tile = point(x, y)
           const [offsetX, offsetY] = accessStep === 'entrance'
             ? [tileWidth / 2, stepY]
@@ -1267,14 +1295,27 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             `facility-${accessStep}-frame-${frame}`,
           ).setOrigin(accessStep === 'entrance' ? 0.5 : 0, accessStep === 'entrance' ? 1 : 0)
             .setDepth(renderDepthAt('access', x, y))
-          if (activeAttractionBuildStep === 'entrance') {
-            facility.entrance = { x, y, image }
+          return { x, y, image }
+        }
+        const placeAttractionAccess = () => {
+          const facility = pendingAttraction
+          const { x, y } = cursorPosition
+          if (!facility) return
+          if (!canPlaceAccess(x, y)) {
+            buildMessageHandler.current('その場所には設置できません。')
+            return
+          }
+          buildMessageHandler.current('')
+          const accessStep = activeAttractionBuildStep === 'entrance' ? 'entrance' : 'exit'
+          const access = addAttractionAccess(accessStep, x, y, accessFrameAt(facility, x, y))
+          if (accessStep === 'entrance') {
+            facility.entrance = access
             redrawQueueTiles(x, y)
             activeAttractionBuildStep = 'exit'
             attractionAccessPlacedHandler.current('entrance')
           }
           else {
-            facility.exit = { x, y, image }
+            facility.exit = access
             pendingAttraction = null
             activeAttractionBuildStep = 'body'
             attractionAccessPlacedHandler.current('exit')
@@ -1531,6 +1572,86 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           drawCursor()
         })
         this.events.on('seconds-per-day', (value: number) => { daysPerMs = gameDaysPerMs(value) })
+
+        // ---- セーブ ----
+        const parseKey = (key: string) => {
+          const comma = key.indexOf(',')
+          return { x: Number(key.slice(0, comma)), y: Number(key.slice(comma + 1)) }
+        }
+        // 園の中身を書き出す。ショップ前の道はショップから敷き直せるので含めない
+        takeSnapshot.current = (): ParkSnapshot => ({
+          roads: [...roads].filter((key) => !shopRoads.has(key)),
+          queues: [...queueStates].map(([key, state]) => ({ key, state })),
+          attractions: placedAttractions
+            // 入口・出口を置いている途中のものは完成扱いにしない
+            .filter((placed) => placed !== pendingAttraction)
+            .map((placed) => ({
+              id: placed.id,
+              x: placed.x,
+              y: placed.y,
+              entrance: placed.entrance && {
+                x: placed.entrance.x,
+                y: placed.entrance.y,
+                frame: accessFrameAt(placed, placed.entrance.x, placed.entrance.y),
+              },
+              exit: placed.exit && {
+                x: placed.exit.x,
+                y: placed.exit.y,
+                frame: accessFrameAt(placed, placed.exit.x, placed.exit.y),
+              },
+              entranceQueueKey: placed.entranceQueueKey,
+              entranceFrame: placed.entranceFrame,
+            })),
+          shops: placedShops.map((placed) => ({ ...placed })),
+          facilities: [...placedFacilities].map(([key, placed]) => ({
+            id: placed.facility.id,
+            ...parseKey(key),
+            frame: placed.frame,
+          })),
+          buildings: [...placedBuildings],
+        })
+        // セーブデータから園を組み立て直す。道の絵は全部そろえてから一度に描き直す
+        const restoreSnapshot = (snapshot: ParkSnapshot) => {
+          snapshot.facilities.forEach(({ id, x, y, frame }) => {
+            const facility = facilities.find((entry) => entry.id === id)
+            if (facility) addFacility(facility, frame, x, y)
+          })
+          snapshot.buildings.forEach((id) => placedBuildings.add(id))
+          snapshot.attractions.forEach((saved) => {
+            const attraction = attractions.find((entry) => entry.id === saved.id)
+            if (!attraction) return
+            const placed = addAttraction(attraction, saved.x, saved.y)
+            if (saved.entrance) {
+              placed.entrance = addAttractionAccess('entrance', saved.entrance.x, saved.entrance.y, saved.entrance.frame)
+            }
+            if (saved.exit) {
+              placed.exit = addAttractionAccess('exit', saved.exit.x, saved.exit.y, saved.exit.frame)
+            }
+            placed.entranceQueueKey = saved.entranceQueueKey
+            placed.entranceFrame = saved.entranceFrame
+          })
+          snapshot.shops.forEach(({ id, x, y, direction }) => {
+            const shop = shops.find((entry) => entry.id === id)
+            if (!shop) return
+            addShopBody(shop, x, y, direction)
+            completeShop(shop, x, y, direction)
+          })
+          snapshot.roads.forEach((key) => roads.add(key))
+          snapshot.queues.forEach(({ key, state }) => {
+            queueRoads.add(key)
+            queueStates.set(key, state)
+          })
+          roads.forEach((key) => {
+            const { x, y } = parseKey(key)
+            redrawRoadTiles(x, y)
+          })
+          queueRoads.forEach((key) => {
+            const { x, y } = parseKey(key)
+            redrawQueueTiles(x, y)
+          })
+          updateAttractionEntranceFrames()
+        }
+        if (initialParkData.current) restoreSnapshot(initialParkData.current)
 
         // ---- 来園者 ----
         // バスはゲート下の道路(busRow)を走って busHaltX で停まり、
