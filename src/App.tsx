@@ -19,6 +19,7 @@ type Screen = 'title' | 'country' | 'park'
 type ParkMode = 'map' | 'mainMenu' | 'roadMenu' | 'pathBuild' | 'queueBuild' | 'attractionMenu' | 'attractionBuild' | 'attractionQueueBuild' | 'shopMenu' | 'shopBuild' | 'facilityMenu' | 'facilityBuild'
 const mainMenuModeById: Record<string, ParkMode> = { roads: 'roadMenu', attractions: 'attractionMenu', shops: 'shopMenu', facilities: 'facilityMenu' }
 type AttractionBuildStep = 'body' | 'entrance' | 'exit'
+type ConfirmPrompt = { message: string, confirmLabel: string, onConfirm: () => void, onCancel?: () => void }
 const countryColumns = 2
 
 function moveMenu(index: number, input: MenuAction, length: number) {
@@ -61,6 +62,8 @@ export default function App() {
   const [savedGame, setSavedGame] = useState(() => readSave('standard', null))
   // セーブから再開するときだけ中身が入る。ニューゲームでは null
   const [loadedPark, setLoadedPark] = useState<ParkSnapshot | null>(null)
+  // 確認の問い合わせ。入っている間は確認だけを受け付ける
+  const [confirmPrompt, setConfirmPrompt] = useState<ConfirmPrompt | null>(null)
 
   const titleMenus = useMemo(() => ({
     menu: [
@@ -130,7 +133,7 @@ export default function App() {
   }, [savedGame])
 
   // 選んだ国で最初から始める
-  const startNewGame = useCallback((countryIndex: number) => {
+  const beginNewGame = useCallback((countryIndex: number) => {
     logGameEvent('country_selected', { country: countries[countryIndex].id })
     setSelectedCountry(countryIndex)
     setAttractionMenuIndex(0)
@@ -144,6 +147,18 @@ export default function App() {
     setLoadedPark(null)
     setScreen('park')
   }, [])
+  // 続きが残っているモードで新しく始めるときは、上書きになるので確認する
+  const startNewGame = useCallback((countryIndex: number) => {
+    if (!readSave(mode, null)) {
+      beginNewGame(countryIndex)
+      return
+    }
+    setConfirmPrompt({
+      message: 'このモードのセーブデータは上書きされます。新しく始めますか？',
+      confirmLabel: 'はじめる',
+      onConfirm: () => beginNewGame(countryIndex),
+    })
+  }, [mode, beginNewGame])
 
   const activateTitleItem = useCallback((step: 'menu' | 'mode', index: number) => {
     const item = titleMenus[step][index]
@@ -170,7 +185,21 @@ export default function App() {
   const countryShops = useMemo(() => forCountry(shops, 'shops', selected.id), [selected.id])
   const countryFacilities = useMemo(() => forCountry(facilities, 'facilities', selected.id), [selected.id])
 
+  const answerConfirm = useCallback((confirmed: boolean) => {
+    setConfirmPrompt((prompt) => {
+      if (confirmed) prompt?.onConfirm()
+      else prompt?.onCancel?.()
+      return null
+    })
+  }, [])
+
   const action = useCallback((input: MenuAction) => {
+    if (confirmPrompt) {
+      // ボタンを離した通知だけは通す。ここで止めると押しっぱなし扱いのままになる
+      if (input === 'confirmRelease' || input === 'removeRelease') parkMap.current?.handleAction(input)
+      else if (input === 'confirm' || input === 'cancel') answerConfirm(input === 'confirm')
+      return
+    }
     if (screen === 'title') {
       if (input === 'up' || input === 'down') {
         setTitleIndex((current) => moveMenu(current, input, titleMenus[titleStep].length))
@@ -252,7 +281,8 @@ export default function App() {
       const mapAction = input === 'left' || input === 'right' || input === 'up' || input === 'down'
         || input === 'zoomIn' || input === 'zoomOut'
         || ((parkMode === 'pathBuild' || parkMode === 'queueBuild' || parkMode === 'attractionQueueBuild' || parkMode === 'attractionBuild' || parkMode === 'shopBuild' || parkMode === 'facilityBuild') && (input === 'confirm' || input === 'confirmRelease'))
-        || ((parkMode === 'pathBuild' || parkMode === 'queueBuild' || parkMode === 'attractionQueueBuild' || parkMode === 'facilityBuild') && input === 'remove')
+        // 撤去はどのモードでも使える。何を消せるかはマップ側で判断する
+        || input === 'remove' || input === 'removeRelease'
       if (mapAction) parkMap.current?.handleAction(input)
       return
     }
@@ -269,7 +299,7 @@ export default function App() {
     const nextCountry = moveCountry(selectedCountry, input)
     if (nextCountry === selectedCountry) return
     setSelectedCountry(nextCountry)
-  }, [screen, selectedCountry, parkMode, mainMenuIndex, roadMenuIndex, shopBuildStep, facilityBuildStep, titleStep, titleIndex, activateTitleItem, startNewGame, countryAttractions, countryShops, countryFacilities])
+  }, [screen, selectedCountry, parkMode, mainMenuIndex, roadMenuIndex, shopBuildStep, facilityBuildStep, titleStep, titleIndex, confirmPrompt, answerConfirm, activateTitleItem, startNewGame, countryAttractions, countryShops, countryFacilities])
 
 
   useEffect(() => setBuildMessage(''), [parkMode])
@@ -344,14 +374,16 @@ export default function App() {
               : `${countryFacilities[facilityMenuIndex].name} 設置中`
             : ''
   const statusBarText = menuItems ? menuItems[menuSelectedIndex]?.description ?? '' : buildMessage || buildModeLabel
+  // メニューや確認を出している間は、マップへのクリックを届かせない
+  const mapBlocked = menuItems !== null || confirmPrompt !== null
 
   return (
     <main
       className="app-shell"
       onContextMenu={(event) => {
         event.preventDefault()
-        if (screen === 'park') action(parkMode === 'map' ? 'menu' : 'cancel')
-        else action('cancel')
+        // マップ上の右クリックはマップ側で撤去として扱うので、ここでは受け取らない
+        if (screen !== 'park' || mapBlocked) action('cancel')
       }}
     >
       <GamepadController onAction={action} />
@@ -423,6 +455,14 @@ export default function App() {
               secondsPerDay={secondsPerDay}
               onAdmissionPaid={(fee) => setCash((current) => current + fee)}
               onGuestCountChange={setGuestCount}
+              onRemoveConfirm={(name) => setConfirmPrompt({
+                message: `${name} を撤去しますか？`,
+                confirmLabel: '撤去する',
+                onConfirm: () => parkMap.current?.resolveRemoval(true),
+                onCancel: () => parkMap.current?.resolveRemoval(false),
+              })}
+              mapBlocked={mapBlocked}
+              onMenuToggle={() => action('menu')}
               initialPark={loadedPark}
             />
           </Suspense>
@@ -492,6 +532,15 @@ export default function App() {
           >
             戻る
           </button>
+        </div>
+      ) : null}
+      {confirmPrompt ? (
+        <div className="park-confirm" role="dialog" aria-label="確認">
+          <p>{confirmPrompt.message}</p>
+          <div className="park-confirm-buttons">
+            <button className="primary-button" onClick={() => answerConfirm(true)}>{confirmPrompt.confirmLabel}</button>
+            <button className="secondary-button" onClick={() => answerConfirm(false)}>やめる</button>
+          </div>
         </div>
       ) : null}
     </main>
