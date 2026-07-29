@@ -10,9 +10,9 @@ from pathlib import Path
 from PIL import Image
 
 ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT / "tools" / "analysis"))
+sys.path.insert(0, str(ROOT / "tools"))
 
-from preview_unpack_resource import decode_upload_images, psx_color  # noqa: E402
+from unpack_sprites import decode_upload_images, psx_color  # noqa: E402
 
 
 PAK = ROOT / "recovery" / "disc" / "TEX" / "UNPACK.PAK"

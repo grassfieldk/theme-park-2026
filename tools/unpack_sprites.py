@@ -144,7 +144,7 @@ def main() -> None:
     parser.add_argument("resource_ids", nargs="+", type=int)
     parser.add_argument("--pak", type=Path, default=Path("recovery/disc/TEX/UNPACK.PAK"))
     parser.add_argument("--manifest", type=Path, default=Path("recovery/manifests/unpack-pak.json"))
-    parser.add_argument("--output", type=Path, default=Path("recovery/evidence/unpack-previews"))
+    parser.add_argument("--output", type=Path, default=Path("work/unpack-previews"))
     args = parser.parse_args()
 
     pak = args.pak.read_bytes()

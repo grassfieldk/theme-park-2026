@@ -6,28 +6,31 @@ import argparse
 import json
 from pathlib import Path
 
-TABLES = (
-    (0x28634, 168, 22, "shop-or-service"),
-    (0x2AC0C, 190, 54, "attraction"),
-)
-
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("d2main", type=Path)
     parser.add_argument("messages", type=Path)
+    parser.add_argument("tables", type=Path, help="tables/data-tables.json")
     parser.add_argument("output", type=Path)
     args = parser.parse_args()
 
+    economy = json.loads(args.tables.read_text(encoding="utf-8"))["economyTables"]
+    record_size = economy["recordSize"]
+    cost_multiplier = economy["costMultiplier"]
+    tables = [
+        (int(entry["fileOffset"], 16), entry["firstMessageId"], entry["count"], entry["category"])
+        for entry in economy["tables"]
+    ]
     data = args.d2main.read_bytes()
     messages = json.loads(args.messages.read_text(encoding="utf-8"))["messages"]
     by_id = {message["id"]: message for message in messages}
     facilities = []
     facility_id = 1
-    for table_offset, first_message_id, count, category in TABLES:
+    for table_offset, first_message_id, count, category in tables:
         for index in range(count):
-            offset = table_offset + index * 3
-            construction, auxiliary, maintenance = data[offset : offset + 3]
+            offset = table_offset + index * record_size
+            construction, auxiliary, maintenance = data[offset : offset + record_size]
             message_id = first_message_id + index
             facilities.append(
                 {
@@ -35,8 +38,8 @@ def main() -> None:
                     "category": category,
                     "messageId": message_id,
                     "name": by_id[message_id]["text"],
-                    "constructionCost": construction * 100,
-                    "maintenanceCost": maintenance * 100,
+                    "constructionCost": construction * cost_multiplier,
+                    "maintenanceCost": maintenance * cost_multiplier,
                     "auxiliaryValue": auxiliary,
                     "raw": [construction, auxiliary, maintenance],
                     "fileOffset": f"0x{offset:05x}",
@@ -47,10 +50,10 @@ def main() -> None:
     result = {
         "status": "confirmed-construction-and-maintenance",
         "source": str(args.d2main).replace("\\", "/"),
-        "recordSize": 3,
+        "recordSize": record_size,
         "tables": [
             {"fileOffset": f"0x{offset:05x}", "firstMessageId": message, "count": count, "category": category}
-            for offset, message, count, category in TABLES
+            for offset, message, count, category in tables
         ],
         "count": len(facilities),
         "facilities": facilities,

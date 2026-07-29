@@ -10,7 +10,7 @@ $headless = Get-ChildItem "$root\tools\vendor\ghidra" -Recurse -Filter analyzeHe
     Select-Object -First 1 -ExpandProperty FullName
 $scripts = "$root\tools\ghidra_scripts"
 $projectRoot = "$root\recovery\code\ghidra-psx"
-$output = "$root\recovery\code\main-psyq"
+$output = "$root\recovery\code\main"
 [IO.Directory]::CreateDirectory($projectRoot) | Out-Null
 [IO.Directory]::CreateDirectory($output) | Out-Null
 
@@ -20,7 +20,7 @@ $output = "$root\recovery\code\main-psyq"
     -analysisTimeoutPerFile 300 `
     -scriptPath $scripts `
     -postScript ExportRecovery.java $output `
-    -log "$root\recovery\evidence\ghidra-psx-recovery.log"
+    -log "$root\recovery\code\ghidra-psx-recovery.log"
 if ($LASTEXITCODE -ne 0) {
     throw "Ghidra executable analysis failed with exit code $LASTEXITCODE"
 }

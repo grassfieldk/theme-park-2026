@@ -14,7 +14,7 @@ $env:Path = "$env:JAVA_HOME\bin;$env:Path"
 $headless = Get-ChildItem (Join-Path $workspace 'tools\vendor\ghidra') -Recurse -Filter analyzeHeadless.bat |
     Select-Object -First 1 -ExpandProperty FullName
 $scripts = Join-Path $workspace 'tools\ghidra_scripts'
-$log = Join-Path $workspace 'recovery\evidence\ghidra-overlays.log'
+$log = Join-Path $workspace 'recovery\code\ghidra-overlays.log'
 # オーバーレイ読込み先は実行ファイルのポインタ 0x800a7b24 が指す 0x801d06f8
 
 [IO.Directory]::CreateDirectory($ProjectRoot) | Out-Null

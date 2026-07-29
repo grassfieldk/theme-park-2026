@@ -6,25 +6,29 @@ coverage/
 
 # 原盤と解析時の作業ディレクトリ
 original/
-extracted/
+
+# 復元データ
 recovery/
 
-# Python の実行時生成物
-__pycache__/
-*.py[cod]
-.venv/
+# 作業ディレクトリ
+work/
 
 # 解析用に取得・展開した外部ツール
 tools/vendor/
 
-# 作業ログ
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+
+# ログ
 *.log
 
-# ローカル環境ごとの設定
+# 環境設定
 .env
 .env.*
 !.env.example
 
-# OS が生成するファイル
+# OS 生成ファイル
 .DS_Store
 Thumbs.db

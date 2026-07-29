@@ -21,7 +21,6 @@ def main() -> None:
         "recovery/manifests/movies.json",
         "recovery/manifests/code-summary.json",
         "recovery/code/main/decompiled.c",
-        "recovery/code/main-psyq/decompiled.c",
     ]
     missing = [path for path in required if not (ROOT / path).is_file()]
     summary = {
@@ -36,7 +35,7 @@ def main() -> None:
             "soundEffects": count("recovery/assets/sound-effects/**/*.wav"),
             "movies": count("recovery/assets/movies/*.avi"),
             "overlaySources": count("recovery/code/overlays/*/decompiled.c"),
-            "psyqFunctions": max(0, sum(1 for _ in (ROOT / "recovery/code/main-psyq/functions.tsv").open(encoding="utf-8")) - 1),
+            "psyqFunctions": max(0, sum(1 for _ in (ROOT / "recovery/code/main/functions.tsv").open(encoding="utf-8")) - 1),
         },
     }
     output = ROOT / "recovery/manifests/recovery-audit.json"

@@ -6,24 +6,25 @@ import argparse
 import json
 from pathlib import Path
 
-FIRST_MESSAGE_ID = 168
-LAST_MESSAGE_ID = 243
-
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("messages", type=Path)
+    parser.add_argument("tables", type=Path, help="tables/data-tables.json")
     parser.add_argument("output", type=Path)
     args = parser.parse_args()
 
+    catalog = json.loads(args.tables.read_text(encoding="utf-8"))["facilityCatalog"]
+    first_message_id = catalog["firstMessageId"]
+    last_message_id = catalog["lastMessageId"]
     messages = json.loads(args.messages.read_text(encoding="utf-8"))["messages"]
     by_id = {message["id"]: message for message in messages}
     facilities = []
-    for message_id in range(FIRST_MESSAGE_ID, LAST_MESSAGE_ID + 1):
+    for message_id in range(first_message_id, last_message_id + 1):
         message = by_id[message_id]
         facilities.append(
             {
-                "catalogIndex": message_id - FIRST_MESSAGE_ID,
+                "catalogIndex": message_id - first_message_id,
                 "messageId": message_id,
                 "name": message["text"],
                 "codes": message["codes"],
@@ -34,7 +35,7 @@ def main() -> None:
     result = {
         "status": "confirmed-names",
         "count": len(facilities),
-        "messageRange": [FIRST_MESSAGE_ID, LAST_MESSAGE_ID],
+        "messageRange": [first_message_id, last_message_id],
         "catalogIndexStatus": "confirmed-message-order; runtime-type equivalence under verification",
         "facilities": facilities,
     }

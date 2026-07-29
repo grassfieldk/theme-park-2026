@@ -23,7 +23,6 @@ from PIL import Image
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "tools"))
-sys.path.insert(0, str(ROOT / "tools" / "analysis"))
 
 import importlib.util
 
@@ -31,7 +30,7 @@ _spec = importlib.util.spec_from_file_location("export_facility_assets", ROOT / 
 _facility = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_facility)
 
-_preview = importlib.import_module("preview_unpack_resource")
+_preview = importlib.import_module("unpack_sprites")
 
 
 def build_vram(resource: bytes, package_offset: int, upload_end: int) -> list[int]:

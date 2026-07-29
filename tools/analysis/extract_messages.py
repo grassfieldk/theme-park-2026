@@ -7,24 +7,27 @@ import json
 import struct
 from pathlib import Path
 
-LOAD_ADDRESS = 0x800A7000
-TABLE_ADDRESS = 0x80116C00
-TABLE_END = 0x80117358
-DATA_ADDRESS = 0x8010FDAC
+from _psxmem import vaddr_to_payload_offset
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("payload", type=Path)
+    parser.add_argument("tables", type=Path, help="tables/message-tables.json")
     parser.add_argument("output", type=Path)
     args = parser.parse_args()
     data = args.payload.read_bytes()
-    table_offset = TABLE_ADDRESS - LOAD_ADDRESS
-    count = (TABLE_END - TABLE_ADDRESS) // 2
+    table = json.loads(args.tables.read_text(encoding="utf-8"))["messageTable"]
+    table_address = int(table["tableAddress"], 16)
+    table_end = int(table["tableEnd"], 16)
+    data_address = int(table["dataAddress"], 16)
+    stride = table["entryStride"]
+    table_offset = vaddr_to_payload_offset(table_address)
+    count = (table_end - table_address) // stride
     offsets = struct.unpack_from(f"<{count}H", data, table_offset)
     messages = []
     for message_id, word_offset in enumerate(offsets):
-        position = DATA_ADDRESS - LOAD_ADDRESS + word_offset * 2
+        position = vaddr_to_payload_offset(data_address) + word_offset * stride
         codes = []
         while position + 2 <= len(data):
             code = struct.unpack_from("<h", data, position)[0]
@@ -40,8 +43,8 @@ def main() -> None:
         json.dumps(
             {
                 "status": "confirmed",
-                "tableAddress": f"0x{TABLE_ADDRESS:08x}",
-                "dataAddress": f"0x{DATA_ADDRESS:08x}",
+                "tableAddress": f"0x{table_address:08x}",
+                "dataAddress": f"0x{data_address:08x}",
                 "messages": messages,
             },
             ensure_ascii=False,

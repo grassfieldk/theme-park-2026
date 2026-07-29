@@ -1,0 +1,9 @@
+{
+  "description": "TEX/UNPACK.PAK のリソース境界表の所在。ペイロード内の索引アドレスから 4 byte のオフセット配列を読み、単調増加が続く限りをリソース境界とみなす。",
+  "boundaryIndex": {
+    "indexAddress": "0x8010dad4",
+    "entryStride": 4,
+    "status": "confirmed-boundaries",
+    "note": "indexAddress から 4 byte のリトルエンディアン整数配列。単調増加かつ archiveSize 以下が続く限りを境界とし、archiveSize に達したら終端。"
+  }
+}

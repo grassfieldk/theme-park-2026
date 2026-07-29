@@ -1,0 +1,32 @@
+{
+  "description": "施設カタログと経済データの所在。施設名はメッセージ表の連続範囲、建設・維持費は D2MAIN.BIN 内のバイト表。",
+  "facilityCatalog": {
+    "firstMessageId": 168,
+    "lastMessageId": 243,
+    "status": "confirmed",
+    "note": "施設名はメッセージ 168〜243 の連続 76 件。catalogIndex = messageId - 168。"
+  },
+  "economyTables": {
+    "source": "recovery/disc/PRO/D2MAIN.BIN",
+    "recordSize": 3,
+    "costMultiplier": 100,
+    "status": "confirmed-construction-and-maintenance",
+    "note": "各レコード 3 byte = [建設費, 補助値, 維持費]。建設費・維持費は 100 倍して円。補助値はショップ表では未確定、アトラクション表ではトラック単価。",
+    "tables": [
+      {
+        "fileOffset": "0x28634",
+        "firstMessageId": 168,
+        "count": 22,
+        "category": "shop-or-service",
+        "auxiliaryMeaning": "unconfirmed"
+      },
+      {
+        "fileOffset": "0x2ac0c",
+        "firstMessageId": 190,
+        "count": 54,
+        "category": "attraction",
+        "auxiliaryMeaning": "track-unit-cost"
+      }
+    ]
+  }
+}

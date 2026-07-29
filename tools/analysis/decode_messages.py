@@ -11,21 +11,20 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("messages", type=Path)
     parser.add_argument("save_load", type=Path)
-    parser.add_argument("font_map", type=Path)
+    parser.add_argument("font_map", type=Path, help="tables/font-map.json")
+    parser.add_argument("message_tables", type=Path, help="tables/message-tables.json")
     parser.add_argument("output", type=Path)
-    parser.add_argument("--font12-map", type=Path)
     args = parser.parse_args()
 
     raw = args.messages.read_text(encoding="utf-8")
     document = json.loads(raw)
+    kana_offset = int(json.loads(args.message_tables.read_text(encoding="utf-8"))["kanaKeyboard"]["saveDataOffset"], 16)
     save_data = args.save_load.read_bytes()
-    keyboard = save_data[0xC3FC:].split(b"\0", 1)[0].decode("shift_jis")
+    keyboard = save_data[kana_offset:].split(b"\0", 1)[0].decode("shift_jis")
     characters = {index: character for index, character in enumerate(keyboard)}
     font_map = json.loads(args.font_map.read_text(encoding="utf-8"))
-    characters.update({int(code): character for code, character in font_map["characters"].items()})
-    if args.font12_map:
-        font12_map = json.loads(args.font12_map.read_text(encoding="utf-8"))
-        characters.update({int(code): character for code, character in font12_map["characters"].items()})
+    for section in ("font16", "font12"):
+        characters.update({int(code): character for code, character in font_map[section]["characters"].items()})
 
     decoded = []
     unknown_codes: set[int] = set()

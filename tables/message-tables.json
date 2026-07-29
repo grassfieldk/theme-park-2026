@@ -1,0 +1,16 @@
+{
+  "description": "SLPS_008.10 ペイロード内のメッセージ索引表とデータ表の所在。仮想アドレスは memory-layout の loadAddress を基準にファイルオフセットへ変換する。",
+  "messageTable": {
+    "tableAddress": "0x80116c00",
+    "tableEnd": "0x80117358",
+    "dataAddress": "0x8010fdac",
+    "entryStride": 2,
+    "status": "confirmed",
+    "note": "table は 2 byte のワードオフセット配列。各エントリは dataAddress + wordOffset*2 を指し、-1 で終端する。件数 = (tableEnd - tableAddress) / 2。"
+  },
+  "kanaKeyboard": {
+    "saveDataOffset": "0xc3fc",
+    "status": "confirmed",
+    "note": "SAVELOAD 系データ内、NUL 終端の shift_jis 文字列。文字コード 0 から順に対応するソフトウェアキーボードのかな表。"
+  }
+}

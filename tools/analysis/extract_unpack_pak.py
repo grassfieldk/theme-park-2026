@@ -8,21 +8,22 @@ import json
 import struct
 from pathlib import Path
 
-
-LOAD_ADDRESS = 0x800A7000
-BOUNDARY_ADDRESS = 0x8010DAD4
+from _psxmem import vaddr_to_payload_offset
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--payload", type=Path, required=True)
     parser.add_argument("--pak", type=Path, required=True)
+    parser.add_argument("--tables", type=Path, required=True, help="tables/unpack-resources.json")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
 
+    boundary_index = json.loads(args.tables.read_text(encoding="utf-8"))["boundaryIndex"]
+    boundary_address = int(boundary_index["indexAddress"], 16)
     payload = args.payload.read_bytes()
     pak = args.pak.read_bytes()
-    offset = BOUNDARY_ADDRESS - LOAD_ADDRESS
+    offset = vaddr_to_payload_offset(boundary_address)
     values = struct.unpack_from(f"<{(len(payload) - offset) // 4}I", payload, offset)
 
     boundaries = [values[0]]
@@ -51,7 +52,7 @@ def main() -> None:
         "status": "confirmed-boundaries",
         "source": "recovery/disc/TEX/UNPACK.PAK",
         "indexSource": "recovery/code/input/SLPS_008.10.payload.bin",
-        "indexAddress": f"0x{BOUNDARY_ADDRESS:08x}",
+        "indexAddress": f"0x{boundary_address:08x}",
         "resourceCount": len(resources),
         "archiveSize": len(pak),
         "resources": resources,
