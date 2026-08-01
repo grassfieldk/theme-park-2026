@@ -2,10 +2,12 @@
 
 設備 ID・名前・面積・設置方法の根拠は `recovery/specs/facility-scenery.md` に記載する。
 
-- ID 0〜17 は UNPACK.PAK リソース 129 を共有し、設備 ID = リソース内のグループ番号。
+- ID 0〜17 はシーナリーリソース(129 + 種 × 4 + 季節)を共有し、設備 ID = グループ番号。
+  種は国で決まる 6 通り(seasons.json の countryScenery)、季節は 0〜3。
+  同じ種の 4 季節をアンカー基準で同寸に揃え、`{種}/{slug}-{フレーム}-s{季節}.png` に出力する。
 - ID 18(インフォメーション)と ID 19(イベントカイジョウ)はショップと同じ建物スプライトで、
-  施設カタログの ID 15 / 16 のリソースを使う。
-- グループ 20 以降は設備ではなく、アトラクションの敷地に敷かれる地形オブジェクトである。
+  施設カタログの ID 15 / 16 のリソースを使う(種・季節で変わらない)。
+- グループ 20 以降は設備ではなく、地形オブジェクト(階段)とバスである。
 """
 
 from __future__ import annotations
@@ -166,50 +168,70 @@ def open_resource(pak: bytes, resources: dict, resource_id: int):
     return resource, sections, section_count, package_offset
 
 
-def make_scenery_exporter(pak: bytes, resources: dict):
-    """リソース 129 のグループを設備 ID ごとに書き出す関数を作る。"""
-    resource, sections, section_count, package_offset = open_resource(pak, resources, SCENERY_RESOURCE)
-    vram = _shop.build_vram(resource, package_offset, resource[package_offset + 2])
+def align_seasons(composed: list[tuple]):
+    """同じ絵の 4 季節をアンカーで揃え、同寸のキャンバスに載せ直す。"""
+    anchor_x = max(ax for _image, ax, _ay in composed)
+    anchor_y = max(ay for _image, _ax, ay in composed)
+    width = max(anchor_x - ax + image.width for image, ax, _ay in composed)
+    height = max(anchor_y - ay + image.height for image, _ax, ay in composed)
+    images = []
+    for image, ax, ay in composed:
+        canvas = Image.new("RGBA", (width, height))
+        canvas.alpha_composite(image, (anchor_x - ax, anchor_y - ay))
+        images.append(canvas)
+    return images, anchor_x, anchor_y
 
-    def export(facility_id: int, slug: str):
-        section_end = sections[facility_id + 1] if facility_id + 1 < section_count else package_offset
-        frames = (section_end - sections[facility_id]) // 4
+
+def make_kind_exporter(pak: bytes, resources: dict, kind: int):
+    """シーナリー種 1 つぶん(4 季節)のグループを書き出す関数を作る。"""
+    contexts = []
+    for season in range(4):
+        resource, sections, section_count, package_offset = open_resource(
+            pak, resources, SCENERY_RESOURCE + kind * 4 + season,
+        )
+        vram = _shop.build_vram(resource, package_offset, resource[package_offset + 2])
+        contexts.append((resource, sections, section_count, package_offset, vram))
+
+    def group_frames(group: int) -> int:
+        resource, sections, section_count, package_offset, _vram = contexts[0]
+        section_end = sections[group + 1] if group + 1 < section_count else package_offset
+        return (section_end - sections[group]) // 4
+
+    def compose_seasons(group: int, frame: int):
+        composed = []
+        for resource, sections, _count, _package, vram in contexts:
+            descriptor_offset = struct.unpack_from("<H", resource, sections[group] + frame * 4 + 2)[0]
+            composed.append(compose_frame(resource, vram, descriptor_offset))
+        return align_seasons(composed)
+
+    kind_dir = DESTINATION / str(kind)
+    icon_dir = ICON_DESTINATION / str(kind)
+    kind_dir.mkdir(parents=True, exist_ok=True)
+    icon_dir.mkdir(parents=True, exist_ok=True)
+
+    def export_facility(facility_id: int, slug: str):
+        frames = group_frames(facility_id)
         offsets = []
         for frame in range(frames):
-            descriptor_offset = struct.unpack_from("<H", resource, sections[facility_id] + frame * 4 + 2)[0]
-            image, anchor_x, anchor_y = compose_frame(resource, vram, descriptor_offset)
-            image.save(DESTINATION / f"{slug}-{frame}.png")
+            images, anchor_x, anchor_y = compose_seasons(facility_id, frame)
+            for season, image in enumerate(images):
+                image.save(kind_dir / f"{slug}-{frame}-s{season}.png")
             offsets.append({"x": anchor_x, "y": anchor_y})
             if frame == 0:
-                make_icon(image).save(ICON_DESTINATION / f"{slug}.png")
+                make_icon(images[0]).save(icon_dir / f"{slug}.png")
         return frames, offsets
 
-    def export_terrain(group: int, frames: list[int], slug: str):
-        entries = []
+    def export_group(group: int, frames: list[int], name: str):
+        """グループの指定フレームを `{name}-{番号}-s{季節}.png` に書き出す。"""
+        offsets = []
         for index, frame in enumerate(frames):
-            descriptor_offset = struct.unpack_from("<H", resource, sections[group] + frame * 4 + 2)[0]
-            image, anchor_x, anchor_y = compose_frame(resource, vram, descriptor_offset)
-            image.save(TERRAIN_DESTINATION / f"terrain-{slug}-{index}.png")
-            entries.append({
-                "src": f"/assets/park/terrain-{slug}-{index}.png",
-                "offset": {"x": anchor_x, "y": anchor_y},
-            })
-        return entries
+            images, anchor_x, anchor_y = compose_seasons(group, frame)
+            for season, image in enumerate(images):
+                image.save(kind_dir / f"{name}-{index}-s{season}.png")
+            offsets.append({"x": anchor_x, "y": anchor_y})
+        return offsets
 
-    def export_bus(group: int, variant: int):
-        section_end = sections[group + 1] if group + 1 < section_count else package_offset
-        parts = []
-        for frame in range((section_end - sections[group]) // 4):
-            descriptor_offset = struct.unpack_from("<H", resource, sections[group] + frame * 4 + 2)[0]
-            image, anchor_x, anchor_y = compose_frame(resource, vram, descriptor_offset)
-            image.save(TERRAIN_DESTINATION / f"bus-{variant}-{frame}.png")
-            parts.append({
-                "src": f"/assets/park/bus-{variant}-{frame}.png",
-                "offset": {"x": anchor_x, "y": anchor_y},
-            })
-        return parts
-
-    return export, export_terrain, export_bus
+    return export_facility, export_group, group_frames
 
 
 def export_building(pak: bytes, resources: dict, palette, catalog_id: int, slug: str):
@@ -234,7 +256,9 @@ def export_building(pak: bytes, resources: dict, palette, catalog_id: int, slug:
         resource, package_offset, palette, marker_offset, upload_vram, scope_end,
     )
     image.save(DESTINATION / f"{slug}-0.png")
-    make_icon(image).save(ICON_DESTINATION / f"{slug}.png")
+    # アイコンはシーナリー種別のフォルダから読むので、建物も全種へ同じものを置く
+    for kind in range(6):
+        make_icon(image).save(ICON_DESTINATION / str(kind) / f"{slug}.png")
     return 1, [{"x": anchor_x, "y": anchor_y}]
 
 
@@ -245,35 +269,68 @@ def main() -> None:
 
     DESTINATION.mkdir(parents=True, exist_ok=True)
     ICON_DESTINATION.mkdir(parents=True, exist_ok=True)
-    for previous in DESTINATION.glob("*.png"):
+    for previous in DESTINATION.rglob("*.png"):
         previous.unlink()
+    for previous in ICON_DESTINATION.rglob("*.png"):
+        previous.unlink()
+    for pattern in ("terrain-stairs-*.png", "bus-*.png"):
+        for previous in TERRAIN_DESTINATION.glob(pattern):
+            previous.unlink()
 
-    export_scenery, export_terrain, export_bus = make_scenery_exporter(pak, resources)
     construction_costs, country_costs = read_construction_costs()
 
-    terrain = {slug: export_terrain(group, frames, slug) for slug, (group, frames) in TERRAIN_OBJECTS.items()}
-    TERRAIN_CONFIG.write_text(json.dumps(terrain, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    # 種(国別 6 通り)ごとに 4 季節を書き出す
+    frames_by_facility: dict[int, int] = {}
+    offsets_by_facility: dict[int, list] = {facility_id: [] for facility_id, *_ in FACILITIES}
+    stairs_by_kind = []
+    bus_offsets_by_kind: list[list] = [[] for _ in BUS_GROUPS]
+    for kind in range(6):
+        export_facility, export_group, _group_frames = make_kind_exporter(pak, resources, kind)
+        for facility_id, slug, _name, _width, _height, placement in FACILITIES:
+            if placement == "building":
+                continue
+            frames, offsets = export_facility(facility_id, slug)
+            frames_by_facility[facility_id] = frames
+            offsets_by_facility[facility_id].append(offsets)
+        for _slug, (group, group_frame_list) in TERRAIN_OBJECTS.items():
+            stairs_by_kind.append(export_group(group, group_frame_list, "terrain-stairs"))
+        for index, (group, _versions) in enumerate(BUS_GROUPS):
+            bus_offsets_by_kind[index].append(export_group(group, [0, 1, 2], f"bus-{index}"))
+
+    terrain = {
+        "_note": [
+            "アルバトロス用の階段。外側の配列 = シーナリー種(seasons.json の countryScenery)。",
+            "画像は /assets/park/facilities/{種}/terrain-stairs-{番号}-s{季節}.png。",
+        ],
+        "stairs": stairs_by_kind,
+    }
+    TERRAIN_CONFIG.write_text(json.dumps(terrain, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
 
     bus = {
         "_note": [
-            "バスの車体。parts は 0 = 先頭、1 = 中間、2 = 後尾。",
+            "バスの車体。part は 0 = 先頭、1 = 中間、2 = 後尾。",
             "先頭を基準点に、中間をバージョン数だけ partSpacing 間隔で並べ、後尾をその後ろへつなげる。",
-            "offset は基準点から画像左上までのずらし。",
+            "offsetsByKind はシーナリー種ごとの基準点から画像左上までのずらし。",
+            "画像は /assets/park/facilities/{種}/bus-{車種}-{part}-s{季節}.png。",
         ],
         "partSpacing": BUS_PART_SPACING,
         "variants": [
-            {"versions": versions, "parts": export_bus(group, index)}
-            for index, (group, versions) in enumerate(BUS_GROUPS)
+            {"versions": versions, "offsetsByKind": bus_offsets_by_kind[index]}
+            for index, (_group, versions) in enumerate(BUS_GROUPS)
         ],
     }
-    BUS_CONFIG.write_text(json.dumps(bus, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    BUS_CONFIG.write_text(json.dumps(bus, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
 
     entries = []
     for facility_id, slug, name, width, height, placement in FACILITIES:
         if placement == "building":
             frames, offsets = export_building(pak, resources, palette, BUILDING_RESOURCE[facility_id], slug)
+            offsets_by_kind = [offsets] * 6
+            asset_base = f"/assets/park/facilities/{slug}"
         else:
-            frames, offsets = export_scenery(facility_id, slug)
+            frames = frames_by_facility[facility_id]
+            offsets_by_kind = offsets_by_facility[facility_id]
+            asset_base = "/assets/park/facilities"
         entry = {
             "id": slug,
             "name": name,
@@ -283,8 +340,8 @@ def main() -> None:
             "placement": placement,
             "constructionCost": construction_costs[facility_id],
             "frames": frames,
-            "imageOffsets": offsets,
-            "assetBase": f"/assets/park/facilities/{slug}",
+            "imageOffsetsByKind": offsets_by_kind,
+            "assetBase": asset_base,
         }
         if facility_id == 6:
             entry["countryNames"] = COUNTRY_PLANTS

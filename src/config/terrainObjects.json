@@ -1,18 +1,68 @@
 {
-  "stairs": [
-    {
-      "src": "/assets/park/terrain-stairs-0.png",
-      "offset": {
-        "x": 2,
-        "y": 16
-      }
-    },
-    {
-      "src": "/assets/park/terrain-stairs-1.png",
-      "offset": {
-        "x": 0,
-        "y": 6
-      }
-    }
+ "_note": [
+  "アルバトロス用の階段。外側の配列 = シーナリー種(seasons.json の countryScenery)。",
+  "画像は /assets/park/facilities/{種}/terrain-stairs-{番号}-s{季節}.png。"
+ ],
+ "stairs": [
+  [
+   {
+    "x": 2,
+    "y": 16
+   },
+   {
+    "x": 0,
+    "y": 6
+   }
+  ],
+  [
+   {
+    "x": 2,
+    "y": 16
+   },
+   {
+    "x": 0,
+    "y": 6
+   }
+  ],
+  [
+   {
+    "x": 2,
+    "y": 16
+   },
+   {
+    "x": 0,
+    "y": 6
+   }
+  ],
+  [
+   {
+    "x": 2,
+    "y": 16
+   },
+   {
+    "x": 0,
+    "y": 6
+   }
+  ],
+  [
+   {
+    "x": 2,
+    "y": 16
+   },
+   {
+    "x": 0,
+    "y": 6
+   }
+  ],
+  [
+   {
+    "x": 2,
+    "y": 16
+   },
+   {
+    "x": 0,
+    "y": 6
+   }
   ]
+ ]
 }

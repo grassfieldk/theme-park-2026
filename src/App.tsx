@@ -5,6 +5,7 @@ import shops from './config/shops.json'
 import facilities from './config/facilities.json'
 import game from './config/game.json'
 import parkMenu from './config/parkMenu.json'
+import seasons from './config/seasons.json'
 import { GamepadController, type MenuAction } from './components/GamepadController'
 import type { ParkMapHandle } from './components/ParkMap'
 import ParkMenu from './components/ParkMenu'
@@ -190,7 +191,11 @@ export default function App() {
 
   const selected = countries[selectedCountry]
   // 国ごとに設置できるものだけを一覧に出す(countryAvailability.json)
-  const countryAttractions = useMemo(() => forCountry(attractions, 'attractions', selected.id), [selected.id])
+  // 季節で切り替わる姿(スケートリンク・プール)はメニューに出さない。設置後に自動で切り替わる
+  const countryAttractions = useMemo(
+    () => forCountry(attractions, 'attractions', selected.id).filter((attraction) => !('seasonalFormOf' in attraction)),
+    [selected.id],
+  )
   const countryShops = useMemo(() => forCountry(shops, 'shops', selected.id), [selected.id])
   const countryFacilities = useMemo(() => forCountry(facilities, 'facilities', selected.id), [selected.id])
 
@@ -390,7 +395,8 @@ export default function App() {
             id: facility.id,
             label: facility.name,
             description: `${facility.width} × ${facility.height} マス`,
-            iconSrc: `/assets/park/facility-icons/${facility.id}.png`,
+            // 設備のアイコンは国ごとのシーナリー種の絵柄になる
+            iconSrc: `/assets/park/facility-icons/${(seasons.countryScenery as Record<string, number>)[countries[selectedCountry].id] ?? 0}/${facility.id}.png`,
             enabled: true,
           }))
           : null
@@ -507,6 +513,7 @@ export default function App() {
               })}
               mapBlocked={mapBlocked}
               initialPark={loadedPark}
+              initialElapsedDays={elapsedDays.current}
             />
           </Suspense>
           <div className="park-status-overlay">

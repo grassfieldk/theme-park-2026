@@ -9,6 +9,7 @@ import type { MenuAction } from './GamepadController'
 import busSprites from '../config/busSprites.json'
 import guestSprites from '../config/guestSprites.json'
 import pointers from '../config/pointers.json'
+import seasons from '../config/seasons.json'
 import terrainObjects from '../config/terrainObjects.json'
 import { gameDaysPerMs } from '../game/clock'
 import type { ParkSnapshot } from '../game/save'
@@ -45,6 +46,8 @@ type Props = {
   mapBlocked: boolean
   /** セーブデータから再開するときの園の中身。新規開始なら null */
   initialPark: ParkSnapshot | null
+  /** 開始時点の経過日数。季節や滞在日数の基準になる */
+  initialElapsedDays: number
 }
 
 export type ParkMapHandle = {
@@ -105,10 +108,12 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
   onRemoveConfirm,
   mapBlocked,
   initialPark,
+  initialElapsedDays,
 }: Props, ref) {
   const host = useRef<HTMLDivElement>(null)
   // 再開データはマップを組み立てるときに 1 回だけ使う
   const initialParkData = useRef(initialPark)
+  const initialDays = useRef(initialElapsedDays)
   const takeSnapshot = useRef<(() => ParkSnapshot) | null>(null)
   const initialSecondsPerDay = useRef(secondsPerDay)
   const phaserGame = useRef<Phaser.Game | null>(null)
@@ -166,6 +171,8 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
     const peopleSet = (peopleSetByCountry[country.id] ?? 'A').toLowerCase()
     const guestBanks = (guestSprites.sets as Record<string, GuestBank[]>)[peopleSet] ?? []
     const guestBankById = new Map(guestBanks.map((bank) => [bank.bank, bank]))
+    // 木・設備・階段・バスの絵柄は国ごとのシーナリー種で決まる
+    const sceneryKind = (seasons.countryScenery as Record<string, number>)[country.id] ?? 0
 
     // 演算は画面の更新間隔と切り離し、この刻み幅で必要な回数だけ進める。
     // どの環境でも 1 回あたりの進む量が同じになり、毎秒の回数も一定になる
@@ -197,9 +204,19 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             this.load.image(`shop-${shop.id}-${direction}`, `${shop.assetBase}-${direction}.png`)
           }
         })
+        // 設備はシーナリー種(国別)の 4 季節ぶんを読み込む。建物は種・季節で変わらない
         facilities.forEach((facility) => {
           for (let frame = 0; frame < facility.frames; frame += 1) {
-            this.load.image(`facility-${facility.id}-${frame}`, `${facility.assetBase}-${frame}.png`)
+            if (facility.placement === 'building') {
+              this.load.image(`facility-${facility.id}-${frame}`, `${facility.assetBase}-${frame}.png`)
+              continue
+            }
+            for (let season = 0; season < 4; season += 1) {
+              this.load.image(
+                `facility-${facility.id}-${frame}-s${season}`,
+                `${facility.assetBase}/${sceneryKind}/${facility.id}-${frame}-s${season}.png`,
+              )
+            }
           }
         })
         // 来園者は国ごとの PEOPLE セットを使う。1 枚に 4 方向 × 4 コマ
@@ -209,29 +226,33 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             frameHeight: bank.frameHeight,
           })
         })
-        for (let index = 0; index < 13; index += 1) {
-          this.load.image(`build-base-frame-${index}`, `/assets/park/build-base-frame-${index}.png`)
-        }
+        // 季節で色が変わる地形パーツは [通常|秋|冬] の 3 コマのシート
+        Object.entries(seasons.seasonalAssets).forEach(([name, size]) => {
+          this.load.spritesheet(name, `/assets/park/${name}.png?v=8`, {
+            frameWidth: size.width,
+            frameHeight: size.height,
+          })
+        })
         for (let index = 0; index < 4; index += 1) {
           this.load.image(`facility-entrance-frame-${index}`, `/assets/park/facility-entrance-frame-${index}.png`)
-          this.load.image(`facility-exit-frame-${index}`, `/assets/park/facility-exit-frame-${index}.png`)
-        }
-        for (let index = 0; index < 17; index += 1) {
-          this.load.image(`road-frame-${index}`, `/assets/park/road-frame-${index}.png`)
-        }
-        for (let index = 0; index < 14; index += 1) {
-          this.load.image(`queue-frame-${index}`, `/assets/park/queue-frame-${index}.png?v=6`)
         }
         this.load.image('pointer-arrow', pointers.arrow.src)
         this.load.image('pointer-shovel', pointers.shovel.src)
-        terrainObjects.stairs.forEach((piece, index) => this.load.image(`terrain-stairs-${index}`, piece.src))
-        busSprites.variants.forEach((variant) => variant.parts.forEach((part) => this.load.image(part.src, part.src)))
-        this.load.image('ground-tile', '/assets/park/ground-tile.png')
-        this.load.image('gate-base-2', '/assets/park/gate-base-2.png')
-        this.load.image('gate-base-3', '/assets/park/gate-base-3.png')
-        this.load.image('gate-base-6', '/assets/park/gate-base-6.png')
-        this.load.image('gate-base-17', '/assets/park/gate-base-17.png')
-        this.load.image('gate-base-19', '/assets/park/gate-base-19.png')
+        // 階段とバスも設備と同じシーナリー種・季節の絵を使う
+        for (let season = 0; season < 4; season += 1) {
+          terrainObjects.stairs[sceneryKind].forEach((_offset, index) => {
+            this.load.image(
+              `terrain-stairs-${index}-s${season}`,
+              `/assets/park/facilities/${sceneryKind}/terrain-stairs-${index}-s${season}.png`,
+            )
+          })
+          busSprites.variants[0].offsetsByKind[sceneryKind].forEach((_offset, part) => {
+            this.load.image(
+              `bus-0-${part}-s${season}`,
+              `/assets/park/facilities/${sceneryKind}/bus-0-${part}-s${season}.png`,
+            )
+          })
+        }
         this.load.image('border-top', '/assets/park/border-top.png')
         this.load.image('border-side', '/assets/park/border-side.png')
         this.load.image('border-top-left', '/assets/park/border-top-left.png')
@@ -247,12 +268,6 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         this.load.image('gate-right-tower', '/assets/park/gate-right-tower.png?v=2')
         this.load.image('gate-right-base', '/assets/park/gate-right-base.png')
         this.load.image('gate-right-roof', '/assets/park/gate-right-roof.png')
-        this.load.image('entrance-background-1', '/assets/park/entrance-background-1.png')
-        this.load.image('entrance-background-2', '/assets/park/entrance-background-2.png')
-        this.load.image('entrance-background-3', '/assets/park/entrance-background-3.png')
-        this.load.image('entrance-background-4', '/assets/park/entrance-background-4.png')
-        this.load.image('entrance-special-49', '/assets/park/entrance-special-49.png')
-        this.load.image('entrance-special-50', '/assets/park/entrance-special-50.png')
       }
 
       create() {
@@ -277,6 +292,40 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         let removeHeld = false
         // メニューや確認が開いている間はマップへのクリックを無視する
         let mapInteractive = !initialMapBlocked.current
+
+        // ---- 季節 ----
+        // 地形の色は国ごとの季節表で決まる。対象アセットは [通常|秋|冬] の 3 コマで、
+        // フレーム番号 = 現在の変種
+        const seasonalKeys = new Set(Object.keys(seasons.seasonalAssets))
+        const startDateMs = Date.parse(game.park.startDate)
+        const seasonAt = (days: number) => {
+          const month = new Date(startDateMs + Math.floor(days) * 86_400_000).getUTCMonth()
+          const quarter = month >= 2 && month <= 4 ? 0 : month >= 5 && month <= 7 ? 1 : month >= 8 && month <= 10 ? 2 : 3
+          return (seasons.countrySeasons as Record<string, number[]>)[country.id]?.[quarter] ?? 0
+        }
+        let seasonIndex = seasonAt(initialDays.current)
+        let seasonVariant = seasons.variantBySeason[seasonIndex]
+        const seasonFrame = <T extends Phaser.GameObjects.Image>(image: T): T => {
+          if (seasonalKeys.has(image.texture.key)) image.setFrame(seasonVariant)
+          return image
+        }
+        // 設備のテクスチャとずらしは、シーナリー種(国)と季節で決まる
+        const facilityTexture = (facility: Facility, frame: number) => (
+          facility.placement === 'building'
+            ? `facility-${facility.id}-${frame}`
+            : `facility-${facility.id}-${frame}-s${seasonIndex}`
+        )
+        const facilityOffsets = (facility: Facility) => facility.imageOffsetsByKind[sceneryKind]
+        // 季節で姿が変わるアトラクション(プール・スケートリンク)。
+        // 記録とセーブは常に元の ID で持ち、絵だけ秋冬の姿に切り替える
+        const seasonalFormByBase = new Map<string, Attraction>()
+        attractions.forEach((entry) => {
+          if ('seasonalFormOf' in entry && entry.seasonalFormOf) seasonalFormByBase.set(entry.seasonalFormOf, entry)
+        })
+        const attractionForm = (attraction: Attraction) => (
+          seasonIndex >= 2 ? seasonalFormByBase.get(attraction.id) ?? attraction : attraction
+        )
+
         const ground = this.add.renderTexture(0, 0, worldWidth, worldHeight).setOrigin(0)
         const { x: left, y: top, width, height } = country.map
         const right = left + width - 1
@@ -313,7 +362,8 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         }
         const draw = (target: Phaser.GameObjects.RenderTexture, { key, x, y, offsetX = 0, offsetY = 0 }: DrawCommand) => {
           const position = point(x, y)
-          target.draw(key, position.x - offsetX, position.y - offsetY)
+          if (seasonalKeys.has(key)) target.drawFrame(key, seasonVariant, position.x - offsetX, position.y - offsetY)
+          else target.draw(key, position.x - offsetX, position.y - offsetY)
         }
 
         const entranceTileKey = (x: number, y: number) => {
@@ -385,14 +435,46 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         const terrainForeground = this.add.renderTexture(0, 0, worldWidth, worldHeight).setOrigin(0).setDepth(0.5)
         const addStaticImage = (layer: RenderLayer, command: DrawCommand) => {
           const position = point(command.x, command.y)
-          this.add.image(position.x - (command.offsetX ?? 0), position.y - (command.offsetY ?? 0), command.key)
-            .setOrigin(0)
-            .setDepth(layerDepth[layer] - command.depth)
+          seasonFrame(
+            this.add.image(position.x - (command.offsetX ?? 0), position.y - (command.offsetY ?? 0), command.key)
+              .setOrigin(0)
+              .setDepth(layerDepth[layer] - command.depth),
+          )
         }
-        backgroundCommands.forEach((command) => draw(ground, command))
-        terrainForegroundCommands.forEach((command) => draw(terrainForeground, command))
+        const drawTerrainLayers = () => {
+          ground.clear()
+          terrainForeground.clear()
+          backgroundCommands.forEach((command) => draw(ground, command))
+          terrainForegroundCommands.forEach((command) => draw(terrainForeground, command))
+        }
+        drawTerrainLayers()
         facilityCommands.forEach((command) => addStaticImage('facility', command))
         accessCommands.forEach((command) => addStaticImage('access', command))
+        // 季節が変わったら地形を描き直し、置かれている季節対応の画像も切り替える。
+        // 設備・階段・バスはキー末尾の -s{季節} を現在の季節へ付け替える
+        const applySeason = () => {
+          drawTerrainLayers()
+          this.children.list.forEach((child) => {
+            if (!(child instanceof Phaser.GameObjects.Image)) return
+            if (seasonalKeys.has(child.texture.key)) {
+              child.setFrame(seasonVariant)
+              return
+            }
+            if (/-s[0-3]$/.test(child.texture.key)) {
+              child.setTexture(child.texture.key.replace(/-s[0-3]$/, `-s${seasonIndex}`))
+            }
+          })
+          // 季節で姿が変わるアトラクションを掛け替える
+          placedAttractions.forEach((placed) => {
+            if (!seasonalFormByBase.has(placed.id)) return
+            const base = attractions.find((entry) => entry.id === placed.id)
+            if (!base) return
+            const form = attractionForm(base)
+            if (placed.image.texture.key === form.id) return
+            const position = attractionImagePosition(base, form.imageOffset, placed.x, placed.y + base.height - 1)
+            placed.image.setTexture(form.id).setPosition(position.x, position.y)
+          })
+        }
 
         const roadFrameByMask = [16, 2, 4, 0, 3, 10, 11, 7, 5, 13, 12, 9, 1, 6, 8, 15]
         const queueStateByMask = [0, 9, 10, 1, 7, 3, 4, 1, 8, 6, 5, 1, 2, 2, 2, 2]
@@ -500,8 +582,8 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             const position = point(tileX, tileY)
             const image = currentImage ?? this.add.image(position.x, position.y, 'road-frame-0').setOrigin(0)
             if (!currentImage) roadImages.set(key, image)
-            image.setTexture(`road-frame-${roadFrameByMask[roadMaskAt(tileX, tileY)]}`)
-              .setDepth(renderDepthAt('road', tileX, tileY))
+            seasonFrame(image.setTexture(`road-frame-${roadFrameByMask[roadMaskAt(tileX, tileY)]}`)
+              .setDepth(renderDepthAt('road', tileX, tileY)))
           })
         }
         const redrawQueueTiles = (x: number, y: number) => {
@@ -518,8 +600,8 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             const position = point(tileX, tileY)
             const image = currentImage ?? this.add.image(position.x, position.y, `queue-frame-${frame}`).setOrigin(0)
             if (!currentImage) queueRoadImages.set(key, image)
-            image.setTexture(`queue-frame-${frame}`).setPosition(position.x, position.y)
-              .setDepth(renderDepthAt('road', tileX, tileY))
+            seasonFrame(image.setTexture(`queue-frame-${frame}`).setPosition(position.x, position.y)
+              .setDepth(renderDepthAt('road', tileX, tileY)))
           })
           updateAttractionEntranceFrames()
         }
@@ -731,7 +813,8 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         // 相対で抽出している。オブジェクトセルは通常はカーソルのタイル(フンスイは中心 = カーソル)、
         // 建物 2 種はショップと同じスプライトで footprint の中心タイルになる
         const facilityImagePosition = (facility: Facility, frame: number, x: number, y: number) => {
-          const offset = facility.imageOffsets[frame] ?? facility.imageOffsets[0]
+          const offsets = facilityOffsets(facility)
+          const offset = offsets[frame] ?? offsets[0]
           const base = facility.placement === 'building'
             ? point(x + Math.floor(facility.width / 2), y - Math.floor(facility.height / 2))
             : point(x, y)
@@ -742,7 +825,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           if (!placed || frame < 0 || frame === placed.frame) return
           placed.frame = frame
           const position = facilityImagePosition(placed.facility, frame, x, y)
-          placed.image.setTexture(`facility-${placed.facility.id}-${frame}`).setPosition(position.x, position.y)
+          placed.image.setTexture(facilityTexture(placed.facility, frame)).setPosition(position.x, position.y)
         }
         const removeFacility = (x: number, y: number) => {
           const placed = facilityAt(x, y)
@@ -814,7 +897,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             height: facility.height,
           }, true)
           const position = facilityImagePosition(facility, frame, x, y)
-          const image = this.add.image(position.x, position.y, `facility-${facility.id}-${frame}`).setOrigin(0)
+          const image = this.add.image(position.x, position.y, facilityTexture(facility, frame)).setOrigin(0)
             .setDepth(renderDepthAt('facility', origin.x, origin.y))
           placedFacilities.set(tileKey(x, y), { facility, frame, image })
         }
@@ -974,9 +1057,9 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             const image = shopRoadPreview[index] ?? this.add.image(0, 0, 'road-frame-0').setOrigin(0)
             if (!shopRoadPreview[index]) shopRoadPreview.push(image)
             const position = point(tile.x, tile.y)
-            image.setTexture(`road-frame-${roadFrameByMask[mask]}`).setPosition(position.x, position.y)
+            seasonFrame(image.setTexture(`road-frame-${roadFrameByMask[mask]}`).setPosition(position.x, position.y)
               .setDepth(renderDepthAt('road', tile.x, tile.y)).setVisible(true)
-              .setAlpha(valid ? 1 : 0.55).setTint(valid ? 0xffffff : 0xff6048)
+              .setAlpha(valid ? 1 : 0.55).setTint(valid ? 0xffffff : 0xff6048))
           })
         }
         const drawCursor = () => {
@@ -997,13 +1080,13 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
                 ? facilityFootprint(placingFacility)
                 : null
           const previewImage = placingBody
-            ? { key: attraction.id, offset: attraction.imageOffset }
+            ? { key: attractionForm(attraction).id, offset: attractionForm(attraction).imageOffset }
             : placingShopBody
               ? { key: `shop-${shop.id}-${shopDirection}`, offset: shop.imageOffsets[shopDirection] }
               : placingFacility
                 ? {
-                  key: `facility-${placingFacility.id}-${facilityFrame}`,
-                  offset: placingFacility.imageOffsets[facilityFrame] ?? placingFacility.imageOffsets[0],
+                  key: facilityTexture(placingFacility, facilityFrame),
+                  offset: facilityOffsets(placingFacility)[facilityFrame] ?? facilityOffsets(placingFacility)[0],
                 }
                 : null
           const attractionOrigin = footprint ? attractionOriginAtCursor(footprint) : null
@@ -1049,14 +1132,14 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
                 const frame = water
                   ? waterFrameAt(offsetX, rowFromTop, footprint.width, footprint.height)
                   : buildBaseFrameAt(offsetX, rowFromTop, footprint.width, footprint.height)
-                const key = water ? `facility-pond-${frame}` : `build-base-frame-${frame}`
-                const offset = water ? pondFacility.imageOffsets[frame] ?? pondFacility.imageOffsets[0] : { x: 0, y: 0 }
+                const key = water ? facilityTexture(pondFacility, frame) : `build-base-frame-${frame}`
+                const offset = water ? facilityOffsets(pondFacility)[frame] ?? facilityOffsets(pondFacility)[0] : { x: 0, y: 0 }
                 const image = buildBasePreview[previewIndex] ?? this.add.image(0, 0, key).setOrigin(0)
                 if (!buildBasePreview[previewIndex]) buildBasePreview.push(image)
                 const tile = point(attractionOrigin.x + offsetX, attractionOrigin.y - offsetY)
-                image.setTexture(key).setPosition(tile.x - offset.x, tile.y - offset.y).setVisible(true)
+                seasonFrame(image.setTexture(key).setPosition(tile.x - offset.x, tile.y - offset.y).setVisible(true)
                   .setDepth(renderDepthAt('terrain', attractionOrigin.x + offsetX, attractionOrigin.y - offsetY))
-                  .setAlpha(valid ? 1 : 0.55).setTint(valid ? 0xffffff : 0xff6048)
+                  .setAlpha(valid ? 1 : 0.55).setTint(valid ? 0xffffff : 0xff6048))
                 previewIndex += 1
               }
             }
@@ -1096,10 +1179,10 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             const [offsetX, offsetY] = accessStep === 'entrance'
               ? [tileWidth / 2, stepY]
               : accessOffsetAt(accessStep, frame)
-            accessPreview.setTexture(key).setOrigin(accessStep === 'entrance' ? 0.5 : 0, accessStep === 'entrance' ? 1 : 0)
+            seasonFrame(accessPreview.setTexture(key).setOrigin(accessStep === 'entrance' ? 0.5 : 0, accessStep === 'entrance' ? 1 : 0)
               .setPosition(tile.x + offsetX, tile.y + offsetY)
               .setDepth(renderDepthAt('facility', drawn.x, drawn.y))
-              .setVisible(true).setAlpha(valid ? 1 : 0.55).setTint(valid ? 0xffffff : 0xff6048)
+              .setVisible(true).setAlpha(valid ? 1 : 0.55).setTint(valid ? 0xffffff : 0xff6048))
           }
         }
         const placeCursor = (x: number, y: number) => {
@@ -1336,16 +1419,16 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
               const depth = renderDepthAt('terrain', x + offsetX, y + offsetY)
               if (ground === 'water' && isWaterTile(offsetX, offsetY, attraction.width, attraction.height)) {
                 const frame = waterFrameAt(offsetX, offsetY, attraction.width, attraction.height)
-                const offset = pondFacility.imageOffsets[frame] ?? pondFacility.imageOffsets[0]
+                const offset = facilityOffsets(pondFacility)[frame] ?? facilityOffsets(pondFacility)[0]
                 baseImages.push(
-                  this.add.image(tile.x - offset.x, tile.y - offset.y, `facility-pond-${frame}`)
+                  this.add.image(tile.x - offset.x, tile.y - offset.y, facilityTexture(pondFacility, frame))
                     .setOrigin(0).setDepth(depth),
                 )
                 continue
               }
               const frame = buildBaseFrameAt(offsetX, offsetY, attraction.width, attraction.height)
               baseImages.push(
-                this.add.image(tile.x, tile.y, `build-base-frame-${frame}`).setOrigin(0).setDepth(depth),
+                seasonFrame(this.add.image(tile.x, tile.y, `build-base-frame-${frame}`).setOrigin(0).setDepth(depth)),
               )
             }
           }
@@ -1353,17 +1436,18 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           if (ground === 'stairs') {
             const centerX = x + (attraction.width >> 1)
             const centerY = y + attraction.height - 1 - (attraction.height >> 1)
-            terrainObjects.stairs.forEach((piece, index) => {
+            terrainObjects.stairs[sceneryKind].forEach((offset, index) => {
               const tileY = centerY - index
               const tile = point(centerX, tileY)
               baseImages.push(
-                this.add.image(tile.x - piece.offset.x, tile.y - piece.offset.y, `terrain-stairs-${index}`)
+                this.add.image(tile.x - offset.x, tile.y - offset.y, `terrain-stairs-${index}-s${seasonIndex}`)
                   .setOrigin(0).setDepth(renderDepthAt('facility', centerX, tileY)),
               )
             })
           }
-          const imagePosition = attractionImagePosition(attraction, attraction.imageOffset, bottomX, bottomY)
-          const image = this.add.image(imagePosition.x, imagePosition.y, attraction.id)
+          const form = attractionForm(attraction)
+          const imagePosition = attractionImagePosition(attraction, form.imageOffset, bottomX, bottomY)
+          const image = this.add.image(imagePosition.x, imagePosition.y, form.id)
             .setOrigin(0).setDepth(renderDepthAt('facility', bottomX, bottomY))
           const placed: PlacedAttraction = {
             id: attraction.id,
@@ -1571,13 +1655,13 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           const [offsetX, offsetY] = accessStep === 'entrance'
             ? [tileWidth / 2, stepY]
             : accessOffsetAt(accessStep, frame)
-          const image = this.add.image(
+          const image = seasonFrame(this.add.image(
             tile.x + offsetX,
             tile.y + offsetY,
             `facility-${accessStep}-frame-${frame}`,
           ).setOrigin(accessStep === 'entrance' ? 0.5 : 0, accessStep === 'entrance' ? 1 : 0)
             // 入口・出口は設備や建物と同じ扱い。前後は位置だけで決まる
-            .setDepth(renderDepthAt('facility', drawn.x, drawn.y))
+            .setDepth(renderDepthAt('facility', drawn.x, drawn.y)))
           // 入口は敷地の外のマスを 1 つ占める。出口は敷地の内側なのですでに占有済み
           if (accessStep === 'entrance') occupiedByAttraction.add(tileKey(x, y))
           return { x, y, frame, image }
@@ -1785,7 +1869,11 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           }
           const attraction = attractionCoveringTile(x, y)
           if (attraction) {
-            askRemoval(() => removeAttraction(attraction), attractions.find((entry) => entry.id === attraction.id)?.name ?? '')
+            askRemoval(() => removeAttraction(attraction), (() => {
+              const base = attractions.find((entry) => entry.id === attraction.id)
+              // 秋冬はスケートリンク側の名前で確認を出す
+              return base ? attractionForm(base).name : ''
+            })())
             return
           }
           const shop = shopCoveringTile(x, y)
@@ -2030,7 +2118,11 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           })
           snapshot.buildings.forEach((id) => placedBuildings.add(id))
           snapshot.attractions.forEach((saved) => {
-            const attraction = attractions.find((entry) => entry.id === saved.id)
+            let attraction = attractions.find((entry) => entry.id === saved.id)
+            // 古いセーブに秋冬の姿の ID で残っている場合は元のアトラクションに読み替える
+            if (attraction && 'seasonalFormOf' in attraction) {
+              attraction = attractions.find((entry) => entry.id === attraction!.seasonalFormOf)
+            }
             if (!attraction) return
             const placed = addAttraction(attraction, saved.x, saved.y)
             if (saved.entrance) {
@@ -2099,7 +2191,8 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           image: Phaser.GameObjects.Sprite
         }
         const guests: Guest[] = []
-        let elapsedDays = 0
+        // セーブから再開したときは経過日数も引き継ぐ(季節や滞在日数の基準になる)
+        let elapsedDays = initialDays.current
 
         const guestNeighbours = [{ x: 1, y: 0 }, { x: -1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: -1 }]
         const wideAreaCorners = [[0, 0], [-1, 0], [0, -1], [-1, -1]]
@@ -2325,13 +2418,13 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         // ---- バス ----
         // 車体は 先頭 + 中間 × バージョン数 + 後尾 の連結。現状はバージョン 1 相当で中間なし
         const busMiddleCount = 0
+        const busOffsets = busSprites.variants[0].offsetsByKind[sceneryKind]
         const busParts = (() => {
-          const variant = busSprites.variants[0]
-          const parts = [{ part: variant.parts[0], slotX: 0 }]
+          const parts = [{ part: 0, slotX: 0 }]
           for (let index = 0; index < busMiddleCount; index += 1) {
-            parts.push({ part: variant.parts[1], slotX: busSprites.partSpacing * index })
+            parts.push({ part: 1, slotX: busSprites.partSpacing * index })
           }
-          parts.push({ part: variant.parts[2], slotX: busSprites.partSpacing * busMiddleCount })
+          parts.push({ part: 2, slotX: busSprites.partSpacing * busMiddleCount })
           return parts
         })()
         type Bus = {
@@ -2356,12 +2449,12 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           const depth = renderDepthAt('facility', column, busRow)
           current.images.forEach((image, index) => {
             const { part, slotX } = busParts[index]
-            image.setPosition(baseX + slotX - part.offset.x, baseY - part.offset.y).setDepth(depth)
+            image.setPosition(baseX + slotX - busOffsets[part].x, baseY - busOffsets[part].y).setDepth(depth)
           })
           // 乗車率のバーは車体の中央下に置く
-          const leftEdge = Math.min(...busParts.map(({ part, slotX }) => slotX - part.offset.x))
-          const rightEdge = Math.max(...busParts.map(({ part, slotX }, index) => slotX - part.offset.x + current.images[index].width))
-          const bottomEdge = Math.max(...busParts.map(({ part }, index) => current.images[index].height - part.offset.y))
+          const leftEdge = Math.min(...busParts.map(({ part, slotX }) => slotX - busOffsets[part].x))
+          const rightEdge = Math.max(...busParts.map(({ part, slotX }, index) => slotX - busOffsets[part].x + current.images[index].width))
+          const bottomEdge = Math.max(...busParts.map(({ part }, index) => current.images[index].height - busOffsets[part].y))
           const gauge = busConfig.gauge
           const gaugeX = baseX + (leftEdge + rightEdge - gauge.width) / 2
           const gaugeY = baseY + bottomEdge + gauge.offsetY
@@ -2437,7 +2530,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             unloaded: 0,
             unloadDone: false,
             boarded: 0,
-            images: busParts.map(({ part }) => this.add.image(0, 0, part.src).setOrigin(0)),
+            images: busParts.map(({ part }) => this.add.image(0, 0, `bus-0-${part}-s${seasonIndex}`).setOrigin(0)),
             gaugeBack: this.add
               .rectangle(0, 0, busConfig.gauge.width, busConfig.gauge.height, 0x000000, 0.6)
               .setOrigin(0, 0),
@@ -2455,6 +2548,12 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           const days = deltaMs * daysPerMs
           if (days <= 0) return
           elapsedDays += days
+          const season = seasonAt(elapsedDays)
+          if (season !== seasonIndex) {
+            seasonIndex = season
+            seasonVariant = seasons.variantBySeason[season]
+            applySeason()
+          }
           // 前のバスが去ってから次の間隔で、右手からバスが入ってくる
           if (!bus) {
             busTimerDays += days

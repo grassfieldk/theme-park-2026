@@ -1,0 +1,329 @@
+{
+ "_note": [
+  "地形の季節。国ごとに四半期(3-5月/6-8月/9-11月/12-2月)を季節へ読み替え、",
+  "季節 0/1 = 通常、2 = 秋、3 = 冬の色になる。",
+  "seasonalAssets は [通常 | 秋 | 冬] の横 3 コマで書き出した画像の一覧。"
+ ],
+ "countrySeasons": {
+  "japan": [
+   0,
+   1,
+   2,
+   3
+  ],
+  "america": [
+   0,
+   1,
+   1,
+   0
+  ],
+  "brazil": [
+   1,
+   1,
+   1,
+   1
+  ],
+  "uk": [
+   0,
+   1,
+   2,
+   3
+  ],
+  "france": [
+   0,
+   1,
+   2,
+   3
+  ],
+  "egypt": [
+   1,
+   1,
+   1,
+   1
+  ],
+  "russia": [
+   0,
+   1,
+   2,
+   3
+  ],
+  "india": [
+   1,
+   1,
+   1,
+   1
+  ],
+  "china": [
+   0,
+   1,
+   2,
+   3
+  ],
+  "australia": [
+   2,
+   3,
+   0,
+   1
+  ]
+ },
+ "countryScenery": {
+  "japan": 0,
+  "america": 4,
+  "brazil": 3,
+  "uk": 1,
+  "france": 2,
+  "egypt": 3,
+  "russia": 5,
+  "india": 0,
+  "china": 0,
+  "australia": 4
+ },
+ "variantBySeason": [
+  0,
+  0,
+  1,
+  2
+ ],
+ "seasonalAssets": {
+  "road-frame-0": {
+   "width": 32,
+   "height": 16
+  },
+  "road-frame-1": {
+   "width": 32,
+   "height": 16
+  },
+  "road-frame-2": {
+   "width": 32,
+   "height": 16
+  },
+  "road-frame-3": {
+   "width": 32,
+   "height": 16
+  },
+  "road-frame-4": {
+   "width": 32,
+   "height": 16
+  },
+  "road-frame-5": {
+   "width": 32,
+   "height": 16
+  },
+  "road-frame-6": {
+   "width": 32,
+   "height": 16
+  },
+  "road-frame-7": {
+   "width": 32,
+   "height": 16
+  },
+  "road-frame-8": {
+   "width": 32,
+   "height": 16
+  },
+  "road-frame-9": {
+   "width": 32,
+   "height": 16
+  },
+  "road-frame-10": {
+   "width": 32,
+   "height": 16
+  },
+  "road-frame-11": {
+   "width": 32,
+   "height": 16
+  },
+  "road-frame-12": {
+   "width": 32,
+   "height": 16
+  },
+  "road-frame-13": {
+   "width": 32,
+   "height": 16
+  },
+  "road-frame-14": {
+   "width": 32,
+   "height": 16
+  },
+  "road-frame-15": {
+   "width": 32,
+   "height": 16
+  },
+  "road-frame-16": {
+   "width": 32,
+   "height": 16
+  },
+  "build-base-frame-0": {
+   "width": 32,
+   "height": 16
+  },
+  "build-base-frame-1": {
+   "width": 32,
+   "height": 16
+  },
+  "build-base-frame-2": {
+   "width": 32,
+   "height": 16
+  },
+  "build-base-frame-3": {
+   "width": 32,
+   "height": 16
+  },
+  "build-base-frame-4": {
+   "width": 32,
+   "height": 16
+  },
+  "build-base-frame-5": {
+   "width": 32,
+   "height": 16
+  },
+  "build-base-frame-6": {
+   "width": 32,
+   "height": 16
+  },
+  "build-base-frame-7": {
+   "width": 32,
+   "height": 16
+  },
+  "build-base-frame-8": {
+   "width": 16,
+   "height": 8
+  },
+  "build-base-frame-9": {
+   "width": 16,
+   "height": 8
+  },
+  "build-base-frame-10": {
+   "width": 16,
+   "height": 16
+  },
+  "build-base-frame-11": {
+   "width": 8,
+   "height": 8
+  },
+  "build-base-frame-12": {
+   "width": 32,
+   "height": 16
+  },
+  "facility-exit-frame-0": {
+   "width": 16,
+   "height": 8
+  },
+  "facility-exit-frame-1": {
+   "width": 16,
+   "height": 8
+  },
+  "facility-exit-frame-2": {
+   "width": 16,
+   "height": 16
+  },
+  "facility-exit-frame-3": {
+   "width": 8,
+   "height": 8
+  },
+  "ground-tile": {
+   "width": 32,
+   "height": 16
+  },
+  "gate-base-2": {
+   "width": 32,
+   "height": 16
+  },
+  "gate-base-3": {
+   "width": 32,
+   "height": 16
+  },
+  "gate-base-6": {
+   "width": 32,
+   "height": 16
+  },
+  "gate-base-17": {
+   "width": 32,
+   "height": 16
+  },
+  "gate-base-19": {
+   "width": 32,
+   "height": 16
+  },
+  "entrance-background-1": {
+   "width": 32,
+   "height": 16
+  },
+  "entrance-background-2": {
+   "width": 32,
+   "height": 16
+  },
+  "entrance-background-3": {
+   "width": 32,
+   "height": 16
+  },
+  "entrance-background-4": {
+   "width": 32,
+   "height": 16
+  },
+  "entrance-special-49": {
+   "width": 48,
+   "height": 16
+  },
+  "entrance-special-50": {
+   "width": 8,
+   "height": 16
+  },
+  "queue-frame-0": {
+   "width": 32,
+   "height": 16
+  },
+  "queue-frame-1": {
+   "width": 32,
+   "height": 16
+  },
+  "queue-frame-2": {
+   "width": 32,
+   "height": 16
+  },
+  "queue-frame-3": {
+   "width": 32,
+   "height": 16
+  },
+  "queue-frame-4": {
+   "width": 32,
+   "height": 16
+  },
+  "queue-frame-5": {
+   "width": 32,
+   "height": 16
+  },
+  "queue-frame-6": {
+   "width": 32,
+   "height": 16
+  },
+  "queue-frame-7": {
+   "width": 32,
+   "height": 16
+  },
+  "queue-frame-8": {
+   "width": 32,
+   "height": 16
+  },
+  "queue-frame-9": {
+   "width": 32,
+   "height": 16
+  },
+  "queue-frame-10": {
+   "width": 32,
+   "height": 16
+  },
+  "queue-frame-11": {
+   "width": 32,
+   "height": 16
+  },
+  "queue-frame-12": {
+   "width": 32,
+   "height": 16
+  },
+  "queue-frame-13": {
+   "width": 16,
+   "height": 16
+  }
+ }
+}

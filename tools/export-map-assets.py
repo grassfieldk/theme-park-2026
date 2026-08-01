@@ -1,7 +1,14 @@
-"""原作のマップ描画定義が指定する CLUT で Web 用 PNG を出力する。"""
+"""原作のマップ描画定義が指定する CLUT で Web 用 PNG を出力する。
+
+地面・道路・ゲート土台などのパレット行(0x1e2〜0x1e4, 0x1e8, 0x1ea)は季節で入れ替わる。
+`FUN_800afcb8` の対応は、季節 0/1 = シート内蔵、季節 2 = リソース 0x175、季節 3 = 0x176。
+該当するアセットは [通常 | 秋 | 冬] の横 3 コマで書き出し、一覧を seasons.json に載せる。
+国別の季節表は SLPS_008.10 の `DAT_80117474`(暦 `FUN_800bf6b8` が四半期で引く)。
+"""
 
 from __future__ import annotations
 
+import json
 import struct
 import zlib
 from pathlib import Path
@@ -9,10 +16,21 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 SOURCE = ROOT / "recovery/disc/TEX/UNPACK.PAK"
+EXE = ROOT / "recovery/disc/SLPS_008.10"
 DESTINATION = ROOT / "public/assets/park"
+SEASON_CONFIG = ROOT / "src/config/seasons.json"
 RESOURCE_OFFSET = 6_206_612
 RESOURCE_SIZE = 33_932
 RESOURCE_UPLOAD_OFFSET = 0xE10
+# 季節パレット(リソース 0x175 = 秋、0x176 = 冬。通常はシート内蔵)。5 つの CLUT 行を上書きする
+AUTUMN_OFFSET, AUTUMN_SIZE = 6_240_544, 228
+WINTER_OFFSET, WINTER_SIZE = 6_240_772, 228
+SEASONAL_CLUT_ROWS = {0x1E2, 0x1E3, 0x1E4, 0x1E8, 0x1EA}
+# 国 → 四半期(3-5月/6-8月/9-11月/12-2月)ごとの季節。DAT_80117474
+COUNTRY_SEASONS_VADDR = 0x80117474
+COUNTRY_IDS = ["japan", "america", "brazil", "uk", "france", "egypt", "russia", "india", "china", "australia"]
+# 国 → シーナリー種(設備・木・バスのリソース選択)。DAT_8010ec90
+COUNTRY_SCENERY_VADDR = 0x8010EC90
 QUEUE_FRAME_START = 76
 ASSETS = {
     **{f"road-frame-{index}.png": 0x2C + index * 0x14 for index in range(17)},
@@ -110,25 +128,94 @@ def descriptor_pixels(resource: bytes, vram: list[int], descriptor_offset: int) 
     return width, height, bytes(pixels)
 
 
-def export_asset(resource: bytes, vram: list[int], descriptor_offset: int, destination: Path) -> None:
-    width, height, pixels = descriptor_pixels(resource, vram, descriptor_offset)
-    write_png(destination, width, height, pixels)
+def clut_row(resource: bytes, descriptor_offset: int) -> int:
+    return struct.unpack_from("<H", resource, descriptor_offset + 12)[0] >> 6
 
 
-def export_queue_assets(resource: bytes, vram: list[int]) -> None:
-    for frame in range(14):
-        descriptor_offset = 0x2C + (QUEUE_FRAME_START + frame) * 0x14
-        export_asset(resource, vram, descriptor_offset, DESTINATION / f"queue-frame-{frame}.png")
+def apply_palette(vram: list[int], patch: bytes) -> list[int]:
+    """パレットリソース(0x175/0x176)のアップロードを写した VRAM を返す。"""
+    output = vram[:]
+    offset = 4
+    while offset + 12 <= len(patch):
+        length = struct.unpack_from("<I", patch, offset)[0] & 0xFFFFFF
+        if length < 12 or offset + length > len(patch):
+            break
+        x, y, width, _height = struct.unpack_from("<4H", patch, offset + 4)
+        values = struct.unpack_from(f"<{width}H", patch, offset + 12)
+        output[y * 1024 + x : y * 1024 + x + width] = values
+        offset += length
+    return output
+
+
+def export_asset(resource: bytes, vrams: list[list[int]], descriptor_offset: int, name: str) -> tuple[str, dict] | None:
+    """季節対応のアセットは [通常 | 秋 | 冬] の横並びで書き出し、設定に載せる情報を返す。"""
+    if clut_row(resource, descriptor_offset) not in SEASONAL_CLUT_ROWS:
+        width, height, pixels = descriptor_pixels(resource, vrams[0], descriptor_offset)
+        write_png(DESTINATION / name, width, height, pixels)
+        return None
+    frames = [descriptor_pixels(resource, vram, descriptor_offset) for vram in vrams]
+    width, height = frames[0][0], frames[0][1]
+    stride = width * 4
+    rows = bytearray()
+    for row in range(height):
+        for _width, _height, pixels in frames:
+            rows.extend(pixels[row * stride : (row + 1) * stride])
+    write_png(DESTINATION / name, width * len(frames), height, bytes(rows))
+    return name.removesuffix(".png"), {"width": width, "height": height}
+
+
+def read_country_seasons() -> dict[str, list[int]]:
+    exe = EXE.read_bytes()
+    base = 0x800 + COUNTRY_SEASONS_VADDR - 0x800A7000
+    return {
+        country: list(exe[base + index * 4 : base + index * 4 + 4])
+        for index, country in enumerate(COUNTRY_IDS)
+    }
+
+
+def read_country_scenery() -> dict[str, int]:
+    exe = EXE.read_bytes()
+    base = 0x800 + COUNTRY_SCENERY_VADDR - 0x800A7000
+    return {
+        country: struct.unpack_from("<H", exe, base + index * 2)[0]
+        for index, country in enumerate(COUNTRY_IDS)
+    }
 
 
 def main() -> None:
     source = SOURCE.read_bytes()
     data = source[RESOURCE_OFFSET : RESOURCE_OFFSET + RESOURCE_SIZE]
-    vram = load_vram(data)
+    normal = load_vram(data)
+    vrams = [
+        normal,
+        apply_palette(normal, source[AUTUMN_OFFSET : AUTUMN_OFFSET + AUTUMN_SIZE]),
+        apply_palette(normal, source[WINTER_OFFSET : WINTER_OFFSET + WINTER_SIZE]),
+    ]
     DESTINATION.mkdir(parents=True, exist_ok=True)
+    seasonal = {}
     for name, descriptor in ASSETS.items():
-        export_asset(data, vram, descriptor, DESTINATION / name)
-    export_queue_assets(data, vram)
+        entry = export_asset(data, vrams, descriptor, name)
+        if entry:
+            seasonal[entry[0]] = entry[1]
+    for frame in range(14):
+        descriptor_offset = 0x2C + (QUEUE_FRAME_START + frame) * 0x14
+        entry = export_asset(data, vrams, descriptor_offset, f"queue-frame-{frame}.png")
+        if entry:
+            seasonal[entry[0]] = entry[1]
+
+    config = {
+        "_note": [
+            "地形の季節。国ごとに四半期(3-5月/6-8月/9-11月/12-2月)を季節へ読み替え、",
+            "季節 0/1 = 通常、2 = 秋、3 = 冬の色になる。",
+            "seasonalAssets は [通常 | 秋 | 冬] の横 3 コマで書き出した画像の一覧。",
+        ],
+        "countrySeasons": read_country_seasons(),
+        "countryScenery": read_country_scenery(),
+        "variantBySeason": [0, 0, 1, 2],
+        "seasonalAssets": seasonal,
+    }
+    SEASON_CONFIG.write_text(json.dumps(config, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+    print(f"seasonal assets: {len(seasonal)}")
 
 
 if __name__ == "__main__":
