@@ -347,7 +347,6 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         const layerDepth = {
           terrain: 0,
           road: 100_000,
-          access: 200_000,
           facility: 300_000,
           overlay: 400_000,
         } as const
@@ -415,23 +414,20 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         queue('gate-left-roof', gateLeft, gateRow + 1, leftDepth, 13, 64)
 
         queue('gate-sign-base', gateLeft + 2, gateRow + 1, depthAt(gateLeft + 2, gateRow + 1) - 1, -4, 20)
-        queue('entrance-special-50', gateCenter, gateRow + 3, depthAt(gateCenter, gateRow + 3) - 1, -10, 8)
+        queue('entrance-special-50', gateCenter, gateRow + 3, depthAt(gateCenter, gateRow + 3), -10, 8)
         queue('entrance-background-3', gateCenter, gateRow + 5, depthAt(gateCenter, gateRow + 5) + 7)
 
         commands.sort((a, b) => b.depth - a.depth || a.order - b.order)
         const fixedRoadKeys = new Set(['gate-base-2', 'gate-base-3', 'gate-base-6', 'gate-base-17', 'gate-base-19'])
-        const isFacility = ({ key }: DrawCommand) => key.startsWith('border-') || (key.startsWith('gate-') && !fixedRoadKeys.has(key))
-        const isAccess = ({ key }: DrawCommand) => key === 'entrance-special-50'
+        const isFacility = ({ key }: DrawCommand) => key.startsWith('border-') || key === 'entrance-special-50' || (key.startsWith('gate-') && !fixedRoadKeys.has(key))
         const isTerrainForeground = (command: DrawCommand) => (
           command.key !== 'ground-tile'
           && !fixedRoadKeys.has(command.key)
           && !isFacility(command)
-          && !isAccess(command)
         )
-        const backgroundCommands = commands.filter((command) => !isFacility(command) && !isAccess(command) && !isTerrainForeground(command))
+        const backgroundCommands = commands.filter((command) => !isFacility(command) && !isTerrainForeground(command))
         const terrainForegroundCommands = commands.filter(isTerrainForeground)
         const facilityCommands = commands.filter(isFacility)
-        const accessCommands = commands.filter(isAccess)
         const terrainForeground = this.add.renderTexture(0, 0, worldWidth, worldHeight).setOrigin(0).setDepth(0.5)
         const addStaticImage = (layer: RenderLayer, command: DrawCommand) => {
           const position = point(command.x, command.y)
@@ -449,7 +445,6 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         }
         drawTerrainLayers()
         facilityCommands.forEach((command) => addStaticImage('facility', command))
-        accessCommands.forEach((command) => addStaticImage('access', command))
         // 季節が変わったら地形を描き直し、置かれている季節対応の画像も切り替える。
         // 設備・階段・バスはキー末尾の -s{季節} を現在の季節へ付け替える
         const applySeason = () => {
@@ -2442,10 +2437,10 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         const busEnterX = right + 3
         const busExitX = left - 3
         const placeBusImage = (current: Bus) => {
-          const position = point(current.x, busRow)
+          const position = point(current.x + 1, busRow)
           const baseX = position.x + busConfig.anchor.x
           const baseY = position.y + busConfig.anchor.y
-          const column = Math.round(current.x)
+          const column = Math.round(current.x + 1)
           const depth = renderDepthAt('facility', column, busRow)
           current.images.forEach((image, index) => {
             const { part, slotX } = busParts[index]
