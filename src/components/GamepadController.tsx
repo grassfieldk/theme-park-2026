@@ -1,20 +1,35 @@
 import { useEffect, useRef } from 'react'
 import game from '../config/game.json'
 
-export type MenuAction = 'up' | 'down' | 'left' | 'right' | 'confirm' | 'confirmRelease' | 'cancel' | 'menu' | 'start' | 'remove' | 'removeRelease' | 'zoomIn' | 'zoomOut'
+export type MenuAction = 'up' | 'down' | 'left' | 'right' | 'confirm' | 'confirmRelease' | 'cancel' | 'menu' | 'start' | 'remove' | 'removeRelease' | 'zoomIn' | 'zoomOut' | 'speedUp' | 'speedDown' | 'pause'
 type Direction = Extract<MenuAction, 'up' | 'down' | 'left' | 'right'>
 
-type Props = { onAction: (action: MenuAction) => void }
+type Props = {
+  onAction: (action: MenuAction) => void
+  /** 右スティックによるカメラ移動。倒している間、毎フレーム移動量(画面ピクセル)を渡す */
+  onCameraPan?: (deltaX: number, deltaY: number) => void
+}
+
+// スティックの遊び。これ未満の傾きは無視し、超えた分だけを 0〜1 に均して使う
+const stickDeadzone = 0.25
+const stickValue = (value: number) => {
+  const magnitude = Math.abs(value)
+  if (magnitude < stickDeadzone) return 0
+  return Math.sign(value) * (magnitude - stickDeadzone) / (1 - stickDeadzone)
+}
 
 const buttonActions: Array<[number, MenuAction, boolean, MenuAction?]> = [
-  [4, 'zoomOut', false], [5, 'zoomIn', false],
+  [6, 'zoomOut', false], [7, 'zoomIn', false],
+  [4, 'speedDown', false], [5, 'speedUp', false], [11, 'pause', false],
   [2, 'remove', false, 'removeRelease'], [3, 'menu', false],
   [0, 'confirm', false, 'confirmRelease'], [9, 'start', false], [1, 'cancel', false],
 ]
 
-export function GamepadController({ onAction }: Props) {
+export function GamepadController({ onAction, onCameraPan }: Props) {
   const actionHandler = useRef(onAction)
+  const cameraPanHandler = useRef(onCameraPan)
   actionHandler.current = onAction
+  cameraPanHandler.current = onCameraPan
 
   useEffect(() => {
     const active = new Map<string, number>()
@@ -22,6 +37,7 @@ export function GamepadController({ onAction }: Props) {
     let activeDirections: Direction[] = []
     let nextDiagonalIndex = 0
     let nextDirectionRepeatAt = 0
+    let previousNow = performance.now()
     let frame = 0
 
     const press = (key: string, action: MenuAction, repeat: boolean, now: number) => {
@@ -84,6 +100,9 @@ export function GamepadController({ onAction }: Props) {
 
     const update = () => {
       const now = performance.now()
+      // タブが止まっていた後に一気に動かないよう、1 フレーム分の経過時間に上限を設ける
+      const deltaMs = Math.min(now - previousNow, 100)
+      previousNow = now
       const gamepad = navigator.getGamepads().find(Boolean)
       if (gamepad) {
         buttonActions.forEach(([index, action, repeat, releaseAction]) => {
@@ -91,6 +110,13 @@ export function GamepadController({ onAction }: Props) {
           gamepad.buttons[index]?.pressed ? press(key, action, repeat, now) : release(key, releaseAction)
         })
         updateDirection(gamepad, now)
+        // 右スティックはカメラ移動。倒した量に応じて速くなる
+        const panX = stickValue(gamepad.axes[2] ?? 0)
+        const panY = stickValue(gamepad.axes[3] ?? 0)
+        if (panX !== 0 || panY !== 0) {
+          const step = game.input.cameraPanPixelsPerSecond * deltaMs / 1000
+          cameraPanHandler.current?.(panX * step, panY * step)
+        }
       } else {
         activeDirectionKey = ''
         activeDirections = []

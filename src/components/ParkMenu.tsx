@@ -13,14 +13,33 @@ type Props = {
   selectedIndex: number
   onSelect: (index: number) => void
   onConfirm: (index: number) => void
+  // 一度に見えている行数。左右キーのページ移動量に使う
+  onPageSizeChange?: (pageSize: number) => void
 }
 
-export default function ParkMenu({ items, selectedIndex, onSelect, onConfirm }: Props) {
+export default function ParkMenu({ items, selectedIndex, onSelect, onConfirm, onPageSizeChange }: Props) {
   const listRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     listRef.current?.children[selectedIndex]?.scrollIntoView({ block: 'nearest' })
   }, [selectedIndex])
+
+  // 表示領域と行の高さから、画面に収まっている行数を測って親へ伝える。
+  // 画面サイズやリストの中身が変わるたびに測り直す
+  useEffect(() => {
+    const list = listRef.current
+    if (!list || !onPageSizeChange) return
+    const measure = () => {
+      const item = list.children[0] as HTMLElement | undefined
+      if (!item) return
+      const visible = Math.floor(list.clientHeight / item.offsetHeight)
+      onPageSizeChange(Math.max(1, visible))
+    }
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(list)
+    return () => observer.disconnect()
+  }, [items, onPageSizeChange])
 
   return (
     <nav className="park-menu" aria-label="パークメニュー">

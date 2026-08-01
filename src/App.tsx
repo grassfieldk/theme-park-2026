@@ -22,9 +22,12 @@ type AttractionBuildStep = 'body' | 'entrance' | 'exit'
 type ConfirmPrompt = { message: string, confirmLabel: string, onConfirm: () => void, onCancel?: () => void }
 const countryColumns = 2
 
-function moveMenu(index: number, input: MenuAction, length: number) {
-  if (input === 'left' || input === 'up') return (index - 1 + length) % length
-  if (input === 'right' || input === 'down') return (index + 1) % length
+function moveMenu(index: number, input: MenuAction, length: number, pageSize = 1) {
+  if (input === 'up') return (index - 1 + length) % length
+  if (input === 'down') return (index + 1) % length
+  // 左右は「表示中の行数」分だけまとめて動く。両端は行き過ぎず端に止める
+  if (input === 'left') return Math.max(0, index - pageSize)
+  if (input === 'right') return Math.min(length - 1, index + pageSize)
   return index
 }
 
@@ -55,6 +58,10 @@ export default function App() {
   const [titleIndex, setTitleIndex] = useState(0)
   const [buildMessage, setBuildMessage] = useState('')
   const [speedIndex, setSpeedIndex] = useState(game.time.defaultSpeedIndex)
+  // 停止ボタンによる一時停止。メニュー操作中の自動停止とは別に覚えておく
+  const [paused, setPaused] = useState(false)
+  // 左右キーで送るページの大きさ。ParkMenu が実際に見えている行数を測って伝える
+  const [menuPageSize, setMenuPageSize] = useState(1)
   const [guestCount, setGuestCount] = useState(0)
   const [clock, setClock] = useState(() => dateFromElapsed(0))
   const elapsedDays = useRef(0)
@@ -82,10 +89,12 @@ export default function App() {
     if (screen === 'title') setSavedGame(readSave(mode, null))
   }, [screen, mode])
 
+  // 停止ボタンのほか、メニューや設置などの操作中・確認中も時間を止める
+  const timePaused = paused || parkMode !== 'map' || confirmPrompt !== null
   // パーク画面にいる間だけ日付を進める。表示は日が変わったときだけ更新する
-  const secondsPerDay = game.speeds[speedIndex].secondsPerDay
+  const secondsPerDay = timePaused ? Number.POSITIVE_INFINITY : game.speeds[speedIndex].secondsPerDay
   useEffect(() => {
-    if (screen !== 'park') return
+    if (screen !== 'park' || secondsPerDay === Number.POSITIVE_INFINITY) return
     const daysPerMs = gameDaysPerMs(secondsPerDay)
     // 来園者の演算と同じ刻み幅・同じ上限で進めることで、日付と園内の動きがずれないようにする
     const stepMs = 1000 / game.time.framesPerSecond
@@ -193,6 +202,35 @@ export default function App() {
     })
   }, [])
 
+  // メニュー項目を開く。キー操作の決定とクリックの両方から使う
+  const openMenuItem = useCallback((mode: ParkMode, index: number) => {
+    if (mode === 'mainMenu') {
+      if (!parkMenu.main[index].enabled) return
+      setMainMenuIndex(index)
+      setParkMode(mainMenuModeById[parkMenu.main[index].id] ?? 'roadMenu')
+    }
+    else if (mode === 'roadMenu') {
+      if (!parkMenu.roads[index].enabled) return
+      setRoadMenuIndex(index)
+      const road = parkMenu.roads[index].id
+      if (road === 'path') setParkMode('pathBuild')
+      if (road === 'queue') setParkMode('queueBuild')
+    }
+    else if (mode === 'attractionMenu') {
+      setAttractionMenuIndex(index)
+      setAttractionBuildStep('body')
+      setParkMode('attractionBuild')
+    }
+    else if (mode === 'shopMenu') {
+      setShopMenuIndex(index)
+      setParkMode('shopBuild')
+    }
+    else if (mode === 'facilityMenu') {
+      setFacilityMenuIndex(index)
+      setParkMode('facilityBuild')
+    }
+  }, [])
+
   const action = useCallback((input: MenuAction) => {
     if (confirmPrompt) {
       // ボタンを離した通知だけは通す。ここで止めると押しっぱなし扱いのままになる
@@ -217,22 +255,26 @@ export default function App() {
         setParkMode((current) => current === 'map' ? 'mainMenu' : 'map')
         return
       }
+      // 速度の増減は停止を経由せず、低速〜高速の間だけを動く
+      if (input === 'speedUp' || input === 'speedDown') {
+        const delta = input === 'speedUp' ? 1 : -1
+        setSpeedIndex((current) => Math.min(Math.max(current + delta, 0), game.speeds.length - 1))
+        return
+      }
+      if (input === 'pause') {
+        setPaused((current) => !current)
+        return
+      }
       if (parkMode === 'mainMenu') {
         if (input === 'cancel') setParkMode('map')
-        else if (input === 'confirm' && parkMenu.main[mainMenuIndex].enabled) {
-          setParkMode(mainMenuModeById[parkMenu.main[mainMenuIndex].id] ?? 'roadMenu')
-        }
-        else setMainMenuIndex((current) => moveMenu(current, input, parkMenu.main.length))
+        else if (input === 'confirm') openMenuItem('mainMenu', mainMenuIndex)
+        else setMainMenuIndex((current) => moveMenu(current, input, parkMenu.main.length, menuPageSize))
         return
       }
       if (parkMode === 'roadMenu') {
         if (input === 'cancel') setParkMode('mainMenu')
-        else if (input === 'confirm' && parkMenu.roads[roadMenuIndex].enabled) {
-          const road = parkMenu.roads[roadMenuIndex].id
-          if (road === 'path') setParkMode('pathBuild')
-          if (road === 'queue') setParkMode('queueBuild')
-        }
-        else setRoadMenuIndex((current) => moveMenu(current, input, parkMenu.roads.length))
+        else if (input === 'confirm') openMenuItem('roadMenu', roadMenuIndex)
+        else setRoadMenuIndex((current) => moveMenu(current, input, parkMenu.roads.length, menuPageSize))
         return
       }
       if ((parkMode === 'pathBuild' || parkMode === 'queueBuild') && input === 'cancel') {
@@ -245,11 +287,8 @@ export default function App() {
       }
       if (parkMode === 'attractionMenu') {
         if (input === 'cancel') setParkMode('mainMenu')
-        else if (input === 'confirm') {
-          setAttractionBuildStep('body')
-          setParkMode('attractionBuild')
-        }
-        else setAttractionMenuIndex((current) => moveMenu(current, input, countryAttractions.length))
+        else if (input === 'confirm') openMenuItem('attractionMenu', attractionMenuIndex)
+        else setAttractionMenuIndex((current) => moveMenu(current, input, countryAttractions.length, menuPageSize))
         return
       }
       if (parkMode === 'attractionBuild' && input === 'cancel') {
@@ -258,8 +297,8 @@ export default function App() {
       }
       if (parkMode === 'shopMenu') {
         if (input === 'cancel') setParkMode('mainMenu')
-        else if (input === 'confirm') setParkMode('shopBuild')
-        else setShopMenuIndex((current) => moveMenu(current, input, countryShops.length))
+        else if (input === 'confirm') openMenuItem('shopMenu', shopMenuIndex)
+        else setShopMenuIndex((current) => moveMenu(current, input, countryShops.length, menuPageSize))
         return
       }
       if (parkMode === 'shopBuild' && input === 'cancel') {
@@ -269,8 +308,8 @@ export default function App() {
       }
       if (parkMode === 'facilityMenu') {
         if (input === 'cancel') setParkMode('mainMenu')
-        else if (input === 'confirm') setParkMode('facilityBuild')
-        else setFacilityMenuIndex((current) => moveMenu(current, input, countryFacilities.length))
+        else if (input === 'confirm') openMenuItem('facilityMenu', facilityMenuIndex)
+        else setFacilityMenuIndex((current) => moveMenu(current, input, countryFacilities.length, menuPageSize))
         return
       }
       if (parkMode === 'facilityBuild' && input === 'cancel') {
@@ -299,7 +338,7 @@ export default function App() {
     const nextCountry = moveCountry(selectedCountry, input)
     if (nextCountry === selectedCountry) return
     setSelectedCountry(nextCountry)
-  }, [screen, selectedCountry, parkMode, mainMenuIndex, roadMenuIndex, shopBuildStep, facilityBuildStep, titleStep, titleIndex, confirmPrompt, answerConfirm, activateTitleItem, startNewGame, countryAttractions, countryShops, countryFacilities])
+  }, [screen, selectedCountry, parkMode, mainMenuIndex, roadMenuIndex, attractionMenuIndex, shopMenuIndex, facilityMenuIndex, menuPageSize, shopBuildStep, facilityBuildStep, titleStep, titleIndex, confirmPrompt, answerConfirm, activateTitleItem, openMenuItem, startNewGame, countryAttractions, countryShops, countryFacilities])
 
 
   useEffect(() => setBuildMessage(''), [parkMode])
@@ -382,11 +421,16 @@ export default function App() {
       className="app-shell"
       onContextMenu={(event) => {
         event.preventDefault()
-        // マップ上の右クリックはマップ側で撤去として扱うので、ここでは受け取らない
-        if (screen !== 'park' || mapBlocked) action('cancel')
+        // 右クリックは、どのモードにも入っていなければメニューを開く。
+        // メニュー表示中や設置などの操作中はキャンセル
+        if (screen === 'park' && !mapBlocked && parkMode === 'map') action('menu')
+        else action('cancel')
       }}
     >
-      <GamepadController onAction={action} />
+      <GamepadController
+        onAction={action}
+        onCameraPan={(deltaX, deltaY) => parkMap.current?.panCamera(deltaX, deltaY)}
+      />
       {screen === 'title' ? (
         <section className="title-screen" aria-label="開始画面">
           <p className="logo-subtitle">NEW THEME PARK</p>
@@ -462,7 +506,6 @@ export default function App() {
                 onCancel: () => parkMap.current?.resolveRemoval(false),
               })}
               mapBlocked={mapBlocked}
-              onMenuToggle={() => action('menu')}
               initialPark={loadedPark}
             />
           </Suspense>
@@ -471,12 +514,22 @@ export default function App() {
             <span>資金: {cash.toLocaleString()}</span>
             <span>来園者: {guestCount.toLocaleString()}</span>
             <span className="park-speed">
+              <button
+                type="button"
+                className={timePaused ? 'park-speed-button selected' : 'park-speed-button'}
+                onClick={() => setPaused(true)}
+              >
+                停止
+              </button>
               {game.speeds.map((speed, index) => (
                 <button
                   key={speed.id}
                   type="button"
-                  className={index === speedIndex ? 'park-speed-button selected' : 'park-speed-button'}
-                  onClick={() => setSpeedIndex(index)}
+                  className={index === speedIndex && !timePaused ? 'park-speed-button selected' : 'park-speed-button'}
+                  onClick={() => {
+                    setSpeedIndex(index)
+                    setPaused(false)
+                  }}
                 >
                   {speed.label}
                 </button>
@@ -487,31 +540,9 @@ export default function App() {
             <ParkMenu
               items={menuItems}
               selectedIndex={menuSelectedIndex}
+              onPageSizeChange={setMenuPageSize}
               onSelect={parkMode === 'mainMenu' ? setMainMenuIndex : parkMode === 'roadMenu' ? setRoadMenuIndex : parkMode === 'shopMenu' ? setShopMenuIndex : parkMode === 'facilityMenu' ? setFacilityMenuIndex : setAttractionMenuIndex}
-              onConfirm={(index) => {
-                if (parkMode === 'mainMenu' && parkMenu.main[index].enabled) {
-                  setMainMenuIndex(index)
-                  setParkMode(mainMenuModeById[parkMenu.main[index].id] ?? 'roadMenu')
-                }
-                if (parkMode === 'roadMenu' && parkMenu.roads[index].enabled) {
-                  setRoadMenuIndex(index)
-                  if (parkMenu.roads[index].id === 'path') setParkMode('pathBuild')
-                  if (parkMenu.roads[index].id === 'queue') setParkMode('queueBuild')
-                }
-                if (parkMode === 'attractionMenu') {
-                  setAttractionMenuIndex(index)
-                  setAttractionBuildStep('body')
-                  setParkMode('attractionBuild')
-                }
-                if (parkMode === 'shopMenu') {
-                  setShopMenuIndex(index)
-                  setParkMode('shopBuild')
-                }
-                if (parkMode === 'facilityMenu') {
-                  setFacilityMenuIndex(index)
-                  setParkMode('facilityBuild')
-                }
-              }}
+              onConfirm={(index) => openMenuItem(parkMode, index)}
             />
           ) : null}
           <div className="park-status-bar">{statusBarText}</div>

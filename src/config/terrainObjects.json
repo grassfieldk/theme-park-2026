@@ -1,0 +1,18 @@
+{
+  "stairs": [
+    {
+      "src": "/assets/park/terrain-stairs-0.png",
+      "offset": {
+        "x": 2,
+        "y": 16
+      }
+    },
+    {
+      "src": "/assets/park/terrain-stairs-1.png",
+      "offset": {
+        "x": 0,
+        "y": 6
+      }
+    }
+  ]
+}

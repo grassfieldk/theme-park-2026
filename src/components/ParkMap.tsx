@@ -6,7 +6,10 @@ import shops from '../config/shops.json'
 import facilities from '../config/facilities.json'
 import game from '../config/game.json'
 import type { MenuAction } from './GamepadController'
+import busSprites from '../config/busSprites.json'
 import guestSprites from '../config/guestSprites.json'
+import pointers from '../config/pointers.json'
+import terrainObjects from '../config/terrainObjects.json'
 import { gameDaysPerMs } from '../game/clock'
 import type { ParkSnapshot } from '../game/save'
 
@@ -40,14 +43,14 @@ type Props = {
   onRemoveConfirm: (name: string) => void
   /** メニューや確認が開いている間は、マップへのクリックを受け付けない */
   mapBlocked: boolean
-  /** 中クリックでメニューを開閉する */
-  onMenuToggle: () => void
   /** セーブデータから再開するときの園の中身。新規開始なら null */
   initialPark: ParkSnapshot | null
 }
 
 export type ParkMapHandle = {
   handleAction: (action: MenuAction) => void
+  /** カメラを画面ピクセル単位で動かす(右スティック) */
+  panCamera: (deltaX: number, deltaY: number) => void
   /** 現在の園の中身を書き出す。まだ読み込みが終わっていなければ null */
   snapshot: () => ParkSnapshot | null
   /** 撤去の確認に対する返事 */
@@ -101,7 +104,6 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
   onBuildMessage,
   onRemoveConfirm,
   mapBlocked,
-  onMenuToggle,
   initialPark,
 }: Props, ref) {
   const host = useRef<HTMLDivElement>(null)
@@ -122,7 +124,6 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
   const guestCountHandler = useRef(onGuestCountChange)
   const buildMessageHandler = useRef(onBuildMessage)
   const removeConfirmHandler = useRef(onRemoveConfirm)
-  const menuToggleHandler = useRef(onMenuToggle)
   const initialMapBlocked = useRef(mapBlocked)
   attractionPlacedHandler.current = onAttractionPlaced
   attractionCancelledHandler.current = onAttractionPlacementCancelled
@@ -136,11 +137,13 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
   guestCountHandler.current = onGuestCountChange
   buildMessageHandler.current = onBuildMessage
   removeConfirmHandler.current = onRemoveConfirm
-  menuToggleHandler.current = onMenuToggle
 
   useImperativeHandle(ref, () => ({
     handleAction(action) {
       phaserGame.current?.scene.getScene('park')?.events.emit('pan', action)
+    },
+    panCamera(deltaX, deltaY) {
+      phaserGame.current?.scene.getScene('park')?.events.emit('camera-pan', deltaX, deltaY)
     },
     snapshot() {
       return takeSnapshot.current?.() ?? null
@@ -219,6 +222,10 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         for (let index = 0; index < 14; index += 1) {
           this.load.image(`queue-frame-${index}`, `/assets/park/queue-frame-${index}.png?v=6`)
         }
+        this.load.image('pointer-arrow', pointers.arrow.src)
+        this.load.image('pointer-shovel', pointers.shovel.src)
+        terrainObjects.stairs.forEach((piece, index) => this.load.image(`terrain-stairs-${index}`, piece.src))
+        busSprites.variants.forEach((variant) => variant.parts.forEach((part) => this.load.image(part.src, part.src)))
         this.load.image('ground-tile', '/assets/park/ground-tile.png')
         this.load.image('gate-base-2', '/assets/park/gate-base-2.png')
         this.load.image('gate-base-3', '/assets/park/gate-base-3.png')
@@ -255,7 +262,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         let activeShop = shopBuild
         let shopDirection = 0
         let shopStep: 'body' | 'direction' = 'body'
-        type PendingShop = { x: number, y: number, cost: number, image: Phaser.GameObjects.Image, baseImages: Phaser.GameObjects.Image[] }
+        type PendingShop = { x: number, y: number, cost: number, image: Phaser.GameObjects.Image }
         let pendingShop: PendingShop | null = null
         // 設置済みのショップ。向きが決まった時点で記録する
         type PlacedShop = { shop: Shop, x: number, y: number, direction: number, image: Phaser.GameObjects.Image }
@@ -268,17 +275,15 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         let daysPerMs = gameDaysPerMs(initialSecondsPerDay.current)
         let confirmHeld = false
         let removeHeld = false
-        // メニューや確認が開いている間はマップへのクリックを無視する(視点移動だけは効く)
+        // メニューや確認が開いている間はマップへのクリックを無視する
         let mapInteractive = !initialMapBlocked.current
         const ground = this.add.renderTexture(0, 0, worldWidth, worldHeight).setOrigin(0)
         const { x: left, y: top, width, height } = country.map
         const right = left + width - 1
         const bottom = top + height - 1
-        const gateLeft = left + (width - 5) / 2
+        const gateLeft = left + Math.floor((width - 5) / 2)
         const gateRow = top + height
         const gateCenter = left + Math.floor(width / 2)
-        const buildableBottom = bottom + game.park.frontBuildableRows
-        const selectionBottom = bottom + game.park.frontSelectableRows
         type DrawCommand = {
           key: string
           x: number
@@ -393,6 +398,9 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         const queueStateByMask = [0, 9, 10, 1, 7, 3, 4, 1, 8, 6, 5, 1, 2, 2, 2, 2]
         const queueMaskByState = [0, 3, 12, 5, 6, 10, 9, 4, 8, 1, 2, 0, 0]
         const queueFrameByState = [13, 0, 1, 2, 3, 4, 5, 1, 1, 0, 0, 0, 6]
+        // 整列歩道の状態に接続方向を足す・外す
+        const queueStateAdding = (state: number, mask: number) => queueStateByMask[queueMaskByState[state] | mask]
+        const queueStateRemoving = (state: number, mask: number) => queueStateByMask[queueMaskByState[state] & ~mask]
         const roads = new Set<string>()
         // ショップ設置時に自動で敷かれる道。見た目と接続は通常の歩道と同じだが、
         // 通るのはそのショップを利用する客だけなので、ふだんの歩行では通り道にしない
@@ -405,14 +413,40 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         const placedAttractions: PlacedAttraction[] = []
         let pendingAttraction: PlacedAttraction | null = null
         const tileKey = (x: number, y: number) => `${x},${y}`
+        const parseKey = (key: string) => {
+          const comma = key.indexOf(',')
+          return { x: Number(key.slice(0, comma)), y: Number(key.slice(comma + 1)) }
+        }
+        // 敷地の占有マスをまとめて登録・解除する。x, y は敷地の奥(上)左のマス
+        const markFootprint = (
+          area: { x: number, y: number, width: number, height: number },
+          occupied: boolean,
+        ) => {
+          for (let offsetY = 0; offsetY < area.height; offsetY += 1) {
+            for (let offsetX = 0; offsetX < area.width; offsetX += 1) {
+              const key = tileKey(area.x + offsetX, area.y + offsetY)
+              if (occupied) occupiedByAttraction.add(key)
+              else occupiedByAttraction.delete(key)
+            }
+          }
+        }
         const isLockedEntranceTile = (x: number, y: number) => (
           (y === bottom && (x === gateLeft + 1 || x === gateLeft + 3))
           || ((y === gateRow || y === gateRow + 1) && (x === gateLeft + 1 || x === gateLeft + 3))
           || (y === gateRow + 2 && x >= gateLeft + 1 && x <= gateLeft + 3)
         )
+        // 園の敷地は、上下左右のふち 1 マスを外周ブロックにしてある。ゲート下の中央マスだけは
+        // 通路として通り抜けられる
+        const isOuterEdge = (x: number, y: number) => (
+          ((y === top || y === bottom) && x >= left && x <= right && !(y === bottom && x === gateCenter))
+          || ((x === left || x === right) && y >= top && y <= bottom)
+        )
+        // 設置できる範囲は敷地の x 範囲(外周ブロック除く)と、その下の園外(マップ下端手前まで)。
+        // 上と左右は敷地の外に出ない
         const isBuildableTile = (x: number, y: number) => (
           x > left && x < right
-          && ((y > top && y < bottom) || (y === bottom && x === gateCenter) || (y > bottom && y <= buildableBottom))
+          && y > top && y < gridHeight - 1
+          && !isOuterEdge(x, y)
           && !isLockedEntranceTile(x, y)
           && !occupiedByAttraction.has(tileKey(x, y))
         )
@@ -439,14 +473,15 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           if (facility.entranceQueueKey && queueRoads.has(facility.entranceQueueKey)) {
             return facility.entranceFrame ?? entrance.frame
           }
-          facility.entranceQueueKey = undefined
-          facility.entranceFrame = undefined
-          // 整列歩道がつながっていないときは、置いたときの向きのまま
+          // 整列歩道がつながっていないときは、置いたときの向きのまま。
+          // つなぎ先の記録はここでは消さない(整列歩道を撤去したときに removeRoad が付け替える)
           return entrance.frame
         }
         const updateAttractionEntranceFrames = () => {
           placedAttractions.forEach((facility) => {
-            facility.entrance?.image.setTexture(`facility-entrance-frame-${entranceFrameAt(facility)}`)
+            if (!facility.entrance) return
+            const key = `facility-entrance-frame-${entranceFrameAt(facility)}`
+            if (facility.entrance.image.texture.key !== key) facility.entrance.image.setTexture(key)
           })
         }
         const redrawRoadTiles = (x: number, y: number) => {
@@ -494,6 +529,8 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         let accessSide: AccessSide = 'bottom'
         const cursor = this.add.graphics().setDepth(layerDepth.overlay)
         const shopArrow = this.add.graphics().setDepth(layerDepth.overlay).setVisible(false)
+        // 原作のポインタ。通常は矢印、設置操作中はシャベルに変わる
+        const pointer = this.add.image(0, 0, 'pointer-arrow').setOrigin(0).setDepth(layerDepth.overlay)
         let attractionPreview: Phaser.GameObjects.Image | null = null
         let accessPreview: Phaser.GameObjects.Image | null = null
         const buildBasePreview: Phaser.GameObjects.Image[] = []
@@ -509,8 +546,8 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             for (let offsetX = 0; offsetX < footprint.width; offsetX += 1) {
               const tileX = x + offsetX
               const tileY = y - offsetY
-              if (tileX <= left || tileX >= right || tileY <= top || tileY >= bottom) return false
-              if (roads.has(tileKey(tileX, tileY)) || queueRoads.has(tileKey(tileX, tileY)) || occupiedByAttraction.has(tileKey(tileX, tileY))) return false
+              if (!isBuildableTile(tileX, tileY)) return false
+              if (roads.has(tileKey(tileX, tileY)) || queueRoads.has(tileKey(tileX, tileY))) return false
             }
           }
           return true
@@ -612,6 +649,30 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           if (offsetX === width - 1) return 1
           return 12
         }
+        // 敷地の地面。多くは盛り上げ台座だけだが、水系は台座の内側が水面になり、
+        // アルバトロスは中央に階段が立つ(原作 FUN_801f4a48)
+        const attractionGround = (attraction: Attraction) => ('ground' in attraction ? attraction.ground : 'raised')
+        const pondFacility = facilities.find((facility) => facility.id === 'pond')!
+        // 水面の 9 分割はイケのフレームをそのまま使う(原作テーブル DAT_801f92a2)
+        const waterFrameAt = (offsetX: number, offsetY: number, width: number, height: number) => {
+          const top = offsetY === 1
+          const bottom = offsetY === height - 2
+          const left = offsetX === 1
+          const right = offsetX === width - 2
+          if (top && left) return 4
+          if (top && right) return 5
+          if (bottom && left) return 6
+          if (bottom && right) return 7
+          if (top) return 0
+          if (bottom) return 1
+          if (left) return 2
+          if (right) return 3
+          return 8
+        }
+        // 水面は敷地の縁を 1 マス残した内側だけ
+        const isWaterTile = (offsetX: number, offsetY: number, width: number, height: number) => (
+          offsetX > 0 && offsetY > 0 && offsetX < width - 1 && offsetY < height - 1
+        )
         const canPlaceRoad = (x: number, y: number) => (
           isBuildableTile(x, y)
           && !roads.has(tileKey(x, y))
@@ -641,6 +702,12 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         const facilityFootprint = (facility: Facility): Footprint => (
           { width: facility.width, height: facility.height, constructionCost: facility.constructionCost }
         )
+        // フンスイ(3×3 の place)だけカーソルが敷地の中心になる。他はカーソルが前(下)左タイル
+        const facilityOrigin = (facility: Facility, x: number, y: number) => (
+          facility.placement === 'place' && facility.width === 3
+            ? { x: x - 1, y: y + 1 }
+            : { x, y }
+        )
         const facilityAt = (x: number, y: number) => placedFacilities.get(tileKey(x, y))
         const isFenceAt = (x: number, y: number) => facilityAt(x, y)?.facility.placement === 'fence'
         const isPondAt = (x: number, y: number) => facilityAt(x, y)?.facility.placement === 'pond'
@@ -660,12 +727,14 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           if (facility.placement === 'directional') return facilityDirection % facility.frames
           return 0
         }
-        // 設備スプライトは footprint の前(下)タイルを基準にする。原作のオブジェクトセルが
-        // ここに当たり、imageOffsets はそのセルからの相対で抽出している。中心合わせにすると
-        // 2×2 以上で右上へずれるので point(x, y) をそのまま基準にする
+        // 設備スプライトは原作のオブジェクトセルを基準にし、imageOffsets はそのセルからの
+        // 相対で抽出している。オブジェクトセルは通常はカーソルのタイル(フンスイは中心 = カーソル)、
+        // 建物 2 種はショップと同じスプライトで footprint の中心タイルになる
         const facilityImagePosition = (facility: Facility, frame: number, x: number, y: number) => {
           const offset = facility.imageOffsets[frame] ?? facility.imageOffsets[0]
-          const base = point(x, y)
+          const base = facility.placement === 'building'
+            ? point(x + Math.floor(facility.width / 2), y - Math.floor(facility.height / 2))
+            : point(x, y)
           return { x: base.x - offset.x, y: base.y - offset.y }
         }
         const setFacilityFrame = (x: number, y: number, frame: number) => {
@@ -680,11 +749,14 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           if (!placed) return
           placed.image.destroy()
           placedFacilities.delete(tileKey(x, y))
-          for (let offsetY = 0; offsetY < placed.facility.height; offsetY += 1) {
-            for (let offsetX = 0; offsetX < placed.facility.width; offsetX += 1) {
-              occupiedByAttraction.delete(tileKey(x + offsetX, y - offsetY))
-            }
-          }
+          const origin = facilityOrigin(placed.facility, x, y)
+          // origin は前(下)左タイルなので、奥(上)左に直してから解除する
+          markFootprint({
+            x: origin.x,
+            y: origin.y - placed.facility.height + 1,
+            width: placed.facility.width,
+            height: placed.facility.height,
+          }, false)
         }
         const refreshFenceTile = (x: number, y: number) => {
           if (!isFenceAt(x, y)) return
@@ -729,17 +801,21 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             }
             return true
           }
-          return canPlaceAttraction(facilityFootprint(facility), x, y)
+          const origin = facilityOrigin(facility, x, y)
+          return canPlaceAttraction(facilityFootprint(facility), origin.x, origin.y)
         }
         const addFacility = (facility: Facility, frame: number, x: number, y: number) => {
-          for (let offsetY = 0; offsetY < facility.height; offsetY += 1) {
-            for (let offsetX = 0; offsetX < facility.width; offsetX += 1) {
-              occupiedByAttraction.add(tileKey(x + offsetX, y - offsetY))
-            }
-          }
+          const origin = facilityOrigin(facility, x, y)
+          // origin は前(下)左タイルなので、奥(上)左に直してから登録する
+          markFootprint({
+            x: origin.x,
+            y: origin.y - facility.height + 1,
+            width: facility.width,
+            height: facility.height,
+          }, true)
           const position = facilityImagePosition(facility, frame, x, y)
           const image = this.add.image(position.x, position.y, `facility-${facility.id}-${frame}`).setOrigin(0)
-            .setDepth(renderDepthAt('facility', x, y))
+            .setDepth(renderDepthAt('facility', origin.x, origin.y))
           placedFacilities.set(tileKey(x, y), { facility, frame, image })
         }
         const placePond = (facility: Facility, x: number, y: number) => {
@@ -790,8 +866,8 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           }
           drawCursor()
         }
-        // 向きを選ぶ設備はショップと同じ手順。向き番号とタイル方向の対応もショップに合わせる
-        const facilityDirectionStep = (direction: number) => (
+        // 向き番号(0=手前 1=奥 2=左 3=右)をタイルの進み方向に直す。ショップ・設備で共通
+        const directionStep = (direction: number) => (
           { 0: { x: 0, y: 1 }, 1: { x: 0, y: -1 }, 2: { x: -1, y: 0 }, 3: { x: 1, y: 0 } }[direction] ?? { x: 0, y: 1 }
         )
         const drawFacilityArrow = () => {
@@ -801,7 +877,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             shopArrow.setVisible(false)
             return
           }
-          const step = facilityDirectionStep(facilityDirection)
+          const step = directionStep(facilityDirection)
           const centerX = pendingFacility.x + facility.width / 2 + step.x
           const centerY = pendingFacility.y - facility.height / 2 + 1 + step.y
           const sideX = -step.y
@@ -837,7 +913,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           let best = facilityDirection
           let bestDelta = Infinity
           for (let direction = 0; direction < facility.frames; direction += 1) {
-            const step = facilityDirectionStep(direction)
+            const step = directionStep(direction)
             // 方向はタイル座標で 1 マス進めてから投影する(画面座標を再投影しない)
             const target = point(centerTileX + step.x, centerTileY + step.y)
             const angle = Math.atan2(target.y - center.y, target.x - center.x)
@@ -861,6 +937,47 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           currentCash += activeFacility.constructionCost
           attractionCancelledHandler.current(activeFacility.constructionCost)
           finishFacilityDirection()
+        }
+        // ショップの前の道になるマス。中心から向いている方向へ footprint 前端まで
+        const shopWalkwayTiles = (shop: Shop, shopX: number, shopY: number, direction: number) => {
+          const step = directionStep(direction)
+          const centerX = shopX + Math.floor(shop.width / 2)
+          const centerY = shopY + Math.floor(shop.height / 2)
+          const reach = Math.floor((direction < 2 ? shop.height : shop.width) / 2)
+          const tiles: Array<{ x: number, y: number }> = []
+          for (let i = 0; i <= reach; i += 1) tiles.push({ x: centerX + step.x * i, y: centerY + step.y * i })
+          return tiles
+        }
+        const shopRoadPreview: Phaser.GameObjects.Image[] = []
+        // 設置プレビューと向き選びの間、ショップ前に敷かれる道も見せる
+        const drawShopWalkwayPreview = () => {
+          shopRoadPreview.forEach((image) => image.setVisible(false))
+          const shop = activeShop
+          if (!shop) return
+          let tiles: Array<{ x: number, y: number }>
+          let valid = true
+          if (shopStep === 'direction' && pendingShop) {
+            tiles = shopWalkwayTiles(shop, pendingShop.x, pendingShop.y, shopDirection)
+          }
+          else {
+            const origin = attractionOriginAtCursor(shop)
+            tiles = shopWalkwayTiles(shop, origin.x, origin.y - shop.height + 1, shopDirection)
+            valid = canPlaceAttraction(shop, origin.x, origin.y)
+          }
+          const strip = new Set(tiles.map(({ x, y }) => tileKey(x, y)))
+          const connected = (x: number, y: number) => strip.has(tileKey(x, y)) || hasRoadConnection(x, y)
+          tiles.forEach((tile, index) => {
+            const mask = (connected(tile.x + 1, tile.y) ? 1 : 0)
+              | (connected(tile.x - 1, tile.y) ? 2 : 0)
+              | (connected(tile.x, tile.y + 1) ? 4 : 0)
+              | (connected(tile.x, tile.y - 1) ? 8 : 0)
+            const image = shopRoadPreview[index] ?? this.add.image(0, 0, 'road-frame-0').setOrigin(0)
+            if (!shopRoadPreview[index]) shopRoadPreview.push(image)
+            const position = point(tile.x, tile.y)
+            image.setTexture(`road-frame-${roadFrameByMask[mask]}`).setPosition(position.x, position.y)
+              .setDepth(renderDepthAt('road', tile.x, tile.y)).setVisible(true)
+              .setAlpha(valid ? 1 : 0.55).setTint(valid ? 0xffffff : 0xff6048)
+          })
         }
         const drawCursor = () => {
           cursor.clear()
@@ -906,7 +1023,9 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           cursor.lineStyle(1, color, 1)
           const width = footprint ? footprint.width : 1
           const height = footprint ? footprint.height : 1
-          const cursorAreaOrigin = attractionOrigin ?? cursorPosition
+          const cursorAreaOrigin = placingFacility
+            ? facilityOrigin(placingFacility, cursorPosition.x, cursorPosition.y)
+            : attractionOrigin ?? cursorPosition
           for (let offsetY = 0; offsetY < height; offsetY += 1) {
             for (let offsetX = 0; offsetX < width; offsetX += 1) {
               const tile = point(cursorAreaOrigin.x + offsetX, cursorAreaOrigin.y - offsetY)
@@ -916,17 +1035,26 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
               cursor.strokePoints(translated, true)
             }
           }
+          drawShopWalkwayPreview()
           buildBasePreview.forEach((image) => image.setVisible(false))
           // 盛り上げベースのプレビューはアトラクションのみ(ショップ・施設は不要)
           if (placingBody && footprint && attractionOrigin) {
+            const previewGround = attractionGround(attraction)
             let previewIndex = 0
             for (let offsetY = 0; offsetY < footprint.height; offsetY += 1) {
               for (let offsetX = 0; offsetX < footprint.width; offsetX += 1) {
-                const key = `build-base-frame-${buildBaseFrameAt(offsetX, footprint.height - offsetY - 1, footprint.width, footprint.height)}`
+                const rowFromTop = footprint.height - offsetY - 1
+                const water = previewGround === 'water'
+                  && isWaterTile(offsetX, rowFromTop, footprint.width, footprint.height)
+                const frame = water
+                  ? waterFrameAt(offsetX, rowFromTop, footprint.width, footprint.height)
+                  : buildBaseFrameAt(offsetX, rowFromTop, footprint.width, footprint.height)
+                const key = water ? `facility-pond-${frame}` : `build-base-frame-${frame}`
+                const offset = water ? pondFacility.imageOffsets[frame] ?? pondFacility.imageOffsets[0] : { x: 0, y: 0 }
                 const image = buildBasePreview[previewIndex] ?? this.add.image(0, 0, key).setOrigin(0)
                 if (!buildBasePreview[previewIndex]) buildBasePreview.push(image)
                 const tile = point(attractionOrigin.x + offsetX, attractionOrigin.y - offsetY)
-                image.setTexture(key).setPosition(tile.x, tile.y).setVisible(true)
+                image.setTexture(key).setPosition(tile.x - offset.x, tile.y - offset.y).setVisible(true)
                   .setDepth(renderDepthAt('terrain', attractionOrigin.x + offsetX, attractionOrigin.y - offsetY))
                   .setAlpha(valid ? 1 : 0.55).setTint(valid ? 0xffffff : 0xff6048)
                 previewIndex += 1
@@ -941,7 +1069,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             attractionPreview = this.add.image(0, 0, previewImage.key).setOrigin(0)
           }
           if (footprint && previewImage && attractionPreview && attractionOrigin) {
-            // 設備は placeFacility と同じ前タイル基準、アトラクション/ショップは中心基準
+            // 設備は placeFacility と同じオブジェクトセル基準、アトラクション/ショップは中心基準
             const position = placingFacility
               ? facilityImagePosition(placingFacility, facilityFrame, attractionOrigin.x, attractionOrigin.y)
               : attractionImagePosition(footprint, previewImage.offset, attractionOrigin.x, attractionOrigin.y)
@@ -949,6 +1077,14 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
               .setDepth(renderDepthAt('facility', attractionOrigin.x, attractionOrigin.y))
               .setAlpha(valid ? 0.7 : 0.4).setTint(valid ? 0xffffff : 0xff6048)
           }
+          // ポインタはメニューやダイアログが開いている間は隠す(原作のフラグ 0x8000 相当)
+          const pointerConfig = activeRoadBuildMode || attraction || shop || activeFacility
+            ? { key: 'pointer-shovel', offset: pointers.shovel.offset }
+            : { key: 'pointer-arrow', offset: pointers.arrow.offset }
+          const pointerBase = point(cursorPosition.x, cursorPosition.y)
+          pointer.setTexture(pointerConfig.key)
+            .setPosition(pointerBase.x - pointerConfig.offset.x, pointerBase.y - pointerConfig.offset.y)
+            .setVisible(mapInteractive)
           accessPreview?.setVisible(false)
           if (placingAccess && pendingAttraction) {
             const accessStep = activeAttractionBuildStep === 'entrance' ? 'entrance' : 'exit'
@@ -967,8 +1103,9 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           }
         }
         const placeCursor = (x: number, y: number) => {
+          // カーソルは敷地の x 範囲内、上は敷地の上端、下は園外を経てマップ下端手前まで
           cursorPosition.x = Phaser.Math.Clamp(x, left, right)
-          cursorPosition.y = Phaser.Math.Clamp(y, top, selectionBottom)
+          cursorPosition.y = Phaser.Math.Clamp(y, top, gridHeight - 2)
           const position = point(cursorPosition.x, cursorPosition.y)
           cursor.setPosition(position.x, position.y)
           drawCursor()
@@ -976,8 +1113,9 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         placeCursor(cursorPosition.x, cursorPosition.y)
 
         const camera = this.cameras.main
+        // カメラの追従範囲。下は園外の設置範囲までカバーする
         const cameraTopRow = top - game.park.cameraMarginTiles.top
-        const cameraBottomRow = gateRow + 6 + game.park.cameraMarginTiles.bottom
+        const cameraBottomRow = gridHeight - 2
         const focus = point(gateCenter, gateRow + 1)
         const cameraTopLeft = point(left, cameraTopRow)
         const cameraBottomRight = point(right, cameraBottomRow)
@@ -991,37 +1129,49 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           )
           .centerOn(focus.x, focus.y)
 
+        // 境界外に出た時だけ scrollX/Y を書き換える。境界内で毎回書き換えると、
+        // viewInsetY が非整数のときに Phaser 内部の丸めで値が少しずつずれてしまう
         const clampCameraToMap = () => {
           const viewWidth = camera.width / camera.zoom
           const viewHeight = camera.height / camera.zoom
           const viewInsetX = (camera.width - viewWidth) / 2
           const viewInsetY = (camera.height - viewHeight) / 2
           const maxViewTop = cameraBottomRight.y + stepY - viewHeight
-          const viewTop = Phaser.Math.Clamp(camera.scrollY + viewInsetY, cameraTopLeft.y, maxViewTop)
-          camera.scrollY = viewTop - viewInsetY
+          const currentViewTop = camera.scrollY + viewInsetY
+          if (currentViewTop < cameraTopLeft.y) camera.scrollY = Math.round(cameraTopLeft.y - viewInsetY)
+          else if (currentViewTop > maxViewTop) camera.scrollY = Math.round(maxViewTop - viewInsetY)
 
           const rowAt = (screenY: number) => (screenY - padding) / stepY
           const sideMargin = game.park.cameraMarginTiles.side * stepX
+          const viewTop = camera.scrollY + viewInsetY
           const minViewLeft = padding + left * stepX + rowAt(viewTop) * rowOffsetX - sideMargin
           const maxViewLeft = padding + right * stepX + rowAt(viewTop + viewHeight) * rowOffsetX + tileWidth - viewWidth + sideMargin
-          const viewLeft = minViewLeft <= maxViewLeft
-            ? Phaser.Math.Clamp(camera.scrollX + viewInsetX, minViewLeft, maxViewLeft)
-            : (minViewLeft + maxViewLeft) / 2
-          camera.scrollX = viewLeft - viewInsetX
+          if (minViewLeft <= maxViewLeft) {
+            const currentViewLeft = camera.scrollX + viewInsetX
+            if (currentViewLeft < minViewLeft) camera.scrollX = Math.round(minViewLeft - viewInsetX)
+            else if (currentViewLeft > maxViewLeft) camera.scrollX = Math.round(maxViewLeft - viewInsetX)
+          }
+          else camera.scrollX = Math.round((minViewLeft + maxViewLeft) / 2 - viewInsetX)
         }
-        const keepCursorVisible = () => {
+        // 動かした軸だけカメラを追従させる。左右で動いても地図座標の縦は変わらないが、
+        // 画面サイズによって scrollY が非整数になり、両軸を毎回触ると丸め誤差で少しずつずれる
+        const keepCursorVisible = (axis?: 'x' | 'y') => {
           const viewWidth = camera.width / camera.zoom
           const viewHeight = camera.height / camera.zoom
           const viewInsetX = (camera.width - viewWidth) / 2
           const viewInsetY = (camera.height - viewHeight) / 2
           const margin = game.park.cursorCameraMarginTiles * tileWidth
           const position = point(cursorPosition.x, cursorPosition.y)
-          const viewLeft = camera.scrollX + viewInsetX
-          const viewTop = camera.scrollY + viewInsetY
-          if (position.x < viewLeft + margin) camera.scrollX -= viewLeft + margin - position.x
-          if (position.x + stepX > viewLeft + viewWidth - margin) camera.scrollX += position.x + stepX - (viewLeft + viewWidth - margin)
-          if (position.y < viewTop + margin) camera.scrollY -= viewTop + margin - position.y
-          if (position.y + stepY > viewTop + viewHeight - margin) camera.scrollY += position.y + stepY - (viewTop + viewHeight - margin)
+          if (axis !== 'y') {
+            const viewLeft = camera.scrollX + viewInsetX
+            if (position.x < viewLeft + margin) camera.scrollX = Math.round(camera.scrollX - (viewLeft + margin - position.x))
+            else if (position.x + stepX > viewLeft + viewWidth - margin) camera.scrollX = Math.round(camera.scrollX + position.x + stepX - (viewLeft + viewWidth - margin))
+          }
+          if (axis !== 'x') {
+            const viewTop = camera.scrollY + viewInsetY
+            if (position.y < viewTop + margin) camera.scrollY = Math.round(camera.scrollY - (viewTop + margin - position.y))
+            else if (position.y + stepY > viewTop + viewHeight - margin) camera.scrollY = Math.round(camera.scrollY + position.y + stepY - (viewTop + viewHeight - margin))
+          }
           clampCameraToMap()
         }
         // 入口・出口を置いている間は、カーソルを敷地の縁だけに沿って動かす。
@@ -1075,7 +1225,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           }
           const tile = accessTileOf(ring, accessSide, along)
           placeCursor(tile.x, tile.y)
-          keepCursorVisible()
+          keepCursorVisible(direction === 'left' || direction === 'right' ? 'x' : 'y')
         }
         // マウスは指した向きの辺へ寄せる。角のマスはどの辺としても選べるので、
         // マスの近さではなく「どちら側にはみ出しているか」で辺を決める
@@ -1109,10 +1259,10 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           const nextY = Phaser.Math.Clamp(
             cursorPosition.y + (direction === 'up' ? -1 : direction === 'down' ? 1 : 0),
             top,
-            selectionBottom,
+            gridHeight - 2,
           )
           placeCursor(nextX, nextY)
-          keepCursorVisible()
+          keepCursorVisible(direction === 'left' || direction === 'right' ? 'x' : 'y')
         }
         const placeRoad = () => {
           const { x, y } = cursorPosition
@@ -1167,7 +1317,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
               const neighborKey = tileKey(x + neighbor.x, y + neighbor.y)
               const neighborState = queueStates.get(neighborKey)
               if (neighborState === undefined) return
-              queueStates.set(neighborKey, queueStateByMask[queueMaskByState[neighborState] | neighbor.reverseMask])
+              queueStates.set(neighborKey, queueStateAdding(neighborState, neighbor.reverseMask))
             })
             redrawQueueTiles(x, y)
           }
@@ -1177,21 +1327,40 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         const addAttraction = (attraction: Attraction, x: number, y: number) => {
           const bottomX = x
           const bottomY = y + attraction.height - 1
-          for (let offsetY = 0; offsetY < attraction.height; offsetY += 1) {
-            for (let offsetX = 0; offsetX < attraction.width; offsetX += 1) {
-              occupiedByAttraction.add(tileKey(x + offsetX, y + offsetY))
-            }
-          }
+          markFootprint({ x, y, width: attraction.width, height: attraction.height }, true)
+          const ground = attractionGround(attraction)
           const baseImages: Phaser.GameObjects.Image[] = []
           for (let offsetY = 0; offsetY < attraction.height; offsetY += 1) {
             for (let offsetX = 0; offsetX < attraction.width; offsetX += 1) {
               const tile = point(x + offsetX, y + offsetY)
+              const depth = renderDepthAt('terrain', x + offsetX, y + offsetY)
+              if (ground === 'water' && isWaterTile(offsetX, offsetY, attraction.width, attraction.height)) {
+                const frame = waterFrameAt(offsetX, offsetY, attraction.width, attraction.height)
+                const offset = pondFacility.imageOffsets[frame] ?? pondFacility.imageOffsets[0]
+                baseImages.push(
+                  this.add.image(tile.x - offset.x, tile.y - offset.y, `facility-pond-${frame}`)
+                    .setOrigin(0).setDepth(depth),
+                )
+                continue
+              }
               const frame = buildBaseFrameAt(offsetX, offsetY, attraction.width, attraction.height)
               baseImages.push(
-                this.add.image(tile.x, tile.y, `build-base-frame-${frame}`).setOrigin(0)
-                  .setDepth(renderDepthAt('terrain', x + offsetX, y + offsetY)),
+                this.add.image(tile.x, tile.y, `build-base-frame-${frame}`).setOrigin(0).setDepth(depth),
               )
             }
+          }
+          // 階段は敷地の中央、踊り場はその 1 マス奥
+          if (ground === 'stairs') {
+            const centerX = x + (attraction.width >> 1)
+            const centerY = y + attraction.height - 1 - (attraction.height >> 1)
+            terrainObjects.stairs.forEach((piece, index) => {
+              const tileY = centerY - index
+              const tile = point(centerX, tileY)
+              baseImages.push(
+                this.add.image(tile.x - piece.offset.x, tile.y - piece.offset.y, `terrain-stairs-${index}`)
+                  .setOrigin(0).setDepth(renderDepthAt('facility', centerX, tileY)),
+              )
+            })
           }
           const imagePosition = attractionImagePosition(attraction, attraction.imageOffset, bottomX, bottomY)
           const image = this.add.image(imagePosition.x, imagePosition.y, attraction.id)
@@ -1261,7 +1430,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           const entrance = shopEntranceTile(shop, pendingShop.x, pendingShop.y, shopDirection)
           // 入口へ「1 タイル外へ出る」向き(タイル座標)。矢印はタイル座標で組んで point() で
           // 投影し、地面(等角平面)に寝かせて描く
-          const step = { 0: { x: 0, y: 1 }, 1: { x: 0, y: -1 }, 2: { x: -1, y: 0 }, 3: { x: 1, y: 0 } }[shopDirection] ?? { x: 0, y: 1 }
+          const step = directionStep(shopDirection)
           const cx = entrance.x + 0.5
           const cy = entrance.y + 0.5
           const sx = -step.y // 進行方向に垂直(タイル座標)
@@ -1288,21 +1457,14 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         // (5×5 なら中心を含め 3 マス)。この道はショップの敷地の一部なので占有マークは残したまま、
         // 見た目と道のつながりだけ歩道として扱う
         const layShopWalkway = (shop: Shop, shopX: number, shopY: number, direction: number) => {
-          const step = { 0: { x: 0, y: 1 }, 1: { x: 0, y: -1 }, 2: { x: -1, y: 0 }, 3: { x: 1, y: 0 } }[direction] ?? { x: 0, y: 1 }
-          const centerX = shopX + Math.floor(shop.width / 2)
-          const centerY = shopY + Math.floor(shop.height / 2)
-          const reach = Math.floor((direction < 2 ? shop.height : shop.width) / 2)
-          const laid: Array<[number, number]> = []
-          for (let i = 0; i <= reach; i += 1) {
-            const tileX = centerX + step.x * i
-            const tileY = centerY + step.y * i
-            roads.add(tileKey(tileX, tileY))
-            shopRoads.add(tileKey(tileX, tileY))
-            laid.push([tileX, tileY])
-          }
-          laid.forEach(([tileX, tileY]) => {
-            redrawRoadTiles(tileX, tileY)
-            redrawQueueTiles(tileX, tileY)
+          const laid = shopWalkwayTiles(shop, shopX, shopY, direction)
+          laid.forEach(({ x, y }) => {
+            roads.add(tileKey(x, y))
+            shopRoads.add(tileKey(x, y))
+          })
+          laid.forEach(({ x, y }) => {
+            redrawRoadTiles(x, y)
+            redrawQueueTiles(x, y)
           })
         }
         // ショップ本体を置く。設置操作とセーブデータからの復元で共通に使う
@@ -1310,11 +1472,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           const bottomX = x
           const bottomY = y + shop.height - 1
           // ショップは地面の盛り上げベースを敷かない(占有マークのみ)
-          for (let offsetY = 0; offsetY < shop.height; offsetY += 1) {
-            for (let offsetX = 0; offsetX < shop.width; offsetX += 1) {
-              occupiedByAttraction.add(tileKey(x + offsetX, y + offsetY))
-            }
-          }
+          markFootprint({ x, y, width: shop.width, height: shop.height }, true)
           const imagePosition = attractionImagePosition(shop, shop.imageOffsets[direction], bottomX, bottomY)
           return this.add.image(imagePosition.x, imagePosition.y, `shop-${shop.id}-${direction}`)
             .setOrigin(0).setDepth(renderDepthAt('facility', bottomX, bottomY))
@@ -1338,7 +1496,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           const x = bottomX
           const y = bottomY - shop.height + 1
           const image = addShopBody(shop, x, y, shopDirection)
-          pendingShop = { x, y, cost: shop.constructionCost, image, baseImages: [] }
+          pendingShop = { x, y, cost: shop.constructionCost, image }
           currentCash -= shop.constructionCost
           shopPlacedHandler.current(shop.constructionCost)
           if (shop.directions > 1) {
@@ -1359,6 +1517,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           shopDirection = direction
           updatePendingShopImage()
           drawShopArrow()
+          drawShopWalkwayPreview()
         }
         const confirmShopDirection = () => {
           const shop = activeShop
@@ -1374,13 +1533,8 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         const cancelShopDirection = () => {
           const shop = activeShop
           if (shopStep !== 'direction' || !pendingShop || !shop) return
-          for (let offsetY = 0; offsetY < shop.height; offsetY += 1) {
-            for (let offsetX = 0; offsetX < shop.width; offsetX += 1) {
-              occupiedByAttraction.delete(tileKey(pendingShop.x + offsetX, pendingShop.y + offsetY))
-            }
-          }
+          markFootprint({ x: pendingShop.x, y: pendingShop.y, width: shop.width, height: shop.height }, false)
           pendingShop.image.destroy()
-          pendingShop.baseImages.forEach((image) => image.destroy())
           currentCash += pendingShop.cost
           attractionCancelledHandler.current(pendingShop.cost)
           pendingShop = null
@@ -1424,6 +1578,8 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           ).setOrigin(accessStep === 'entrance' ? 0.5 : 0, accessStep === 'entrance' ? 1 : 0)
             // 入口・出口は設備や建物と同じ扱い。前後は位置だけで決まる
             .setDepth(renderDepthAt('facility', drawn.x, drawn.y))
+          // 入口は敷地の外のマスを 1 つ占める。出口は敷地の内側なのですでに占有済み
+          if (accessStep === 'entrance') occupiedByAttraction.add(tileKey(x, y))
           return { x, y, frame, image }
         }
         // 先に整列歩道が敷かれている場所に入口を置いたときも、その歩道につないで向きを合わせる
@@ -1443,7 +1599,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             })
           if (!connection) return
           const state = queueStates.get(connection.key)!
-          queueStates.set(connection.key, queueStateByMask[queueMaskByState[state] | connection.neighbor.reverseMask])
+          queueStates.set(connection.key, queueStateAdding(state, connection.neighbor.reverseMask))
           facility.entranceQueueKey = connection.key
           facility.entranceFrame = connection.neighbor.entranceFrameToward
           entrance.image.setTexture(`facility-entrance-frame-${entranceFrameAt(facility)}`)
@@ -1498,7 +1654,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
               const neighborKey = tileKey(cursorPosition.x + neighbor.x, cursorPosition.y + neighbor.y)
               const neighborState = queueStates.get(neighborKey)
               if (neighborState === undefined) return
-              queueStates.set(neighborKey, queueStateByMask[queueMaskByState[neighborState] & ~neighbor.reverseMask])
+              queueStates.set(neighborKey, queueStateRemoving(neighborState, neighbor.reverseMask))
             })
             if (entrance?.entrance) {
               const connection = queueNeighbors
@@ -1514,10 +1670,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
                 })
               if (connection) {
                 const state = queueStates.get(connection.key)!
-                queueStates.set(
-                  connection.key,
-                  queueStateByMask[queueMaskByState[state] | connection.neighbor.reverseMask],
-                )
+                queueStates.set(connection.key, queueStateAdding(state, connection.neighbor.reverseMask))
                 entrance.entranceQueueKey = connection.key
                 entrance.entranceFrame = connection.neighbor.entranceFrameToward
                 redrawQueueTiles(connection.x, connection.y)
@@ -1534,7 +1687,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         // カーソルタイルを覆う設備(複数マス設備は原点以外を指しても対象にする)を探す
         const facilityCoveringTile = (x: number, y: number) => {
           for (const [key, placed] of placedFacilities) {
-            const [anchorX, anchorY] = key.split(',').map(Number)
+            const { x: anchorX, y: anchorY } = parseKey(key)
             if (x >= anchorX && x < anchorX + placed.facility.width
               && y <= anchorY && y > anchorY - placed.facility.height) {
               return { anchorX, anchorY, placed }
@@ -1576,17 +1729,11 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             coversTile({ x: shopX, y: shopY, width: shop.width, height: shop.height }, x, y)
           )) ?? null
         )
-        const clearFootprint = (area: { x: number, y: number, width: number, height: number }) => {
-          for (let offsetY = 0; offsetY < area.height; offsetY += 1) {
-            for (let offsetX = 0; offsetX < area.width; offsetX += 1) {
-              occupiedByAttraction.delete(tileKey(area.x + offsetX, area.y + offsetY))
-            }
-          }
-        }
         const removeAttraction = (placed: PlacedAttraction) => {
           const index = placedAttractions.indexOf(placed)
           if (index >= 0) placedAttractions.splice(index, 1)
-          clearFootprint(placed)
+          markFootprint(placed, false)
+          if (placed.entrance) occupiedByAttraction.delete(tileKey(placed.entrance.x, placed.entrance.y))
           placed.image.destroy()
           placed.baseImages.forEach((image) => image.destroy())
           placed.entrance?.image.destroy()
@@ -1599,14 +1746,12 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           const index = placedShops.indexOf(placed)
           if (index >= 0) placedShops.splice(index, 1)
           const { shop, x, y } = placed
-          clearFootprint({ x, y, width: shop.width, height: shop.height })
+          markFootprint({ x, y, width: shop.width, height: shop.height }, false)
           placed.image.destroy()
           // ショップ前の道もショップの一部なので一緒に消す
           const removed: Array<[number, number]> = []
           shopRoads.forEach((key) => {
-            const comma = key.indexOf(',')
-            const roadX = Number(key.slice(0, comma))
-            const roadY = Number(key.slice(comma + 1))
+            const { x: roadX, y: roadY } = parseKey(key)
             if (!coversTile({ x, y, width: shop.width, height: shop.height }, roadX, roadY)) return
             removed.push([roadX, roadY])
           })
@@ -1668,7 +1813,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           const y = Math.floor((world.y - padding) / stepY)
           const localY = world.y - padding - y * stepY
           const x = Math.floor((world.x - padding - y * rowOffsetX - Math.floor(localY / 2)) / stepX)
-          if (x < left || x > right || y < top || y > selectionBottom) return false
+          if (x < left || x > right || y < top || y >= gridHeight - 1) return false
           // 入口・出口を置いている間は敷地の縁から離れられない
           if (pendingAttraction && activeAttractionBuildStep !== 'body') snapAccessCursor(x, y)
           else placeCursor(x, y)
@@ -1686,48 +1831,25 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           clampCameraToMap()
         }
 
-        // マウスの役割: 左=決定・設置、右=キャンセル・撤去、中=メニュー開閉(押したまま動かすと視点移動)
-        let panning = false
-        let previousX = 0
-        let previousY = 0
-        let panDistance = 0
-        const inDirectionStep = () => (
-          (activeShop !== null && shopStep === 'direction') || (activeFacility !== null && facilityStep === 'direction')
-        )
-        const cancelDirectionStep = () => {
-          if (activeShop && shopStep === 'direction') cancelShopDirection()
-          else if (activeFacility && facilityStep === 'direction') cancelFacilityDirection()
-        }
+        // マウスの役割: 左=決定・設置、中ドラッグ=カメラ移動、右=メニュー開閉とキャンセル(App 側で処理)、ホイール=ズーム
         this.input.mouse?.disableContextMenu()
+        let middlePanPreviousX = 0
+        let middlePanPreviousY = 0
+        let middlePanning = false
         this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-          if (pointer.button === 1) {
-            panning = true
-            previousX = pointer.x
-            previousY = pointer.y
-            panDistance = 0
-            return
-          }
-          if (pointer.button !== 2 || !mapInteractive) return
-          // 右ボタンは向き選びの取り消し、それ以外では撤去。押したまま動かすと続けて撤去できる
-          if (inDirectionStep()) {
-            cancelDirectionStep()
-            return
-          }
-          if (selectTileAtPointer(pointer)) {
-            removeHeld = true
-            removeAtCursor()
-          }
+          if (pointer.button !== 1) return
+          middlePanning = true
+          middlePanPreviousX = pointer.x
+          middlePanPreviousY = pointer.y
         })
         this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
-          if (panning && pointer.isDown) {
-            const deltaX = pointer.x - previousX
-            const deltaY = pointer.y - previousY
-            panDistance += Math.hypot(deltaX, deltaY)
-            camera.scrollX -= deltaX / camera.zoom
-            camera.scrollY -= deltaY / camera.zoom
+          if (middlePanning && pointer.buttons & 4) {
+            // 中ドラッグでカメラ移動。マップを掴んで引っ張る方向感覚
+            camera.scrollX -= (pointer.x - middlePanPreviousX) / camera.zoom
+            camera.scrollY -= (pointer.y - middlePanPreviousY) / camera.zoom
+            middlePanPreviousX = pointer.x
+            middlePanPreviousY = pointer.y
             clampCameraToMap()
-            previousX = pointer.x
-            previousY = pointer.y
             return
           }
           if (!mapInteractive) return
@@ -1743,19 +1865,12 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           }
           const moved = selectTileAtPointer(pointer)
           if (!moved || !pointer.isDown) return
-          // ドラッグはボタンの押しっぱなしと同じ扱い
+          // 左ドラッグはボタンの押しっぱなしと同じ扱い
           if (pointer.button === 0 && isGroundBuild()) placeAtCursor()
-          if (pointer.button === 2 && removeHeld) removeAtCursor()
         })
         this.input.on('pointerup', (pointer: Phaser.Input.Pointer) => {
           if (pointer.button === 1) {
-            panning = false
-            // 視点を動かしていなければ中クリックとしてメニューを開閉する
-            if (panDistance <= game.park.pointerDragThresholdPixels) menuToggleHandler.current()
-            return
-          }
-          if (pointer.button === 2) {
-            removeHeld = false
+            middlePanning = false
             return
           }
           if (pointer.button !== 0 || !mapInteractive) return
@@ -1771,16 +1886,18 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           }
           else if (selectTileAtPointer(pointer)) placeAtCursor()
         })
-        this.input.on('gameout', () => {
-          panning = false
-          removeHeld = false
-        })
         this.input.on('wheel', (
           _pointer: Phaser.Input.Pointer,
           _gameObjects: Phaser.GameObjects.GameObject[],
           _deltaX: number,
           deltaY: number,
         ) => changeZoom(deltaY > 0 ? -game.park.zoomStep : game.park.zoomStep))
+        // 右スティックのカメラ移動。ズームに依らず画面上の速さが一定になるよう zoom で割る
+        this.events.on('camera-pan', (deltaX: number, deltaY: number) => {
+          camera.scrollX += deltaX / camera.zoom
+          camera.scrollY += deltaY / camera.zoom
+          clampCameraToMap()
+        })
         this.events.on('pan', (direction: MenuAction) => {
           if (direction === 'left' || direction === 'right' || direction === 'up' || direction === 'down') {
             if (activeShop && shopStep === 'direction') setShopDirection(directionByPad[direction])
@@ -1818,10 +1935,9 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           if (!attraction && pendingAttraction) {
             const pendingIndex = placedAttractions.indexOf(pendingAttraction)
             if (pendingIndex >= 0) placedAttractions.splice(pendingIndex, 1)
-            for (let offsetY = 0; offsetY < pendingAttraction.height; offsetY += 1) {
-              for (let offsetX = 0; offsetX < pendingAttraction.width; offsetX += 1) {
-                occupiedByAttraction.delete(tileKey(pendingAttraction.x + offsetX, pendingAttraction.y + offsetY))
-              }
+            markFootprint(pendingAttraction, false)
+            if (pendingAttraction.entrance) {
+              occupiedByAttraction.delete(tileKey(pendingAttraction.entrance.x, pendingAttraction.entrance.y))
             }
             pendingAttraction.image.destroy()
             pendingAttraction.baseImages.forEach((image) => image.destroy())
@@ -1863,13 +1979,10 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             confirmHeld = false
             removeHeld = false
           }
+          drawCursor()
         })
 
         // ---- セーブ ----
-        const parseKey = (key: string) => {
-          const comma = key.indexOf(',')
-          return { x: Number(key.slice(0, comma)), y: Number(key.slice(comma + 1)) }
-        }
         // 園の中身を書き出す。ショップ前の道はショップから敷き直せるので含めない
         takeSnapshot.current = (): ParkSnapshot => ({
           roads: [...roads].filter((key) => !shopRoads.has(key)),
@@ -1904,6 +2017,13 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         })
         // セーブデータから園を組み立て直す。道の絵は全部そろえてから一度に描き直す
         const restoreSnapshot = (snapshot: ParkSnapshot) => {
+          // 道と整列歩道を先に並べる。ショップの前の道を敷く処理が入口の向きを見に来るので、
+          // 整列歩道がそろう前に見られると入口のつなぎ先が失われる
+          snapshot.roads.forEach((key) => roads.add(key))
+          snapshot.queues.forEach(({ key, state }) => {
+            queueRoads.add(key)
+            queueStates.set(key, state)
+          })
           snapshot.facilities.forEach(({ id, x, y, frame }) => {
             const facility = facilities.find((entry) => entry.id === id)
             if (facility) addFacility(facility, frame, x, y)
@@ -1926,11 +2046,6 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             const shop = shops.find((entry) => entry.id === id)
             if (!shop) return
             completeShop(shop, x, y, direction, addShopBody(shop, x, y, direction))
-          })
-          snapshot.roads.forEach((key) => roads.add(key))
-          snapshot.queues.forEach(({ key, state }) => {
-            queueRoads.add(key)
-            queueStates.set(key, state)
           })
           roads.forEach((key) => {
             const { x, y } = parseKey(key)
@@ -1973,10 +2088,10 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           progress: number
           previousX: number
           previousY: number
-          // walking 以外で使う自由座標と、待ち行列の何番目か
+          // walking 以外で使う自由座標と、待ち行列で並ぶ側(1 = 右、-1 = 左)
           queueX: number
           queueY: number
-          queueSlot: number
+          queueSide: number
           facing: number
           walked: number
           paid: boolean
@@ -2016,34 +2131,32 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           return dy > 0 ? 0 : 1
         }
 
-        // 待ち行列は看板マスを空け、先頭が左右 1 マス、以降 0.5 マス間隔で交互に外へ広がる。
-        // マップの端に達したらそれ以上は広がらず端に溜まる
-        const queueSlotX = (slot: number) => {
-          const side = slot % 2 === 0 ? 1 : -1
-          const rank = Math.floor(slot / 2) + 2
-          return Math.min(right, Math.max(left, busStop.x + side * rank * 0.5))
-        }
-        // 待っている客を列に着いた順に持つ。来園した順で数え直すと、
-        // 先に来園して後から列に着いた客が既に並んでいる客を押しのけてしまう
+        // 待ち行列は看板マスを空け、左右の列が 1 マス目から 0.5 マス間隔で外へ広がる。
+        // マップの端に達したらそれ以上は広がらず端に溜まる。
+        // 側は客ごとに固定し、前が抜けても同じ側の中で前へ詰めるだけにする
+        // (通し番号で左右を決めると、詰まるたびに全員が反対側へ歩き直してしまう)
         const waitingGuests: Guest[] = []
         const joinQueue = (guest: Guest) => {
           guest.phase = 'queued'
-          guest.queueSlot = waitingGuests.length
+          const rightCount = waitingGuests.filter((other) => other.queueSide === 1).length
+          guest.queueSide = rightCount * 2 <= waitingGuests.length ? 1 : -1
           waitingGuests.push(guest)
         }
         const leaveQueue = (guest: Guest) => {
           const index = waitingGuests.indexOf(guest)
-          if (index < 0) return
-          waitingGuests.splice(index, 1)
-          // 抜けたぶん後ろの客が 1 つずつ前に詰める
-          for (let rank = index; rank < waitingGuests.length; rank += 1) {
-            waitingGuests[rank].queueSlot = rank
-          }
+          if (index >= 0) waitingGuests.splice(index, 1)
         }
         const queueTargetOf = (guest: Guest) => {
           if (guest.phase === 'toBus') return { x: busStop.x, y: busStop.y + 1 }
           if (guest.phase === 'toSign') return { x: busStop.x, y: busStop.y }
-          return { x: queueSlotX(guest.queueSlot), y: busStop.y }
+          // 同じ側で自分より先に並んだ人数だけ外側へ
+          let rank = 0
+          for (const other of waitingGuests) {
+            if (other === guest) break
+            if (other.queueSide === guest.queueSide) rank += 1
+          }
+          const x = busStop.x + guest.queueSide * (rank * 0.5 + 1)
+          return { x: Math.min(right, Math.max(left, x)), y: busStop.y }
         }
 
         const drawGuest = (guest: Guest, x: number, y: number, tileX: number, tileY: number) => {
@@ -2070,9 +2183,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           let bestDistance = Infinity
           for (const key of roads) {
             if (shopRoads.has(key)) continue
-            const comma = key.indexOf(',')
-            const roadX = Number(key.slice(0, comma))
-            const roadY = Number(key.slice(comma + 1))
+            const { x: roadX, y: roadY } = parseKey(key)
             const distance = Math.abs(roadX - guest.toX) + Math.abs(roadY - guest.toY)
             if (distance >= bestDistance) continue
             bestDistance = distance
@@ -2130,7 +2241,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             previousY: gateCrossing.y,
             queueX: gateCrossing.x,
             queueY: gateCrossing.y,
-            queueSlot: 0,
+            queueSide: 1,
             facing: 0,
             walked: 0,
             paid: false,
@@ -2212,6 +2323,17 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         }
 
         // ---- バス ----
+        // 車体は 先頭 + 中間 × バージョン数 + 後尾 の連結。現状はバージョン 1 相当で中間なし
+        const busMiddleCount = 0
+        const busParts = (() => {
+          const variant = busSprites.variants[0]
+          const parts = [{ part: variant.parts[0], slotX: 0 }]
+          for (let index = 0; index < busMiddleCount; index += 1) {
+            parts.push({ part: variant.parts[1], slotX: busSprites.partSpacing * index })
+          }
+          parts.push({ part: variant.parts[2], slotX: busSprites.partSpacing * busMiddleCount })
+          return parts
+        })()
         type Bus = {
           x: number
           state: 'arriving' | 'stopped' | 'leaving'
@@ -2219,25 +2341,33 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           unloaded: number
           unloadDone: boolean
           boarded: number
-          // 原作のバスのテクスチャが未特定のため、車体は暫定の矩形で描いている
-          image: Phaser.GameObjects.Rectangle
+          images: Phaser.GameObjects.Image[]
           gaugeBack: Phaser.GameObjects.Rectangle
           gaugeFill: Phaser.GameObjects.Rectangle
         }
         let bus: Bus | null = null
-        const busEnterX = left - 3
-        const busExitX = right + 3
+        const busEnterX = right + 3
+        const busExitX = left - 3
         const placeBusImage = (current: Bus) => {
-          const position = point(current.x + 0.5, busRow + 0.5)
-          const originX = position.x - busConfig.anchor.x
-          const originY = position.y - busConfig.anchor.y
+          const position = point(current.x, busRow)
+          const baseX = position.x + busConfig.anchor.x
+          const baseY = position.y + busConfig.anchor.y
           const column = Math.round(current.x)
-          current.image.setPosition(originX, originY).setDepth(renderDepthAt('facility', column, busRow))
+          const depth = renderDepthAt('facility', column, busRow)
+          current.images.forEach((image, index) => {
+            const { part, slotX } = busParts[index]
+            image.setPosition(baseX + slotX - part.offset.x, baseY - part.offset.y).setDepth(depth)
+          })
           // 乗車率のバーは車体の中央下に置く
+          const leftEdge = Math.min(...busParts.map(({ part, slotX }) => slotX - part.offset.x))
+          const rightEdge = Math.max(...busParts.map(({ part, slotX }, index) => slotX - part.offset.x + current.images[index].width))
+          const bottomEdge = Math.max(...busParts.map(({ part }, index) => current.images[index].height - part.offset.y))
           const gauge = busConfig.gauge
-          const gaugeX = originX + (busConfig.size.width - gauge.width) / 2
-          const gaugeY = originY + busConfig.size.height + gauge.offsetY
-          const filled = gauge.width * Math.min(1, current.boarded / busConfig.capacity)
+          const gaugeX = baseX + (leftEdge + rightEdge - gauge.width) / 2
+          const gaugeY = baseY + bottomEdge + gauge.offsetY
+          // 到着時は満員で来て、降ろした分だけ減り、乗せた分だけ増える
+          const aboard = busConfig.capacity - current.unloaded + current.boarded
+          const filled = gauge.width * Math.min(1, Math.max(0, aboard) / busConfig.capacity)
           const gaugeDepth = renderDepthAt('overlay', column, busRow)
           current.gaugeBack.setPosition(gaugeX, gaugeY).setDepth(gaugeDepth)
           current.gaugeFill
@@ -2258,8 +2388,8 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         const updateBus = (days: number) => {
           if (!bus) return
           if (bus.state === 'arriving') {
-            bus.x += busConfig.tilesPerDay * days
-            if (bus.x >= busHaltX) {
+            bus.x -= busConfig.tilesPerDay * days
+            if (bus.x <= busHaltX) {
               bus.x = busHaltX
               bus.state = 'stopped'
               bus.timer = 0
@@ -2281,15 +2411,16 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
               if (!boardWaitingGuest()) break
               bus.boarded += 1
             }
-            // 定員に達していない限り、待っている客も歩いている途中の客も乗り終えるまで発車しない
-            const atStop = guests.some((guest) => guest.phase !== 'walking')
-            const boardDone = bus.boarded >= busConfig.capacity || !atStop
-            if (bus.timer >= busConfig.stopDays && bus.unloadDone && boardDone) bus.state = 'leaving'
+            // 定員に空きがあり待っている客が残っている間と、
+            // バスへ歩いている途中の客がいる間は発車しない(乗り込んで消えるのを待つ)
+            const wantsMore = bus.boarded < busConfig.capacity && waitingGuests.length > 0
+            const boarding = guests.some((guest) => guest.phase === 'toSign' || guest.phase === 'toBus')
+            if (bus.timer >= busConfig.stopDays && bus.unloadDone && !wantsMore && !boarding) bus.state = 'leaving'
           }
           else {
-            bus.x += busConfig.tilesPerDay * days
-            if (bus.x > busExitX) {
-              bus.image.destroy()
+            bus.x -= busConfig.tilesPerDay * days
+            if (bus.x < busExitX) {
+              bus.images.forEach((image) => image.destroy())
               bus.gaugeBack.destroy()
               bus.gaugeFill.destroy()
               bus = null
@@ -2306,10 +2437,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             unloaded: 0,
             unloadDone: false,
             boarded: 0,
-            image: this.add
-              .rectangle(0, 0, busConfig.size.width, busConfig.size.height, 0xd8d8d8)
-              .setOrigin(0, 0)
-              .setStrokeStyle(1, 0x404040),
+            images: busParts.map(({ part }) => this.add.image(0, 0, part.src).setOrigin(0)),
             gaugeBack: this.add
               .rectangle(0, 0, busConfig.gauge.width, busConfig.gauge.height, 0x000000, 0.6)
               .setOrigin(0, 0),
@@ -2327,7 +2455,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           const days = deltaMs * daysPerMs
           if (days <= 0) return
           elapsedDays += days
-          // 前のバスが去ってから次の間隔で、左手からバスが入ってくる
+          // 前のバスが去ってから次の間隔で、右手からバスが入ってくる
           if (!bus) {
             busTimerDays += days
             if (busTimerDays >= busConfig.intervalDays) {

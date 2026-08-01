@@ -5,6 +5,7 @@
 - ID 0〜17 は UNPACK.PAK リソース 129 を共有し、設備 ID = リソース内のグループ番号。
 - ID 18(インフォメーション)と ID 19(イベントカイジョウ)はショップと同じ建物スプライトで、
   施設カタログの ID 15 / 16 のリソースを使う。
+- グループ 20 以降は設備ではなく、アトラクションの敷地に敷かれる地形オブジェクトである。
 """
 
 from __future__ import annotations
@@ -33,6 +34,20 @@ SCENERY_RESOURCE = 129
 DESTINATION = ROOT / "public" / "assets" / "park" / "facilities"
 ICON_DESTINATION = ROOT / "public" / "assets" / "park" / "facility-icons"
 CONFIG = ROOT / "src" / "config" / "facilities.json"
+TERRAIN_DESTINATION = ROOT / "public" / "assets" / "park"
+TERRAIN_CONFIG = ROOT / "src" / "config" / "terrainObjects.json"
+
+# 地形オブジェクト → (グループ番号, 使うフレーム)
+# アルバトロスの敷地中央に置かれる階段と踊り場。オブジェクトコード 0x59 / 0x5a が
+# `FUN_801d9694` 経由でグループ 20 のフレーム 0 / 1 を引く。
+TERRAIN_OBJECTS = {"stairs": (20, [0, 1])}
+
+# バス。`FUN_800b0710(handle, バージョン/5 + 0x15)` がグループ 21(バージョン 1〜5)/
+# 22(6〜10)を選び、フレーム 0(先頭)を基準点に、フレーム 1(中間)をバージョン数だけ
+# 16px 間隔で並べ、フレーム 2(後尾)をその後ろへつなげて 1 台を描く
+BUS_GROUPS = [(21, [1, 5]), (22, [6, 10])]
+BUS_PART_SPACING = 16
+BUS_CONFIG = ROOT / "src" / "config" / "busSprites.json"
 
 # 経済表 DAT_800a7670(SLPS_008.10, t_addr=0x800a7000, header 0x800)、12 byte/件の +0 が設置費。
 # ID 0〜19 が設備、行 20〜25 が国別の植物(ID 6 の実費)。
@@ -70,8 +85,8 @@ FACILITIES = [
     (15, "trash-can", "ゴミバコ", 1, 1, "directional"),
     (16, "bench", "ベンチ", 2, 2, "directional"),
     (17, "clock-tower", "トケイダイ", 1, 1, "place"),
-    (18, "information", "インフォメーション", 5, 5, "building"),
-    (19, "event-hall", "イベントカイジョウ", 5, 5, "building"),
+    (18, "information", "インフォメーション", 3, 3, "building"),
+    (19, "event-hall", "イベントカイジョウ", 6, 6, "building"),
 ]
 
 # ID 6 は国によって名前が変わる。日本(索引 1)だけ面積が 2 × 2 になる。
@@ -169,7 +184,32 @@ def make_scenery_exporter(pak: bytes, resources: dict):
                 make_icon(image).save(ICON_DESTINATION / f"{slug}.png")
         return frames, offsets
 
-    return export
+    def export_terrain(group: int, frames: list[int], slug: str):
+        entries = []
+        for index, frame in enumerate(frames):
+            descriptor_offset = struct.unpack_from("<H", resource, sections[group] + frame * 4 + 2)[0]
+            image, anchor_x, anchor_y = compose_frame(resource, vram, descriptor_offset)
+            image.save(TERRAIN_DESTINATION / f"terrain-{slug}-{index}.png")
+            entries.append({
+                "src": f"/assets/park/terrain-{slug}-{index}.png",
+                "offset": {"x": anchor_x, "y": anchor_y},
+            })
+        return entries
+
+    def export_bus(group: int, variant: int):
+        section_end = sections[group + 1] if group + 1 < section_count else package_offset
+        parts = []
+        for frame in range((section_end - sections[group]) // 4):
+            descriptor_offset = struct.unpack_from("<H", resource, sections[group] + frame * 4 + 2)[0]
+            image, anchor_x, anchor_y = compose_frame(resource, vram, descriptor_offset)
+            image.save(TERRAIN_DESTINATION / f"bus-{variant}-{frame}.png")
+            parts.append({
+                "src": f"/assets/park/bus-{variant}-{frame}.png",
+                "offset": {"x": anchor_x, "y": anchor_y},
+            })
+        return parts
+
+    return export, export_terrain, export_bus
 
 
 def export_building(pak: bytes, resources: dict, palette, catalog_id: int, slug: str):
@@ -208,8 +248,25 @@ def main() -> None:
     for previous in DESTINATION.glob("*.png"):
         previous.unlink()
 
-    export_scenery = make_scenery_exporter(pak, resources)
+    export_scenery, export_terrain, export_bus = make_scenery_exporter(pak, resources)
     construction_costs, country_costs = read_construction_costs()
+
+    terrain = {slug: export_terrain(group, frames, slug) for slug, (group, frames) in TERRAIN_OBJECTS.items()}
+    TERRAIN_CONFIG.write_text(json.dumps(terrain, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+    bus = {
+        "_note": [
+            "バスの車体。parts は 0 = 先頭、1 = 中間、2 = 後尾。",
+            "先頭を基準点に、中間をバージョン数だけ partSpacing 間隔で並べ、後尾をその後ろへつなげる。",
+            "offset は基準点から画像左上までのずらし。",
+        ],
+        "partSpacing": BUS_PART_SPACING,
+        "variants": [
+            {"versions": versions, "parts": export_bus(group, index)}
+            for index, (group, versions) in enumerate(BUS_GROUPS)
+        ],
+    }
+    BUS_CONFIG.write_text(json.dumps(bus, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
     entries = []
     for facility_id, slug, name, width, height, placement in FACILITIES:

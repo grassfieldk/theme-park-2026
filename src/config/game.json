@@ -4,17 +4,13 @@
     "startDate": "2026-04-01",
     "visitorLimit": 350,
     "mapGrid": { "width": 80, "height": 80, "stepX": 22, "stepY": 16, "rowOffsetX": 8, "tileWidth": 32 },
-    "cameraPanPixels": 160,
     "displayScale": 2,
     "minDisplayScale": 1,
     "zoomStep": 0.5,
-    "frontBuildableRows": 3,
-    "frontSelectableRows": 4,
     "cursorCameraMarginTiles": 2,
-    "pointerDragThresholdPixels": 4,
     "cameraMarginTiles": { "top": 4, "bottom": 1, "side": 4 }
   },
-  "input": { "initialRepeatDelayMs": 400, "repeatIntervalMs":  60 },
+  "input": { "initialRepeatDelayMs": 400, "repeatIntervalMs": 60, "cameraPanPixelsPerSecond": 480 },
   "time": { "defaultSpeedIndex": 1, "framesPerSecond": 60 },
   "guests": {
     "admissionFee": 100,
@@ -27,13 +23,12 @@
     ]
   },
   "bus": {
-    "intervalDays": 2,
+    "intervalDays": 7,
     "capacity": 15,
     "tilesPerDay": 30,
     "stopDays": 0.6,
     "boardsPerDay": 42,
-    "anchor": { "x": 2, "y": 16 },
-    "size": { "width": 32, "height": 32 },
+    "anchor": { "x": 16, "y": 13 },
     "gauge": { "width": 24, "height": 4, "offsetY": 2 }
   },
   "speeds": [

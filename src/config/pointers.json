@@ -1,0 +1,16 @@
+{
+  "arrow": {
+    "src": "/assets/park/pointer-arrow.png",
+    "offset": {
+      "x": -13,
+      "y": 6
+    }
+  },
+  "shovel": {
+    "src": "/assets/park/pointer-shovel.png",
+    "offset": {
+      "x": -9,
+      "y": 5
+    }
+  }
+}

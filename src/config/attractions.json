@@ -17,7 +17,7 @@
   { "id": "ferris-wheel", "name": "かんらんしゃ", "width": 5, "height": 5, "constructionCost": 2000, "maintenanceCost": 2000, "imageOffset": { "x": 19, "y": 76 }, "asset": "/assets/park/attractions/ferris-wheel-0.png" },
   { "id": "sky-tower", "name": "スカイタワー", "width": 5, "height": 5, "constructionCost": 3000, "maintenanceCost": 5000, "imageOffset": { "x": 30, "y": 78 }, "asset": "/assets/park/attractions/sky-tower-0.png" },
   { "id": "great-wheel", "name": "グレートホイール", "width": 5, "height": 5, "constructionCost": 7000, "maintenanceCost": 9000, "imageOffset": { "x": 25, "y": 96 }, "asset": "/assets/park/attractions/great-wheel-0.png" },
-  { "id": "albatross", "name": "アルバトロス", "width": 9, "height": 9, "constructionCost": 5000, "maintenanceCost": 7000, "imageOffset": { "x": 29, "y": 15 }, "asset": "/assets/park/attractions/albatross-0.png" },
+  { "id": "albatross", "name": "アルバトロス", "width": 9, "height": 9, "constructionCost": 5000, "maintenanceCost": 7000, "imageOffset": { "x": 29, "y": 15 }, "asset": "/assets/park/attractions/albatross-0.png", "ground": "stairs" },
   { "id": "virtual-flight", "name": "バーチャルフライト", "width": 5, "height": 5, "constructionCost": 9000, "maintenanceCost": 6000, "imageOffset": { "x": 9, "y": 70 }, "asset": "/assets/park/attractions/virtual-flight-0.png" },
   { "id": "jigoku-meguri", "name": "ジゴクメグリ", "width": 5, "height": 5, "constructionCost": 2000, "maintenanceCost": 3000, "imageOffset": { "x": 21, "y": 59 }, "asset": "/assets/park/attractions/jigoku-meguri-0.png" },
   { "id": "haunted-mansion", "name": "ホーンテッドマンション", "width": 5, "height": 5, "constructionCost": 8000, "maintenanceCost": 6000, "imageOffset": { "x": 24, "y": 62 }, "asset": "/assets/park/attractions/haunted-mansion-0.png" },
@@ -26,13 +26,13 @@
   { "id": "circus-show", "name": "サーカスショー", "width": 7, "height": 7, "constructionCost": 8000, "maintenanceCost": 5000, "imageOffset": { "x": 40, "y": 55 }, "asset": "/assets/park/attractions/circus-show-0.png" },
   { "id": "virtual-wars", "name": "バーチャルウォーズ", "width": 5, "height": 5, "constructionCost": 8000, "maintenanceCost": 8000, "imageOffset": { "x": 26, "y": 54 }, "asset": "/assets/park/attractions/virtual-wars-0.png" },
   { "id": "maze", "name": "メイロ", "width": 5, "height": 5, "constructionCost": 7000, "maintenanceCost": 3000, "imageOffset": { "x": 39, "y": 26 }, "asset": "/assets/park/attractions/maze-0.png" },
-  { "id": "ninja-house", "name": "ニンジャやしき", "width": 7, "height": 7, "constructionCost": 7000, "maintenanceCost": 5000, "imageOffset": { "x": 27, "y": 60 }, "asset": "/assets/park/attractions/ninja-house-0.png" },
+  { "id": "ninja-house", "name": "ニンジャやしき", "width": 5, "height": 5, "constructionCost": 7000, "maintenanceCost": 5000, "imageOffset": { "x": 27, "y": 60 }, "asset": "/assets/park/attractions/ninja-house-0.png" },
   { "id": "marine-show", "name": "マリンショー", "width": 7, "height": 7, "constructionCost": 9900, "maintenanceCost": 5000, "imageOffset": { "x": 65, "y": 57 }, "asset": "/assets/park/attractions/marine-show-0.png" },
   { "id": "fantasy-castle", "name": "ファンタジーキャッスル", "width": 7, "height": 7, "constructionCost": 9900, "maintenanceCost": 9000, "imageOffset": { "x": 44, "y": 77 }, "asset": "/assets/park/attractions/fantasy-castle-0.png" },
-  { "id": "oedo-castle", "name": "おおえどキャッスル", "width": 6, "height": 6, "constructionCost": 9900, "maintenanceCost": 7000, "imageOffset": { "x": 63, "y": 69 }, "asset": "/assets/park/attractions/oedo-castle-0.png" },
+  { "id": "oedo-castle", "name": "おおえどキャッスル", "width": 7, "height": 7, "constructionCost": 9900, "maintenanceCost": 7000, "imageOffset": { "x": 63, "y": 69 }, "asset": "/assets/park/attractions/oedo-castle-0.png" },
   { "id": "pool-skate-rink", "name": "プール・スケートリンク", "width": 6, "height": 6, "constructionCost": 9900, "maintenanceCost": 7000, "imageOffset": { "x": 47, "y": 49 }, "asset": "/assets/park/attractions/pool-skate-rink-0.png" },
-  { "id": "skate-rink-pool", "name": "スケートリンク・プール", "width": 9, "height": 9, "constructionCost": 9900, "maintenanceCost": 7000, "imageOffset": { "x": 52, "y": 50 }, "asset": "/assets/park/attractions/skate-rink-pool-0.png" },
-  { "id": "boat-dock", "name": "ボートのりば", "width": 9, "height": 9, "constructionCost": 8000, "maintenanceCost": 2000, "imageOffset": { "x": 27, "y": 22 }, "asset": "/assets/park/attractions/boat-dock-0.png" },
-  { "id": "mississippi-cruise", "name": "ミシシッピークルーズ", "width": 9, "height": 9, "constructionCost": 9000, "maintenanceCost": 5000, "imageOffset": { "x": 27, "y": 34 }, "asset": "/assets/park/attractions/mississippi-cruise-0.png" },
-  { "id": "treasure-island", "name": "トレジャーアイランド", "width": 6, "height": 6, "constructionCost": 6000, "maintenanceCost": 3000, "imageOffset": { "x": 49, "y": 49 }, "asset": "/assets/park/attractions/treasure-island-0.png" }
+  { "id": "skate-rink-pool", "name": "スケートリンク・プール", "width": 6, "height": 6, "constructionCost": 9900, "maintenanceCost": 7000, "imageOffset": { "x": 52, "y": 50 }, "asset": "/assets/park/attractions/skate-rink-pool-0.png" },
+  { "id": "boat-dock", "name": "ボートのりば", "width": 9, "height": 9, "constructionCost": 8000, "maintenanceCost": 2000, "imageOffset": { "x": 27, "y": 22 }, "asset": "/assets/park/attractions/boat-dock-0.png", "ground": "water" },
+  { "id": "mississippi-cruise", "name": "ミシシッピークルーズ", "width": 9, "height": 9, "constructionCost": 9000, "maintenanceCost": 5000, "imageOffset": { "x": 27, "y": 34 }, "asset": "/assets/park/attractions/mississippi-cruise-0.png", "ground": "water" },
+  { "id": "treasure-island", "name": "トレジャーアイランド", "width": 6, "height": 6, "constructionCost": 6000, "maintenanceCost": 3000, "imageOffset": { "x": 49, "y": 49 }, "asset": "/assets/park/attractions/treasure-island-0.png", "ground": "water" }
 ]
