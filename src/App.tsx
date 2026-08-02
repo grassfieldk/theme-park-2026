@@ -507,6 +507,7 @@ export default function App() {
               onBuildMessage={setBuildMessage}
               secondsPerDay={secondsPerDay}
               onAdmissionPaid={(fee) => setCash((current) => current + fee)}
+              onShopSale={(amount) => setCash((current) => current + amount)}
               onGuestCountChange={setGuestCount}
               onRemoveConfirm={(name) => setConfirmPrompt({
                 message: `${name} を撤去しますか？`,

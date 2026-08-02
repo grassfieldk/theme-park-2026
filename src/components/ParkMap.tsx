@@ -39,6 +39,7 @@ type Props = {
   onFacilityBuildStep: (step: 'body' | 'direction') => void
   secondsPerDay: number
   onAdmissionPaid: (fee: number) => void
+  onShopSale: (amount: number) => void
   onGuestCountChange: (count: number) => void
   onBuildMessage: (message: string) => void
   /** アトラクション・ショップの撤去前に確認を出す。返事は resolveRemoval で返す */
@@ -104,6 +105,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
   onFacilityBuildStep,
   secondsPerDay,
   onAdmissionPaid,
+  onShopSale,
   onGuestCountChange,
   onBuildMessage,
   onRemoveConfirm,
@@ -127,6 +129,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
   const facilityPlacedHandler = useRef(onFacilityPlaced)
   const facilityStepHandler = useRef(onFacilityBuildStep)
   const admissionHandler = useRef(onAdmissionPaid)
+  const shopSaleHandler = useRef(onShopSale)
   const guestCountHandler = useRef(onGuestCountChange)
   const buildMessageHandler = useRef(onBuildMessage)
   const removeConfirmHandler = useRef(onRemoveConfirm)
@@ -140,6 +143,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
   facilityPlacedHandler.current = onFacilityPlaced
   facilityStepHandler.current = onFacilityBuildStep
   admissionHandler.current = onAdmissionPaid
+  shopSaleHandler.current = onShopSale
   guestCountHandler.current = onGuestCountChange
   buildMessageHandler.current = onBuildMessage
   removeConfirmHandler.current = onRemoveConfirm
@@ -2062,6 +2066,26 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           const index = placedShops.indexOf(placed)
           if (index >= 0) placedShops.splice(index, 1)
           const { shop, x, y } = placed
+          // この店を目指していた客・利用中の客は入口マスへ出して徘徊に戻す
+          guests.forEach((guest) => {
+            if (guest.targetShop !== placed) return
+            guest.targetShop = null
+            guest.path = null
+            guest.pathIndex = 0
+            if (guest.phase === 'shopping') {
+              const entrance = shopEntranceTile(shop, x, y, placed.direction)
+              guest.phase = 'walking'
+              guest.image.setVisible(true)
+              guest.serviceRemaining = 0
+              guest.fromX = entrance.x
+              guest.fromY = entrance.y
+              guest.toX = entrance.x
+              guest.toY = entrance.y
+              guest.previousX = entrance.x
+              guest.previousY = entrance.y
+              guest.progress = 0
+            }
+          })
           markFootprint({ x, y, width: shop.width, height: shop.height }, false)
           placed.image.destroy()
           // ショップ前の道もショップの一部なので一緒に消す
@@ -2413,13 +2437,33 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
 
         // 来園者は 4 つの段階を一方向に進む。
         // walking(マス目を歩く) → queued(看板前で待つ) → toSign(看板へ) → toBus(バスへ乗り消える)
-        type GuestPhase = 'walking' | 'queued' | 'toSign' | 'toBus'
+        // shopping はショップ利用中で、姿を消して一定時間後に walking へ戻る
+        type GuestPhase = 'walking' | 'queued' | 'toSign' | 'toBus' | 'shopping'
         type Guest = {
           type: number
           bank: GuestBank
           // 1 日あたり何マス歩くか。種類ごとの設定値をそのまま持つ
           tilesPerDay: number
           phase: GuestPhase
+          // 所持金。施設利用と入場料で減り、なくなると帰宅する
+          money: number
+          // 食べ物・飲み物を求める内部値(0〜250)。しきい値を超えると飲食ショップを探す
+          hunger: number
+          thirst: number
+          // 満腹状態。満たされている間は対応する欲求が増えず、値が尽きると解除される
+          fullFood: boolean
+          fullDrink: boolean
+          satiety: number
+          // 欲求更新の端数持ち越し
+          needTick: number
+          // ショップが見つからなかったあとの再探索までの残り日数
+          seekCooldown: number
+          // 目的地のショップと、そこへ向かう(または出てくる)マス列
+          targetShop: PlacedShop | null
+          path: Array<{ x: number, y: number }> | null
+          pathIndex: number
+          // shopping 中の残り日数
+          serviceRemaining: number
           // walking 用。マス間を progress(0〜1)で補間する
           fromX: number
           fromY: number
@@ -2501,13 +2545,30 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           return { x: Math.min(right, Math.max(left, x)), y: busStop.y }
         }
 
+        // ショップ前の道(敷地内)にいる客は、店の向きが手前側(下・左)なら建物より前に、
+        // 奥側(上・右)なら建物の陰に描く
+        const guestDepthAt = (tileX: number, tileY: number) => {
+          if (shopRoads.has(tileKey(tileX, tileY))) {
+            const placed = shopCoveringTile(tileX, tileY)
+            if (placed && (placed.direction === 0 || placed.direction === 2)) {
+              return renderDepthAt('facility', placed.x, placed.y + placed.shop.height - 1) + 1
+            }
+          }
+          return renderDepthAt('facility', tileX, tileY)
+        }
         const drawGuest = (guest: Guest, x: number, y: number, tileX: number, tileY: number, lift = heightAt(tileX, tileY)) => {
           const base = flatPoint(x + 0.4, y + 0.52)
           guest.image.setFrame(guest.facing * 4 + (Math.floor(guest.walked * 4) % 4))
             .setPosition(base.x - guest.bank.anchorX, base.y - lift * terrain.heightStepPx - guest.bank.anchorY)
-            .setDepth(renderDepthAt('facility', tileX, tileY))
+            .setDepth(guestDepthAt(tileX, tileY))
         }
         const placeGuestImage = (guest: Guest) => {
+          if (guest.phase === 'shopping') {
+            // 店舗型は中にいるので描かない。屋台型は店先に立ち止まった姿を描く
+            if (guest.targetShop?.shop.serviceStyle === 'building') return
+            drawGuest(guest, guest.fromX, guest.fromY, guest.fromX, guest.fromY)
+            return
+          }
           if (guest.phase !== 'walking') {
             drawGuest(guest, guest.queueX, guest.queueY, Math.round(guest.queueX), Math.round(guest.queueY))
             return
@@ -2567,17 +2628,166 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           return pool[Math.floor(Math.random() * pool.length)]
         }
 
+        // ---- 飲食ショップの利用 ----
+        // 原作仕様: 欲求値は 1 日 15 回の更新で 1 ずつ増え、150 以上になると飲食ショップを
+        // 探し、250 で頭打ちになる。利用すると満腹値が 250 になり、更新ごとに 10 ずつ減って
+        // 0 に戻るまで対応する欲求は増えない
+        const needsConfig = guestConfig.needs
+        const shopUseConfig = game.shopUse
+        const shopUseEffectOf = (shop: Shop) => ('useEffect' in shop ? shop.useEffect : null)
+        const updateGuestNeeds = (guest: Guest, days: number) => {
+          if (guest.phase === 'shopping') return
+          guest.needTick += days * needsConfig.updatesPerDay
+          while (guest.needTick >= 1) {
+            guest.needTick -= 1
+            if (!guest.fullFood) guest.hunger = Math.min(needsConfig.max, guest.hunger + 1)
+            if (!guest.fullDrink) guest.thirst = Math.min(needsConfig.max, guest.thirst + 1)
+            if (guest.fullFood || guest.fullDrink) {
+              guest.satiety = Math.max(0, guest.satiety - needsConfig.satietyDecayPerUpdate)
+              if (guest.satiety === 0) {
+                guest.fullFood = false
+                guest.fullDrink = false
+              }
+            }
+          }
+        }
+        // 客の現在地から歩ける各マスへ、1 つ手前のマスを幅優先で記録する。
+        // 歩ける条件は徘徊時と同じで、ショップ前の道は含めない
+        const buildReachMap = (startX: number, startY: number, walkable: Walkable) => {
+          const previous = new Map<string, string | null>()
+          previous.set(tileKey(startX, startY), null)
+          const frontier = [{ x: startX, y: startY }]
+          for (let head = 0; head < frontier.length; head += 1) {
+            const current = frontier[head]
+            for (const { x: ox, y: oy } of guestNeighbours) {
+              const x = current.x + ox
+              const y = current.y + oy
+              const key = tileKey(x, y)
+              if (previous.has(key) || !walkable(x, y)) continue
+              if (!sameHeight(x, y, current.x, current.y) && !stairsLink(current.x, current.y, x, y)) continue
+              previous.set(key, tileKey(current.x, current.y))
+              frontier.push({ x, y })
+            }
+          }
+          return previous
+        }
+        // 入口マス(ショップ前の道の 1 マス外)まで道路を歩き、そこから敷地の前端
+        // (ショップ前の道のいちばん外側のマス)へ 1 マス入った位置が利用位置。
+        // 入口まで歩いて行けなければ null
+        const shopApproachPath = (reach: Map<string, string | null>, placed: PlacedShop) => {
+          const entrance = shopEntranceTile(placed.shop, placed.x, placed.y, placed.direction)
+          const entranceKey = tileKey(entrance.x, entrance.y)
+          if (!reach.has(entranceKey)) return null
+          const path: Array<{ x: number, y: number }> = []
+          let key: string | null = entranceKey
+          while (key) {
+            path.unshift(parseKey(key))
+            key = reach.get(key) ?? null
+          }
+          path.shift()
+          const walkway = shopWalkwayTiles(placed.shop, placed.x, placed.y, placed.direction)
+          path.push(walkway[walkway.length - 1])
+          return path
+        }
+        // 空腹・渇きがしきい値に達した客の行き先を選ぶ。原作と同じく食べ物を先に調べ、
+        // 営業中で支払額(価格 × 人数倍率)を払えるショップから無作為に 1 件選ぶ。
+        // キッズはビアホールを利用できない
+        const chooseShopTarget = (guest: Guest): Array<{ x: number, y: number }> | null => {
+          if (guest.fullFood || guest.fullDrink) return null
+          const wants: Array<'food' | 'drink'> = []
+          if (guest.hunger >= needsConfig.seekThreshold) wants.push('food')
+          if (guest.thirst >= needsConfig.seekThreshold) wants.push('drink')
+          if (wants.length === 0) return null
+          const people = guestConfig.types[guest.type].people
+          const isKids = guestConfig.types[guest.type].id === 'kids'
+          let reach: Map<string, string | null> | null = null
+          for (const category of wants) {
+            const candidates = placedShops.filter(({ shop }) => (
+              shop.category === category
+              && shopUseConfig.initialPrice * people <= guest.money
+              && !(isKids && 'kidsAllowed' in shop && shop.kidsAllowed === false)
+            ))
+            if (candidates.length === 0) continue
+            reach = reach ?? buildReachMap(guest.fromX, guest.fromY, walkableFor(guest, false))
+            const options: Array<{ placed: PlacedShop, path: Array<{ x: number, y: number }> }> = []
+            for (const placed of candidates) {
+              const path = shopApproachPath(reach, placed)
+              if (path) options.push({ placed, path })
+            }
+            if (options.length === 0) continue
+            const choice = options[Math.floor(Math.random() * options.length)]
+            guest.targetShop = choice.placed
+            guest.path = choice.path
+            guest.pathIndex = 0
+            return choice.path
+          }
+          guest.seekCooldown = 1
+          return null
+        }
+        // 入口マスから店を向く方向(店の向きの反対)
+        const facingByShopDirection = [1, 0, 3, 2]
+        const enterShop = (guest: Guest) => {
+          guest.phase = 'shopping'
+          guest.serviceRemaining = shopUseConfig.serviceDays
+          guest.path = null
+          guest.pathIndex = 0
+          if (!guest.targetShop) return
+          guest.facing = facingByShopDirection[guest.targetShop.direction]
+          // 店舗型は中へ入るので姿を消す。屋台型は店先に立ったまま利用する
+          if (guest.targetShop.shop.serviceStyle === 'building') guest.image.setVisible(false)
+        }
+        // 利用を終えて支払い、商品の効果ぶん欲求を動かして満腹にし、店から出る
+        const finishShopping = (guest: Guest) => {
+          const placed = guest.targetShop
+          guest.targetShop = null
+          guest.phase = 'walking'
+          guest.image.setVisible(true)
+          if (!placed) return
+          const people = guestConfig.types[guest.type].people
+          const payment = shopUseConfig.initialPrice * people
+          guest.money -= payment
+          shopSaleHandler.current(payment)
+          const effect = shopUseEffectOf(placed.shop)
+          if (effect) {
+            guest.hunger = Math.min(needsConfig.valueMax, Math.max(0, guest.hunger + effect.hunger))
+            guest.thirst = Math.min(needsConfig.valueMax, Math.max(0, guest.thirst + effect.thirst))
+          }
+          if (placed.shop.category === 'food') guest.fullFood = true
+          else guest.fullDrink = true
+          guest.satiety = needsConfig.satietyMax
+          // 所持金がなくなった来園者は帰宅する
+          if (guest.money <= 0) guest.leaveAtDay = elapsedDays
+          // 入口マスへ 1 マス出てから徘徊に戻る
+          const entrance = shopEntranceTile(placed.shop, placed.x, placed.y, placed.direction)
+          guest.path = [entrance]
+          guest.pathIndex = 0
+        }
+
         const spawnGuest = () => {
           if (guests.length >= game.park.visitorLimit) return false
           const type = Math.floor(Math.random() * guestConfig.types.length)
           const banks = guestConfig.types[type].banks.filter((id) => guestBankById.has(id))
           if (banks.length === 0) return false
           const bank = guestBankById.get(banks[Math.floor(Math.random() * banks.length)])!
+          const money = (guestConfig.money.base + Math.floor(Math.random() * (guestConfig.money.randomRange + 1)))
+            * guestConfig.types[type].people
           const guest: Guest = {
             type,
             bank,
             tilesPerDay: guestConfig.types[type].tilesPerDay,
             phase: 'walking',
+            money,
+            hunger: 0,
+            thirst: 0,
+            fullFood: false,
+            fullDrink: false,
+            satiety: 0,
+            needTick: 0,
+            seekCooldown: 0,
+            targetShop: null,
+            path: null,
+            pathIndex: 0,
+            serviceRemaining: 0,
             fromX: gateCrossing.x,
             fromY: gateCrossing.y,
             toX: gateCrossing.x,
@@ -2608,6 +2818,12 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         // マス目を歩く客を 1 フレーム分進める
         const updateWalkingGuest = (guest: Guest, step: number) => {
           const leaving = elapsedDays >= guest.leaveAtDay
+          // 帰宅が決まったらショップへの用事は取りやめる
+          if (leaving && guest.targetShop) {
+            guest.targetShop = null
+            guest.path = null
+            guest.pathIndex = 0
+          }
           guest.walked += step
           guest.progress += step
           while (guest.progress >= 1) {
@@ -2619,6 +2835,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             // 敷地内に道路が敷かれ、実際にそこへ足を踏み入れた時点で入場料を払う
             if (!guest.paid && roads.has(tileKey(guest.fromX, guest.fromY))) {
               guest.paid = true
+              guest.money -= guestConfig.admissionFee
               admissionHandler.current(guestConfig.admissionFee)
             }
             // 看板マスに着いた帰る客は、ここから待ち行列の位置まで歩く
@@ -2630,6 +2847,46 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
               guest.toX = guest.fromX
               guest.toY = guest.fromY
               return
+            }
+            // ショップへの経路の途中なら次のマスへ進む。終点(店の中心)に着いたら利用を始める
+            if (guest.path) {
+              if (guest.pathIndex >= guest.path.length) {
+                guest.path = null
+                guest.pathIndex = 0
+                if (guest.targetShop) {
+                  guest.progress = 0
+                  guest.toX = guest.fromX
+                  guest.toY = guest.fromY
+                  enterShop(guest)
+                  return
+                }
+              }
+              else {
+                const nextTile = guest.path[guest.pathIndex]
+                const nextKey = tileKey(nextTile.x, nextTile.y)
+                if ((roads.has(nextKey) || stairsTiles.has(nextKey))
+                  && (sameHeight(nextTile.x, nextTile.y, guest.fromX, guest.fromY)
+                    || stairsLink(guest.fromX, guest.fromY, nextTile.x, nextTile.y))) {
+                  guest.pathIndex += 1
+                  guest.toX = nextTile.x
+                  guest.toY = nextTile.y
+                  continue
+                }
+                // 道が撤去されるなどして経路が壊れたら取りやめて徘徊に戻る
+                guest.path = null
+                guest.pathIndex = 0
+                guest.targetShop = null
+              }
+            }
+            // 空腹・渇きがしきい値に達していたら行き先のショップを探す
+            if (!leaving && guest.paid && !guest.targetShop && guest.seekCooldown <= 0) {
+              const chosenPath = chooseShopTarget(guest)
+              if (chosenPath && chosenPath.length > 0) {
+                guest.pathIndex = 1
+                guest.toX = chosenPath[0].x
+                guest.toY = chosenPath[0].y
+                continue
+              }
             }
             const next = chooseGuestStep(guest, leaving)
             if (!next) {
@@ -2820,7 +3077,13 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
 
           for (let index = guests.length - 1; index >= 0; index -= 1) {
             const guest = guests[index]
+            updateGuestNeeds(guest, days)
+            if (guest.seekCooldown > 0) guest.seekCooldown = Math.max(0, guest.seekCooldown - days)
             if (guest.phase === 'walking') updateWalkingGuest(guest, guest.tilesPerDay * days)
+            else if (guest.phase === 'shopping') {
+              guest.serviceRemaining -= days
+              if (guest.serviceRemaining <= 0) finishShopping(guest)
+            }
             else if (updateQueuedGuest(guest, days)) {
               removeGuest(index)
               continue
