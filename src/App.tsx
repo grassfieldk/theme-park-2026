@@ -17,7 +17,7 @@ import { readSave, writeSave, SAVE_VERSION, type ParkSnapshot, type SaveMode } f
 const ParkMap = lazy(() => import('./components/ParkMap'))
 
 type Screen = 'title' | 'country' | 'park'
-type ParkMode = 'map' | 'mainMenu' | 'roadMenu' | 'pathBuild' | 'queueBuild' | 'attractionMenu' | 'attractionBuild' | 'attractionQueueBuild' | 'shopMenu' | 'shopBuild' | 'facilityMenu' | 'facilityBuild'
+type ParkMode = 'map' | 'mainMenu' | 'roadMenu' | 'pathBuild' | 'queueBuild' | 'stairsBuild' | 'attractionMenu' | 'attractionBuild' | 'attractionQueueBuild' | 'shopMenu' | 'shopBuild' | 'facilityMenu' | 'facilityBuild'
 const mainMenuModeById: Record<string, ParkMode> = { roads: 'roadMenu', attractions: 'attractionMenu', shops: 'shopMenu', facilities: 'facilityMenu' }
 type AttractionBuildStep = 'body' | 'entrance' | 'exit'
 type ConfirmPrompt = { message: string, confirmLabel: string, onConfirm: () => void, onCancel?: () => void }
@@ -220,6 +220,7 @@ export default function App() {
       const road = parkMenu.roads[index].id
       if (road === 'path') setParkMode('pathBuild')
       if (road === 'queue') setParkMode('queueBuild')
+      if (road === 'stairs') setParkMode('stairsBuild')
     }
     else if (mode === 'attractionMenu') {
       setAttractionMenuIndex(index)
@@ -282,7 +283,7 @@ export default function App() {
         else setRoadMenuIndex((current) => moveMenu(current, input, parkMenu.roads.length, menuPageSize))
         return
       }
-      if ((parkMode === 'pathBuild' || parkMode === 'queueBuild') && input === 'cancel') {
+      if ((parkMode === 'pathBuild' || parkMode === 'queueBuild' || parkMode === 'stairsBuild') && input === 'cancel') {
         setParkMode('roadMenu')
         return
       }
@@ -324,7 +325,7 @@ export default function App() {
       }
       const mapAction = input === 'left' || input === 'right' || input === 'up' || input === 'down'
         || input === 'zoomIn' || input === 'zoomOut'
-        || ((parkMode === 'pathBuild' || parkMode === 'queueBuild' || parkMode === 'attractionQueueBuild' || parkMode === 'attractionBuild' || parkMode === 'shopBuild' || parkMode === 'facilityBuild') && (input === 'confirm' || input === 'confirmRelease'))
+        || ((parkMode === 'pathBuild' || parkMode === 'queueBuild' || parkMode === 'stairsBuild' || parkMode === 'attractionQueueBuild' || parkMode === 'attractionBuild' || parkMode === 'shopBuild' || parkMode === 'facilityBuild') && (input === 'confirm' || input === 'confirmRelease'))
         // 撤去はどのモードでも使える。何を消せるかはマップ側で判断する
         || input === 'remove' || input === 'removeRelease'
       if (mapAction) parkMap.current?.handleAction(input)
@@ -403,7 +404,9 @@ export default function App() {
   const menuSelectedIndex = parkMode === 'mainMenu' ? mainMenuIndex : parkMode === 'roadMenu' ? roadMenuIndex : parkMode === 'shopMenu' ? shopMenuIndex : parkMode === 'facilityMenu' ? facilityMenuIndex : attractionMenuIndex
   const buildModeLabel = parkMode === 'pathBuild'
     ? '歩道設置中'
-    : parkMode === 'queueBuild' || parkMode === 'attractionQueueBuild'
+    : parkMode === 'stairsBuild'
+      ? '階段設置中'
+      : parkMode === 'queueBuild' || parkMode === 'attractionQueueBuild'
       ? '整列歩道設置中'
       : parkMode === 'attractionBuild'
         ? attractionBuildStep === 'body'
@@ -478,7 +481,7 @@ export default function App() {
             <ParkMap
               ref={parkMap}
               country={selected}
-              roadBuildMode={parkMode === 'pathBuild' ? 'path' : parkMode === 'queueBuild' || parkMode === 'attractionQueueBuild' ? 'queue' : null}
+              roadBuildMode={parkMode === 'pathBuild' ? 'path' : parkMode === 'queueBuild' || parkMode === 'attractionQueueBuild' ? 'queue' : parkMode === 'stairsBuild' ? 'stairs' : null}
               attractionBuild={parkMode === 'attractionBuild' ? countryAttractions[attractionMenuIndex] : null}
               attractionBuildStep={attractionBuildStep}
               shopBuild={parkMode === 'shopBuild' ? countryShops[shopMenuIndex] : null}

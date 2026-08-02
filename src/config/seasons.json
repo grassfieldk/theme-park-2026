@@ -324,6 +324,290 @@
   "queue-frame-13": {
    "width": 16,
    "height": 16
+  },
+  "queue-frame-14": {
+   "width": 32,
+   "height": 16
+  },
+  "queue-frame-15": {
+   "width": 32,
+   "height": 16
+  },
+  "queue-frame-16": {
+   "width": 32,
+   "height": 16
+  },
+  "queue-frame-17": {
+   "width": 32,
+   "height": 16
+  },
+  "road-slope1-frame-0": {
+   "width": 32,
+   "height": 16
+  },
+  "road-slope1-frame-1": {
+   "width": 32,
+   "height": 16
+  },
+  "road-slope1-frame-2": {
+   "width": 32,
+   "height": 16
+  },
+  "road-slope1-frame-3": {
+   "width": 32,
+   "height": 16
+  },
+  "road-slope1-frame-4": {
+   "width": 32,
+   "height": 16
+  },
+  "road-slope1-frame-5": {
+   "width": 32,
+   "height": 16
+  },
+  "road-slope1-frame-6": {
+   "width": 32,
+   "height": 16
+  },
+  "road-slope1-frame-7": {
+   "width": 32,
+   "height": 16
+  },
+  "road-slope1-frame-8": {
+   "width": 32,
+   "height": 16
+  },
+  "road-slope1-frame-9": {
+   "width": 32,
+   "height": 16
+  },
+  "road-slope1-frame-10": {
+   "width": 32,
+   "height": 16
+  },
+  "road-slope1-frame-11": {
+   "width": 32,
+   "height": 16
+  },
+  "road-slope1-frame-12": {
+   "width": 32,
+   "height": 16
+  },
+  "road-slope1-frame-13": {
+   "width": 32,
+   "height": 16
+  },
+  "road-slope1-frame-15": {
+   "width": 32,
+   "height": 16
+  },
+  "road-slope1-frame-16": {
+   "width": 32,
+   "height": 16
+  },
+  "road-slope2-frame-0": {
+   "width": 32,
+   "height": 16
+  },
+  "road-slope2-frame-1": {
+   "width": 32,
+   "height": 16
+  },
+  "road-slope2-frame-2": {
+   "width": 32,
+   "height": 16
+  },
+  "road-slope2-frame-3": {
+   "width": 32,
+   "height": 16
+  },
+  "road-slope2-frame-4": {
+   "width": 32,
+   "height": 16
+  },
+  "road-slope2-frame-5": {
+   "width": 32,
+   "height": 16
+  },
+  "road-slope2-frame-6": {
+   "width": 32,
+   "height": 16
+  },
+  "road-slope2-frame-7": {
+   "width": 32,
+   "height": 16
+  },
+  "road-slope2-frame-8": {
+   "width": 32,
+   "height": 16
+  },
+  "road-slope2-frame-9": {
+   "width": 32,
+   "height": 16
+  },
+  "road-slope2-frame-10": {
+   "width": 32,
+   "height": 16
+  },
+  "road-slope2-frame-11": {
+   "width": 32,
+   "height": 16
+  },
+  "road-slope2-frame-12": {
+   "width": 32,
+   "height": 16
+  },
+  "road-slope2-frame-13": {
+   "width": 32,
+   "height": 16
+  },
+  "road-slope2-frame-15": {
+   "width": 32,
+   "height": 16
+  },
+  "road-slope2-frame-16": {
+   "width": 32,
+   "height": 16
+  },
+  "road-slope3-frame-0": {
+   "width": 32,
+   "height": 16
+  },
+  "road-slope3-frame-1": {
+   "width": 32,
+   "height": 16
+  },
+  "road-slope3-frame-2": {
+   "width": 32,
+   "height": 16
+  },
+  "road-slope3-frame-3": {
+   "width": 32,
+   "height": 16
+  },
+  "road-slope3-frame-4": {
+   "width": 32,
+   "height": 16
+  },
+  "road-slope3-frame-5": {
+   "width": 32,
+   "height": 16
+  },
+  "road-slope3-frame-6": {
+   "width": 32,
+   "height": 16
+  },
+  "road-slope3-frame-7": {
+   "width": 32,
+   "height": 16
+  },
+  "road-slope3-frame-8": {
+   "width": 32,
+   "height": 16
+  },
+  "road-slope3-frame-9": {
+   "width": 32,
+   "height": 16
+  },
+  "road-slope3-frame-10": {
+   "width": 32,
+   "height": 16
+  },
+  "road-slope3-frame-11": {
+   "width": 32,
+   "height": 16
+  },
+  "road-slope3-frame-12": {
+   "width": 32,
+   "height": 16
+  },
+  "road-slope3-frame-13": {
+   "width": 32,
+   "height": 16
+  },
+  "road-slope3-frame-15": {
+   "width": 32,
+   "height": 16
+  },
+  "road-slope3-frame-16": {
+   "width": 32,
+   "height": 16
+  },
+  "ground-slope-1": {
+   "width": 32,
+   "height": 16
+  },
+  "ground-slope-2": {
+   "width": 32,
+   "height": 16
+  },
+  "ground-slope-3": {
+   "width": 32,
+   "height": 16
+  },
+  "cliff-south-0": {
+   "width": 24,
+   "height": 16
+  },
+  "cliff-south-1": {
+   "width": 24,
+   "height": 16
+  },
+  "cliff-west-0": {
+   "width": 8,
+   "height": 30
+  },
+  "cliff-west-1": {
+   "width": 8,
+   "height": 30
+  },
+  "cliff-south-corner-0": {
+   "width": 24,
+   "height": 16
+  },
+  "cliff-south-corner-1": {
+   "width": 24,
+   "height": 16
+  },
+  "cliff-west-corner-0": {
+   "width": 8,
+   "height": 30
+  },
+  "cliff-west-corner-1": {
+   "width": 8,
+   "height": 30
+  },
+  "stairs-frame-0": {
+   "width": 32,
+   "height": 16
+  },
+  "stairs-frame-1": {
+   "width": 32,
+   "height": 16
+  },
+  "stairs-frame-2": {
+   "width": 32,
+   "height": 16
+  },
+  "stairs-frame-3": {
+   "width": 32,
+   "height": 16
+  },
+  "stairs-frame-4": {
+   "width": 32,
+   "height": 16
+  },
+  "stairs-frame-5": {
+   "width": 32,
+   "height": 16
+  },
+  "stairs-frame-6": {
+   "width": 32,
+   "height": 16
+  },
+  "stairs-frame-7": {
+   "width": 32,
+   "height": 16
   }
  }
 }

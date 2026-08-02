@@ -4,6 +4,13 @@
 `FUN_800afcb8` の対応は、季節 0/1 = シート内蔵、季節 2 = リソース 0x175、季節 3 = 0x176。
 該当するアセットは [通常 | 秋 | 冬] の横 3 コマで書き出し、一覧を seasons.json に載せる。
 国別の季節表は SLPS_008.10 の `DAT_80117474`(暦 `FUN_800bf6b8` が四半期で引く)。
+
+国別の初期地形(高さマップ)と外周の飾りは terrain.json に書き出す。
+- 高さマップ: リソース 0x188 + 国番号(80 × 80、`FUN_800c5e30` が読み込む)
+- 縁タイル: シートのグループ 1〜3(北縁・東縁・北東縁)、コマ 14 が地面
+- 崖の壁面: グループ 4/6 = 南向き(通常/北西角つき)、5/7 = 西向き。コマ 0 = 最上段、1 = 中間
+- 外周の敷き詰め模様: グループ 16 のコマ 0/1(コード 0xDF/0xE0、`FUN_800c181c` が配置)
+- 国 → 外周オブジェクトのコード表: WMAP.BIN 内 `DAT_801d95a0`
 """
 
 from __future__ import annotations
@@ -17,8 +24,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 SOURCE = ROOT / "recovery/disc/TEX/UNPACK.PAK"
 EXE = ROOT / "recovery/disc/SLPS_008.10"
+WMAP = ROOT / "recovery/disc/PRO/WMAP.BIN"
+MANIFEST = ROOT / "recovery/manifests/unpack-pak.json"
 DESTINATION = ROOT / "public/assets/park"
 SEASON_CONFIG = ROOT / "src/config/seasons.json"
+TERRAIN_CONFIG = ROOT / "src/config/terrain.json"
 RESOURCE_OFFSET = 6_206_612
 RESOURCE_SIZE = 33_932
 RESOURCE_UPLOAD_OFFSET = 0xE10
@@ -65,6 +75,45 @@ ASSETS = {
     "entrance-special-49.png": 0x8B0,
     "entrance-special-50.png": 0x8C4,
 }
+# 地形用スプライト → (グループ, コマ)。記述子はグループ表から引く
+# 道路(コマ 0〜16)は縁のグループ 1〜3 にも同じ並びであり、縁取り付きの絵になる
+GROUP_ASSETS = {
+    **{
+        f"road-slope{group}-frame-{frame}.png": (group, frame)
+        for group in (1, 2, 3)
+        for frame in range(17)
+        if frame != 14
+    },
+    "ground-slope-1.png": (1, 14),
+    "ground-slope-2.png": (2, 14),
+    "ground-slope-3.png": (3, 14),
+    "cliff-south-0.png": (4, 0),
+    "cliff-south-1.png": (4, 1),
+    "cliff-west-0.png": (5, 0),
+    "cliff-west-1.png": (5, 1),
+    "cliff-south-corner-0.png": (6, 0),
+    "cliff-south-corner-1.png": (6, 1),
+    "cliff-west-corner-0.png": (7, 0),
+    "cliff-west-corner-1.png": (7, 1),
+    "outside-cover-0.png": (16, 0),
+    "outside-cover-1.png": (16, 1),
+    # 階段(オブジェクトコード 0x37〜0x42 の描画元)。コマと向きの対応は未確定
+    **{f"stairs-frame-{frame}.png": (12, frame) for frame in range(8)},
+}
+# 高さマップ: UNPACK.PAK リソース 392(0x188)+ 国番号
+HEIGHT_RESOURCE_BASE = 392
+HEIGHT_STEP_PX = 16
+# WMAP.BIN 内 DAT_801d95a0(国 → 外周オブジェクトのコード)。
+# ファイル内位置は敷地テーブル DAT_801d9500 = 0x8E08 からの相対
+WMAP_OUTSIDE_OFFSET = 0x8EA8
+OUTSIDE_BY_CODE = {
+    0x49: {"facility": "country-plant"},
+    0x44: {"facility": "oak-tree"},
+    0xDF: {"cover": 0},
+    0xE0: {"cover": 1},
+}
+# FUN_800c181c: 日本・イギリス・ロシアだけ市松状にまばら、他の国は敷き詰め
+SPARSE_COUNTRIES = {0, 3, 6}
 
 
 def psx_color(value: int) -> tuple[int, int, int, int]:
@@ -164,6 +213,38 @@ def export_asset(resource: bytes, vrams: list[list[int]], descriptor_offset: int
     return name.removesuffix(".png"), {"width": width, "height": height}
 
 
+def group_descriptor(resource: bytes, group: int, frame: int) -> int:
+    """グループ表(先頭 = グループ数、続いて各グループの表位置)からコマの記述子位置を引く。"""
+    table = struct.unpack_from("<H", resource, 2 + group * 2)[0]
+    return struct.unpack_from("<H", resource, table + frame * 4 + 2)[0]
+
+
+def read_heights() -> dict[str, list[str]]:
+    manifest = json.loads(MANIFEST.read_text(encoding="utf-8"))
+    resources = {entry["id"]: entry for entry in manifest["resources"]}
+    source = SOURCE.read_bytes()
+    heights = {}
+    for index, country in enumerate(COUNTRY_IDS):
+        entry = resources[HEIGHT_RESOURCE_BASE + index]
+        grid = source[entry["offset"] : entry["offset"] + entry["size"]]
+        if not any(grid):
+            continue
+        heights[country] = ["".join(str(grid[y * 80 + x]) for x in range(80)) for y in range(80)]
+    return heights
+
+
+def read_outside() -> dict[str, dict]:
+    wmap = WMAP.read_bytes()
+    outside = {}
+    for index, country in enumerate(COUNTRY_IDS):
+        code = struct.unpack_from("<H", wmap, WMAP_OUTSIDE_OFFSET + index * 2)[0]
+        entry = OUTSIDE_BY_CODE.get(code)
+        if entry is None:
+            continue
+        outside[country] = {**entry, "dense": index not in SPARSE_COUNTRIES}
+    return outside
+
+
 def read_country_seasons() -> dict[str, list[int]]:
     exe = EXE.read_bytes()
     base = 0x800 + COUNTRY_SEASONS_VADDR - 0x800A7000
@@ -197,9 +278,14 @@ def main() -> None:
         entry = export_asset(data, vrams, descriptor, name)
         if entry:
             seasonal[entry[0]] = entry[1]
-    for frame in range(14):
+    # 整列歩道はグループ 8 の 18 コマ(14〜17 は傾斜用)
+    for frame in range(18):
         descriptor_offset = 0x2C + (QUEUE_FRAME_START + frame) * 0x14
         entry = export_asset(data, vrams, descriptor_offset, f"queue-frame-{frame}.png")
+        if entry:
+            seasonal[entry[0]] = entry[1]
+    for name, (group, frame) in GROUP_ASSETS.items():
+        entry = export_asset(data, vrams, group_descriptor(data, group, frame), name)
         if entry:
             seasonal[entry[0]] = entry[1]
 
@@ -215,7 +301,21 @@ def main() -> None:
         "seasonalAssets": seasonal,
     }
     SEASON_CONFIG.write_text(json.dumps(config, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
-    print(f"seasonal assets: {len(seasonal)}")
+
+    heights = read_heights()
+    terrain = {
+        "_note": [
+            "国ごとの初期地形。heights は 80 × 80 の高さ(0〜3)を 1 行 1 文字列で持ち、",
+            "平坦な国は載せない。高さ 1 段 = heightStepPx だけ持ち上げて描く。",
+            "outside は園外の飾り。facility = 木を置く(dense=false は市松状にまばら)、",
+            "cover = outside-cover-{n}.png を地面の代わりに敷き詰める。",
+        ],
+        "heightStepPx": HEIGHT_STEP_PX,
+        "heights": heights,
+        "outside": read_outside(),
+    }
+    TERRAIN_CONFIG.write_text(json.dumps(terrain, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+    print(f"seasonal assets: {len(seasonal)}, height maps: {len(heights)}")
 
 
 if __name__ == "__main__":

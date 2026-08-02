@@ -10,6 +10,7 @@ import busSprites from '../config/busSprites.json'
 import guestSprites from '../config/guestSprites.json'
 import pointers from '../config/pointers.json'
 import seasons from '../config/seasons.json'
+import terrain from '../config/terrain.json'
 import terrainObjects from '../config/terrainObjects.json'
 import { gameDaysPerMs } from '../game/clock'
 import type { ParkSnapshot } from '../game/save'
@@ -66,7 +67,7 @@ type Facility = (typeof facilities)[number]
 type GuestBank = { bank: number, frameWidth: number, frameHeight: number, anchorX: number, anchorY: number }
 type Footprint = { width: number, height: number, constructionCost: number }
 type AttractionBuildStep = 'body' | 'entrance' | 'exit'
-type RoadBuildMode = 'path' | 'queue' | null
+type RoadBuildMode = 'path' | 'queue' | 'stairs' | null
 type AccessPoint = { x: number, y: number, frame: number, image: Phaser.GameObjects.Image }
 // 入口・出口はアトラクション敷地の縁のマスに置く。どの辺にいるかで向きが決まる
 type AccessSide = 'top' | 'bottom' | 'left' | 'right'
@@ -165,7 +166,17 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
     const padding = 80
     const worldWidth = (gridWidth - 1) * stepX + (gridHeight - 1) * rowOffsetX + tileWidth + padding * 2
     const worldHeight = gridHeight * stepY + padding * 2
-    const point = (x: number, y: number) => ({ x: padding + x * stepX + y * rowOffsetX, y: padding + y * stepY })
+    // 国ごとの初期地形。高さ 1 段ぶんタイルを持ち上げて描く
+    const heightRows = (terrain.heights as Record<string, string[] | undefined>)[country.id]
+    const heightAt = (x: number, y: number) => {
+      if (!heightRows || x < 0 || y < 0 || x >= gridWidth || y >= gridHeight) return 0
+      return heightRows[y].charCodeAt(x) - 48
+    }
+    const flatPoint = (x: number, y: number) => ({ x: padding + x * stepX + y * rowOffsetX, y: padding + y * stepY })
+    const point = (x: number, y: number) => ({
+      x: padding + x * stepX + y * rowOffsetX,
+      y: padding + y * stepY - heightAt(Math.floor(x), Math.floor(y)) * terrain.heightStepPx,
+    })
 
     const peopleSetByCountry = guestSprites.peopleSetByCountry as Record<string, string>
     const peopleSet = (peopleSetByCountry[country.id] ?? 'A').toLowerCase()
@@ -253,6 +264,8 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             )
           })
         }
+        this.load.image('outside-cover-0', '/assets/park/outside-cover-0.png')
+        this.load.image('outside-cover-1', '/assets/park/outside-cover-1.png')
         this.load.image('border-top', '/assets/park/border-top.png')
         this.load.image('border-side', '/assets/park/border-side.png')
         this.load.image('border-top-left', '/assets/park/border-top-left.png')
@@ -344,25 +357,31 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         }
         const commands: DrawCommand[] = []
         let order = 0
-        const layerDepth = {
-          terrain: 0,
-          road: 100_000,
-          facility: 300_000,
-          overlay: 400_000,
+        // 重ね順は原作と同じマス単位の interleave。マスの前後関係が最優先で、
+        // 同じマスの中では 地形の面・壁 → 道路 → 設置物・人 の順に重なる。
+        // カーソルなどの overlay だけは全体の最前面
+        const layerRank = {
+          terrain: 1,
+          road: 2,
+          facility: 4,
+          overlay: 6,
         } as const
-        type RenderLayer = keyof typeof layerDepth
-        // 重ね順は下(y が大きい)ほど手前で、同じ行なら左(x が小さい)ほど手前
+        type RenderLayer = keyof typeof layerRank
+        const overlayDepth = 400_000
+        // 下(y が大きい)ほど手前で、同じ行なら左(x が小さい)ほど手前
         const positionDepthAt = (x: number, y: number) => 10 + gridWidth * 7 + y * 200 - x * 7
-        const renderDepthAt = (layer: RenderLayer, x: number, y: number) => layerDepth[layer] + positionDepthAt(x, y)
+        const renderDepthAt = (layer: RenderLayer, x: number, y: number) => positionDepthAt(x, y) * 8 + layerRank[layer]
         const depthAt = (x: number, y: number) => -positionDepthAt(x, y)
         const queue = (key: string, x: number, y: number, depth = depthAt(x, y), offsetX = 0, offsetY = 0) => {
           commands.push({ key, x, y, depth, offsetX, offsetY, order })
           order += 1
         }
         const draw = (target: Phaser.GameObjects.RenderTexture, { key, x, y, offsetX = 0, offsetY = 0 }: DrawCommand) => {
+          // 園外の木はキー末尾の -s{季節} を描画時の季節に読み替える
+          const resolved = key.replace(/-s[0-3]$/, `-s${seasonIndex}`)
           const position = point(x, y)
-          if (seasonalKeys.has(key)) target.drawFrame(key, seasonVariant, position.x - offsetX, position.y - offsetY)
-          else target.draw(key, position.x - offsetX, position.y - offsetY)
+          if (seasonalKeys.has(resolved)) target.drawFrame(resolved, seasonVariant, position.x - offsetX, position.y - offsetY)
+          else target.draw(resolved, position.x - offsetX, position.y - offsetY)
         }
 
         const entranceTileKey = (x: number, y: number) => {
@@ -378,11 +397,70 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           return null
         }
 
+        // 高い側のマスから見て低い方角。北・東の縁は専用タイル、南・西の縁は壁面で描く
+        const lowerNeighbors = (x: number, y: number) => {
+          const height = heightAt(x, y)
+          if (height === 0) return null
+          const north = heightAt(x, y - 1) < height
+          const east = heightAt(x + 1, y) < height
+          const west = heightAt(x - 1, y) < height
+          const south = heightAt(x, y + 1) < height
+          if (!north && !east && !west && !south) return null
+          return { north, east, west, south }
+        }
+        const rimGroupAt = (x: number, y: number) => {
+          const lower = lowerNeighbors(x, y)
+          return lower ? (lower.north ? 1 : 0) + (lower.east ? 2 : 0) : 0
+        }
+        const terrainPieceDepth = (x: number, y: number) => renderDepthAt('terrain', x, y)
+        const roadPieceDepth = (x: number, y: number) => renderDepthAt('road', x, y)
+
+        // 園外の飾り(国選択データで決まる)。上の園外は全列、左右の園外は敷地の下端の行まで。
+        // まばらな国は市松状(上と右は偶数マス、左は奇数マス)に置く
+        const outsideDecor = (terrain.outside as Record<string, { facility?: string, cover?: number, dense: boolean } | undefined>)[country.id]
+        const outsideDecorTiles = new Set<string>()
+        if (outsideDecor) {
+          for (let y = 0; y < top; y += 1) {
+            for (let x = 0; x < gridWidth; x += 1) {
+              if (outsideDecor.dense || (x % 2 === 0 && y % 2 === 0)) outsideDecorTiles.add(`${x},${y}`)
+            }
+          }
+          for (let y = 0; y <= bottom; y += 1) {
+            for (let x = 0; x < gridWidth; x += 1) {
+              if (x >= left && x < left + width) continue
+              const place = outsideDecor.dense
+                || (x < left ? x % 2 === 1 && y % 2 === 1 : x % 2 === 0 && y % 2 === 0)
+              if (place) outsideDecorTiles.add(`${x},${y}`)
+            }
+          }
+        }
+
         for (let y = 0; y < gridHeight; y += 1) {
           for (let x = 0; x < gridWidth; x += 1) {
             const entranceTile = entranceTileKey(x, y)
             const isGateBarrierTile = y === gateRow + 5 && x === gateCenter
-            if (!isGateBarrierTile) queue('ground-tile', x, y)
+            const lower = lowerNeighbors(x, y)
+            const cover = outsideDecor?.cover !== undefined && outsideDecorTiles.has(`${x},${y}`)
+            const groundKey = cover
+              ? `outside-cover-${outsideDecor?.cover}`
+              : lower && (lower.north || lower.east)
+                ? `ground-slope-${(lower.north ? 1 : 0) + (lower.east ? 2 : 0)}`
+                : 'ground-tile'
+            if (!isGateBarrierTile) queue(groundKey, x, y)
+            if (lower) {
+              const height = heightAt(x, y)
+              const corner = lower.north && lower.west ? '-corner' : ''
+              if (lower.west) {
+                for (let level = heightAt(x - 1, y); level < height; level += 1) {
+                  queue(`cliff-west${corner}-${level === height - 1 ? 0 : 1}`, x, y, depthAt(x, y), 1, (level + 1 - height) * terrain.heightStepPx)
+                }
+              }
+              if (lower.south) {
+                for (let level = heightAt(x, y + 1); level < height; level += 1) {
+                  queue(`cliff-south${corner}-${level === height - 1 ? 0 : 1}`, x, y, depthAt(x, y), -5, (level - height) * terrain.heightStepPx)
+                }
+              }
+            }
             if (entranceTile) queue(entranceTile, x, y)
             if (x < left || x > right || y < top || y > bottom) continue
             if (y === top && x === left) queue('border-top-left', x, y)
@@ -417,11 +495,26 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         queue('entrance-special-50', gateCenter, gateRow + 3, depthAt(gateCenter, gateRow + 3), -10, 8)
         queue('entrance-background-3', gateCenter, gateRow + 5, depthAt(gateCenter, gateRow + 5) + 7)
 
+        // 園外の木。設置物と同じ絵をシーナリー種・季節に合わせて描く
+        if (outsideDecor?.facility) {
+          const treeFacility = facilities.find((entry) => entry.id === outsideDecor.facility)
+          if (treeFacility) {
+            const offset = treeFacility.imageOffsetsByKind[sceneryKind][0]
+            outsideDecorTiles.forEach((key) => {
+              const comma = key.indexOf(',')
+              const x = Number(key.slice(0, comma))
+              const y = Number(key.slice(comma + 1))
+              queue(`facility-${treeFacility.id}-0-s0`, x, y, depthAt(x, y), offset.x, offset.y)
+            })
+          }
+        }
+
         commands.sort((a, b) => b.depth - a.depth || a.order - b.order)
         const fixedRoadKeys = new Set(['gate-base-2', 'gate-base-3', 'gate-base-6', 'gate-base-17', 'gate-base-19'])
+        const groundFamilyKeys = /^(ground-tile$|ground-slope-|outside-cover-|cliff-)/
         const isFacility = ({ key }: DrawCommand) => key.startsWith('border-') || key === 'entrance-special-50' || (key.startsWith('gate-') && !fixedRoadKeys.has(key))
         const isTerrainForeground = (command: DrawCommand) => (
-          command.key !== 'ground-tile'
+          !groundFamilyKeys.test(command.key)
           && !fixedRoadKeys.has(command.key)
           && !isFacility(command)
         )
@@ -434,7 +527,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           seasonFrame(
             this.add.image(position.x - (command.offsetX ?? 0), position.y - (command.offsetY ?? 0), command.key)
               .setOrigin(0)
-              .setDepth(layerDepth[layer] - command.depth),
+              .setDepth(-command.depth * 8 + layerRank[layer]),
           )
         }
         const drawTerrainLayers = () => {
@@ -445,6 +538,50 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         }
         drawTerrainLayers()
         facilityCommands.forEach((command) => addStaticImage('facility', command))
+        // 崖の面と壁面は、裏(北・東)側の低いマスに置かれた道路などを隠す。
+        // RenderTexture はスプライトより奥にあるため、丘とその周囲 1 マスの面・壁を
+        // 画像としても重ね、マス単位の重ね順に参加させる(同じマス内は面 → 壁の順)
+        const nearHill = (x: number, y: number) => {
+          for (let offsetY = -1; offsetY <= 1; offsetY += 1) {
+            for (let offsetX = -1; offsetX <= 1; offsetX += 1) {
+              if (heightAt(x + offsetX, y + offsetY) > 0) return true
+            }
+          }
+          return false
+        }
+        for (let y = 0; y < gridHeight; y += 1) {
+          for (let x = 0; x < gridWidth; x += 1) {
+            if (!nearHill(x, y)) continue
+            const lower = lowerNeighbors(x, y)
+            const key = lower && (lower.north || lower.east)
+              ? `ground-slope-${(lower.north ? 1 : 0) + (lower.east ? 2 : 0)}`
+              : 'ground-tile'
+            const position = point(x, y)
+            const depth = renderDepthAt('terrain', x, y)
+            seasonFrame(this.add.image(position.x, position.y, key).setOrigin(0).setDepth(depth))
+            if (!lower) continue
+            const height = heightAt(x, y)
+            const corner = lower.north && lower.west ? '-corner' : ''
+            if (lower.west) {
+              for (let level = heightAt(x - 1, y); level < height; level += 1) {
+                seasonFrame(this.add.image(
+                  position.x - 1,
+                  position.y + (height - level - 1) * terrain.heightStepPx,
+                  `cliff-west${corner}-${level === height - 1 ? 0 : 1}`,
+                ).setOrigin(0).setDepth(depth))
+              }
+            }
+            if (lower.south) {
+              for (let level = heightAt(x, y + 1); level < height; level += 1) {
+                seasonFrame(this.add.image(
+                  position.x + 5,
+                  position.y + (height - level) * terrain.heightStepPx,
+                  `cliff-south${corner}-${level === height - 1 ? 0 : 1}`,
+                ).setOrigin(0).setDepth(depth))
+              }
+            }
+          }
+        }
         // 季節が変わったら地形を描き直し、置かれている季節対応の画像も切り替える。
         // 設備・階段・バスはキー末尾の -s{季節} を現在の季節へ付け替える
         const applySeason = () => {
@@ -472,6 +609,12 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         }
 
         const roadFrameByMask = [16, 2, 4, 0, 3, 10, 11, 7, 5, 13, 12, 9, 1, 6, 8, 15]
+        // 傾斜上の整列歩道のコマ読み替え表(UNK_80117826)。行 = 縁のグループ 1〜3、列 = 基本コマ 0〜5
+        const queueSlopeFrames = [
+          [6, 14, 7, 8, 7, 8],
+          [0, 9, 11, 10, 11, 10],
+          [17, 15, 0, 12, 0, 12],
+        ]
         const queueStateByMask = [0, 9, 10, 1, 7, 3, 4, 1, 8, 6, 5, 1, 2, 2, 2, 2]
         const queueMaskByState = [0, 3, 12, 5, 6, 10, 9, 4, 8, 1, 2, 0, 0]
         const queueFrameByState = [13, 0, 1, 2, 3, 4, 5, 1, 1, 0, 0, 0, 6]
@@ -527,13 +670,45 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           && !isLockedEntranceTile(x, y)
           && !occupiedByAttraction.has(tileKey(x, y))
         )
-        const hasRoadConnection = (x: number, y: number) => roads.has(tileKey(x, y)) || isLockedEntranceTile(x, y)
-        const roadMaskAt = (x: number, y: number) => (
-          (hasRoadConnection(x + 1, y) ? 1 : 0)
-          | (hasRoadConnection(x - 1, y) ? 2 : 0)
-          | (hasRoadConnection(x, y + 1) ? 4 : 0)
-          | (hasRoadConnection(x, y - 1) ? 8 : 0)
+        const hasRoadConnection = (x: number, y: number) => (
+          roads.has(tileKey(x, y)) || stairsTiles.has(tileKey(x, y)) || isLockedEntranceTile(x, y)
         )
+        // 道路・柵などのつながりは同じ高さのマス同士に限る(原作 FUN_800c1d80)。
+        // 例外は階段で、階段のマスと向いた先の 1 段高いマスはつながる
+        const sameHeight = (x: number, y: number, otherX: number, otherY: number) => (
+          heightAt(x, y) === heightAt(otherX, otherY)
+        )
+        const roadConnects = (x: number, y: number, otherX: number, otherY: number) => (
+          (hasRoadConnection(otherX, otherY) && sameHeight(x, y, otherX, otherY))
+          || stairsLink(x, y, otherX, otherY)
+        )
+        const roadMaskAt = (x: number, y: number) => (
+          (roadConnects(x, y, x + 1, y) ? 1 : 0)
+          | (roadConnects(x, y, x - 1, y) ? 2 : 0)
+          | (roadConnects(x, y, x, y + 1) ? 4 : 0)
+          | (roadConnects(x, y, x, y - 1) ? 8 : 0)
+        )
+        // 階段(階段設置メニュー)。1 段高いマスに面した低い側のマスへ置き、その 2 マスをつなぐ。
+        // 絵はシートのグループ 12 を下段(自マスの面)と上段(壁の帯)に重ねる。
+        // コマと向きの対応は暫定([北, 南, 西, 東] × [下段, 上段])
+        type PlacedStairs = { x: number, y: number, dx: number, dy: number, images: Phaser.GameObjects.Image[] }
+        const stairsTiles = new Map<string, PlacedStairs>()
+        const stairsDirections = [
+          { dx: 0, dy: -1, lowerFrame: 0, upperFrame: 1 },
+          { dx: 0, dy: 1, lowerFrame: 2, upperFrame: 3 },
+          { dx: -1, dy: 0, lowerFrame: 4, upperFrame: 5 },
+          { dx: 1, dy: 0, lowerFrame: 6, upperFrame: 7 },
+        ]
+        const stairsDirectionAt = (x: number, y: number) => (
+          stairsDirections.find((dir) => heightAt(x + dir.dx, y + dir.dy) === heightAt(x, y) + 1) ?? null
+        )
+        // 2 マスが階段でつながっているか(どちら向きの一歩でも真)
+        const stairsLink = (fromX: number, fromY: number, toX: number, toY: number) => {
+          const from = stairsTiles.get(tileKey(fromX, fromY))
+          if (from && fromX + from.dx === toX && fromY + from.dy === toY) return true
+          const to = stairsTiles.get(tileKey(toX, toY))
+          return Boolean(to && toX + to.dx === fromX && toY + to.dy === fromY)
+        }
         const entranceFrameForSide = { top: 1, bottom: 0, left: 2, right: 3 } as const
         // entranceFrameToward: 入口がこのオフセット方向を向くときのフレーム
         // entranceFrameFacingBack: このオフセット先にある入口が手前を向くときのフレーム
@@ -577,8 +752,11 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             const position = point(tileX, tileY)
             const image = currentImage ?? this.add.image(position.x, position.y, 'road-frame-0').setOrigin(0)
             if (!currentImage) roadImages.set(key, image)
-            seasonFrame(image.setTexture(`road-frame-${roadFrameByMask[roadMaskAt(tileX, tileY)]}`)
-              .setDepth(renderDepthAt('road', tileX, tileY)))
+            // 縁のマスでは縁取り付きの道路絵(シートのグループ 1〜3)を使う
+            const group = rimGroupAt(tileX, tileY)
+            const frame = roadFrameByMask[roadMaskAt(tileX, tileY)]
+            seasonFrame(image.setTexture(group > 0 ? `road-slope${group}-frame-${frame}` : `road-frame-${frame}`)
+              .setDepth(roadPieceDepth(tileX, tileY)))
           })
         }
         const redrawQueueTiles = (x: number, y: number) => {
@@ -591,12 +769,15 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
               queueRoadImages.delete(key)
               return
             }
-            const frame = queueFrameByState[queueStates.get(key) ?? 0]
+            const baseFrame = queueFrameByState[queueStates.get(key) ?? 0]
+            // 縁のマスでは傾斜用のコマに読み替える(UNK_80117826。基本コマ 0〜5 が対象)
+            const group = rimGroupAt(tileX, tileY)
+            const frame = group > 0 && baseFrame <= 5 ? queueSlopeFrames[group - 1][baseFrame] : baseFrame
             const position = point(tileX, tileY)
             const image = currentImage ?? this.add.image(position.x, position.y, `queue-frame-${frame}`).setOrigin(0)
             if (!currentImage) queueRoadImages.set(key, image)
             seasonFrame(image.setTexture(`queue-frame-${frame}`).setPosition(position.x, position.y)
-              .setDepth(renderDepthAt('road', tileX, tileY)))
+              .setDepth(roadPieceDepth(tileX, tileY)))
           })
           updateAttractionEntranceFrames()
         }
@@ -604,10 +785,10 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         const cursorPosition = { x: gateLeft + 1, y: bottom - 1 }
         // 入口・出口を置いている間、カーソルが敷地のどの辺にいるか(向きもこれで決まる)
         let accessSide: AccessSide = 'bottom'
-        const cursor = this.add.graphics().setDepth(layerDepth.overlay)
-        const shopArrow = this.add.graphics().setDepth(layerDepth.overlay).setVisible(false)
+        const cursor = this.add.graphics().setDepth(overlayDepth)
+        const shopArrow = this.add.graphics().setDepth(overlayDepth).setVisible(false)
         // 原作のポインタ。通常は矢印、設置操作中はシャベルに変わる
-        const pointer = this.add.image(0, 0, 'pointer-arrow').setOrigin(0).setDepth(layerDepth.overlay)
+        const pointer = this.add.image(0, 0, 'pointer-arrow').setOrigin(0).setDepth(overlayDepth)
         let attractionPreview: Phaser.GameObjects.Image | null = null
         let accessPreview: Phaser.GameObjects.Image | null = null
         const buildBasePreview: Phaser.GameObjects.Image[] = []
@@ -624,7 +805,10 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
               const tileX = x + offsetX
               const tileY = y - offsetY
               if (!isBuildableTile(tileX, tileY)) return false
+              // 足場は全マス同じ高さ(原作 FUN_800b1ec8。崖の縁でも高さが同じなら置ける)
+              if (heightAt(tileX, tileY) !== heightAt(x, y)) return false
               if (roads.has(tileKey(tileX, tileY)) || queueRoads.has(tileKey(tileX, tileY))) return false
+              if (stairsTiles.has(tileKey(tileX, tileY))) return false
             }
           }
           return true
@@ -709,10 +893,13 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             // 出口は場所を占めないが、入口と同じ場所には出せない。
             // 同じ角のマスでも向きが違えば絵の出る場所が違うので、絵の位置で見る
             const drawn = accessDrawTile('exit', x, y, entranceFrameForSide[accessSide])
+            if (heightAt(drawn.x, drawn.y) !== heightAt(facility.x, facility.y)) return false
             return !(facility.entrance?.x === drawn.x && facility.entrance.y === drawn.y)
           }
           if (x <= left || x >= right || y <= top || y >= bottom) return false
-          if (roads.has(tileKey(x, y)) || queueRoads.has(tileKey(x, y))) return false
+          // 入口・出口は本体と同じ高さのマスに限る
+          if (heightAt(x, y) !== heightAt(facility.x, facility.y)) return false
+          if (roads.has(tileKey(x, y)) || queueRoads.has(tileKey(x, y)) || stairsTiles.has(tileKey(x, y))) return false
           return !occupiedByAttraction.has(tileKey(x, y))
         }
         const buildBaseFrameAt = (offsetX: number, offsetY: number, width: number, height: number) => {
@@ -754,9 +941,14 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           isBuildableTile(x, y)
           && !roads.has(tileKey(x, y))
           && !queueRoads.has(tileKey(x, y))
+          && !stairsTiles.has(tileKey(x, y))
         )
         const canPlacePath = canPlaceRoad
         const canPlaceQueue = canPlaceRoad
+        // 階段は 1 段高いマスに面したマスにだけ置ける
+        const canPlaceStairs = (x: number, y: number) => (
+          canPlaceRoad(x, y) && stairsDirectionAt(x, y) !== null
+        )
         // 設備の設置方法は place / directional / fence / pond / building の 5 種類。
         // 柵の連結表とイケの隅マスク表は原作テーブルそのまま(recovery/specs/facility-scenery.md)
         const fenceFrameByMask = [15, 11, 12, 0, 14, 2, 3, 9, 13, 5, 4, 7, 1, 8, 10, 6]
@@ -790,10 +982,10 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         const isPondAt = (x: number, y: number) => facilityAt(x, y)?.facility.placement === 'pond'
         // 柵 3 種は互いにつながるので、種類ではなく設置方法で隣接を判定する
         const fenceMaskAt = (x: number, y: number) => (
-          (isFenceAt(x + 1, y) ? 1 : 0)
-          | (isFenceAt(x - 1, y) ? 2 : 0)
-          | (isFenceAt(x, y + 1) ? 4 : 0)
-          | (isFenceAt(x, y - 1) ? 8 : 0)
+          (isFenceAt(x + 1, y) && sameHeight(x, y, x + 1, y) ? 1 : 0)
+          | (isFenceAt(x - 1, y) && sameHeight(x, y, x - 1, y) ? 2 : 0)
+          | (isFenceAt(x, y + 1) && sameHeight(x, y, x, y + 1) ? 4 : 0)
+          | (isFenceAt(x, y - 1) && sameHeight(x, y, x, y - 1) ? 8 : 0)
         )
         const pondCornerAt = (x: number, y: number) => (
           isPondAt(x, y) ? (pondCornerByFrame[facilityAt(x, y)!.frame] ?? 0) : 0
@@ -875,6 +1067,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             for (let offsetY = -1; offsetY <= 1; offsetY += 1) {
               for (let offsetX = -1; offsetX <= 1; offsetX += 1) {
                 if (!canPlaceFacilityTile(facility, x + offsetX, y + offsetY)) return false
+                if (heightAt(x + offsetX, y + offsetY) !== heightAt(x, y)) return false
               }
             }
             return true
@@ -1095,7 +1288,9 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
                   ? canPlacePath(cursorPosition.x, cursorPosition.y)
                   : activeRoadBuildMode === 'queue'
                     ? canPlaceQueue(cursorPosition.x, cursorPosition.y)
-                    : true
+                    : activeRoadBuildMode === 'stairs'
+                      ? canPlaceStairs(cursorPosition.x, cursorPosition.y)
+                      : true
           const color = valid ? 0xffef70 : 0xff6048
           cursor.fillStyle(color, 0.2)
           cursor.lineStyle(1, color, 1)
@@ -1133,7 +1328,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
                 if (!buildBasePreview[previewIndex]) buildBasePreview.push(image)
                 const tile = point(attractionOrigin.x + offsetX, attractionOrigin.y - offsetY)
                 seasonFrame(image.setTexture(key).setPosition(tile.x - offset.x, tile.y - offset.y).setVisible(true)
-                  .setDepth(renderDepthAt('terrain', attractionOrigin.x + offsetX, attractionOrigin.y - offsetY))
+                  .setDepth(terrainPieceDepth(attractionOrigin.x + offsetX, attractionOrigin.y - offsetY))
                   .setAlpha(valid ? 1 : 0.55).setTint(valid ? 0xffffff : 0xff6048))
                 previewIndex += 1
               }
@@ -1342,9 +1537,42 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           placeCursor(nextX, nextY)
           keepCursorVisible(direction === 'left' || direction === 'right' ? 'x' : 'y')
         }
+        // 階段を置く。設置操作とセーブデータからの復元で共通に使う
+        const addStairs = (x: number, y: number) => {
+          const direction = stairsDirectionAt(x, y)
+          if (!direction) return null
+          const lower = point(x, y)
+          const upperFace = point(x + direction.dx, y + direction.dy)
+          // 下段は自マスの面、上段は面と 1 段高い面の間の帯に描く
+          const images = [
+            seasonFrame(this.add.image(lower.x, lower.y, `stairs-frame-${direction.lowerFrame}`)
+              .setOrigin(0).setDepth(roadPieceDepth(x, y))),
+            seasonFrame(this.add.image(upperFace.x, upperFace.y + stepY, `stairs-frame-${direction.upperFrame}`)
+              .setOrigin(0).setDepth(roadPieceDepth(x + direction.dx, y + direction.dy))),
+          ]
+          const placed: PlacedStairs = { x, y, dx: direction.dx, dy: direction.dy, images }
+          stairsTiles.set(tileKey(x, y), placed)
+          redrawRoadTiles(x, y)
+          redrawRoadTiles(x + direction.dx, y + direction.dy)
+          return placed
+        }
+        const placeStairs = () => {
+          const { x, y } = cursorPosition
+          if (!canPlaceStairs(x, y)) {
+            buildMessageHandler.current('その場所には設置できません。')
+            return
+          }
+          buildMessageHandler.current('')
+          addStairs(x, y)
+          drawCursor()
+        }
         const placeRoad = () => {
           const { x, y } = cursorPosition
           const key = tileKey(x, y)
+          if (activeRoadBuildMode === 'stairs') {
+            placeStairs()
+            return
+          }
           if (activeRoadBuildMode === 'path') {
             if (!canPlacePath(x, y)) {
               buildMessageHandler.current('その場所には設置できません。')
@@ -1364,6 +1592,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             queueRoads.add(key)
             let mask = 0
             queueNeighbors.forEach((neighbor) => {
+              if (!sameHeight(x, y, x + neighbor.x, y + neighbor.y)) return
               const neighborKey = tileKey(x + neighbor.x, y + neighbor.y)
               const neighborState = queueStates.get(neighborKey)
               if (neighborState !== undefined && isQueueConnectionTarget(neighborState)) mask |= neighbor.mask
@@ -1376,6 +1605,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
                 facility: placedAttractions.find((attraction) => (
                   attraction.entrance?.x === x + neighbor.x
                   && attraction.entrance.y === y + neighbor.y
+                  && sameHeight(x, y, x + neighbor.x, y + neighbor.y)
                   && !attraction.entranceQueueKey
                 )),
               }))
@@ -1411,7 +1641,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           for (let offsetY = 0; offsetY < attraction.height; offsetY += 1) {
             for (let offsetX = 0; offsetX < attraction.width; offsetX += 1) {
               const tile = point(x + offsetX, y + offsetY)
-              const depth = renderDepthAt('terrain', x + offsetX, y + offsetY)
+              const depth = terrainPieceDepth(x + offsetX, y + offsetY)
               if (ground === 'water' && isWaterTile(offsetX, offsetY, attraction.width, attraction.height)) {
                 const frame = waterFrameAt(offsetX, offsetY, attraction.width, attraction.height)
                 const offset = facilityOffsets(pondFacility)[frame] ?? facilityOffsets(pondFacility)[0]
@@ -1718,6 +1948,13 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           const key = tileKey(cursorPosition.x, cursorPosition.y)
           // ショップ前の道はショップの敷地なので、道路の撤去では消せない
           if (shopRoads.has(key)) return
+          const stairs = stairsTiles.get(key)
+          if (stairs) {
+            stairs.images.forEach((image) => image.destroy())
+            stairsTiles.delete(key)
+            redrawRoadTiles(stairs.x, stairs.y)
+            redrawRoadTiles(stairs.x + stairs.dx, stairs.y + stairs.dy)
+          }
           if (roads.delete(key)) {
             redrawRoadTiles(cursorPosition.x, cursorPosition.y)
             redrawQueueTiles(cursorPosition.x, cursorPosition.y)
@@ -1893,9 +2130,23 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         }
         const selectTileAtPointer = (pointer: Phaser.Input.Pointer) => {
           const world = pointer.positionToCamera(camera) as Phaser.Math.Vector2
-          const y = Math.floor((world.y - padding) / stepY)
-          const localY = world.y - padding - y * stepY
-          const x = Math.floor((world.x - padding - y * rowOffsetX - Math.floor(localY / 2)) / stepX)
+          // 高いマスは画面上で高さぶん上に描かれる。高い順に「その高さとして読んだときに
+          // 本当にその高さのマスか」を試し、最初に一致した面を選ぶ
+          const candidate = (lift: number) => {
+            const y = Math.floor((world.y - padding + lift) / stepY)
+            const localY = world.y - padding + lift - y * stepY
+            const x = Math.floor((world.x - padding - y * rowOffsetX - Math.floor(localY / 2)) / stepX)
+            return { x, y }
+          }
+          let picked = candidate(0)
+          for (let lift = 3; lift >= 1; lift -= 1) {
+            const tile = candidate(lift * terrain.heightStepPx)
+            if (heightAt(tile.x, tile.y) === lift) {
+              picked = tile
+              break
+            }
+          }
+          const { x, y } = picked
           if (x < left || x > right || y < top || y >= gridHeight - 1) return false
           // 入口・出口を置いている間は敷地の縁から離れられない
           if (pendingAttraction && activeAttractionBuildStep !== 'body') snapAccessCursor(x, y)
@@ -2069,6 +2320,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         // 園の中身を書き出す。ショップ前の道はショップから敷き直せるので含めない
         takeSnapshot.current = (): ParkSnapshot => ({
           roads: [...roads].filter((key) => !shopRoads.has(key)),
+          stairs: [...stairsTiles.values()].map(({ x, y }) => ({ x, y })),
           queues: [...queueStates].map(([key, state]) => ({ key, state })),
           attractions: placedAttractions
             // 入口・出口を置いている途中のものは完成扱いにしない
@@ -2103,6 +2355,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           // 道と整列歩道を先に並べる。ショップの前の道を敷く処理が入口の向きを見に来るので、
           // 整列歩道がそろう前に見られると入口のつなぎ先が失われる
           snapshot.roads.forEach((key) => roads.add(key))
+          snapshot.stairs?.forEach(({ x, y }) => addStairs(x, y))
           snapshot.queues.forEach(({ key, state }) => {
             queueRoads.add(key)
             queueStates.set(key, state)
@@ -2200,6 +2453,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             const key = tileKey(x, y)
             return (
               (roads.has(key) && !shopRoads.has(key))
+              || stairsTiles.has(key)
               || (allowGate && isLockedEntranceTile(x, y))
               || (leaving && isSignTile(x, y))
             )
@@ -2247,10 +2501,10 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           return { x: Math.min(right, Math.max(left, x)), y: busStop.y }
         }
 
-        const drawGuest = (guest: Guest, x: number, y: number, tileX: number, tileY: number) => {
-          const position = point(x + 0.4, y + 0.52)
+        const drawGuest = (guest: Guest, x: number, y: number, tileX: number, tileY: number, lift = heightAt(tileX, tileY)) => {
+          const base = flatPoint(x + 0.4, y + 0.52)
           guest.image.setFrame(guest.facing * 4 + (Math.floor(guest.walked * 4) % 4))
-            .setPosition(position.x - guest.bank.anchorX, position.y - guest.bank.anchorY)
+            .setPosition(base.x - guest.bank.anchorX, base.y - lift * terrain.heightStepPx - guest.bank.anchorY)
             .setDepth(renderDepthAt('facility', tileX, tileY))
         }
         const placeGuestImage = (guest: Guest) => {
@@ -2258,11 +2512,15 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             drawGuest(guest, guest.queueX, guest.queueY, Math.round(guest.queueX), Math.round(guest.queueY))
             return
           }
-          // point は x・y に対して線形なので、マス座標で補間してから投影してよい
+          // 投影はマス座標に対して線形なので、マス座標で補間してから投影してよい。
+          // 高さは階段の昇り降りに合わせてなめらかに補間する
           const x = guest.fromX + (guest.toX - guest.fromX) * guest.progress
           const y = guest.fromY + (guest.toY - guest.fromY) * guest.progress
+          const fromLift = heightAt(guest.fromX, guest.fromY)
+          const toLift = heightAt(guest.toX, guest.toY)
+          const lift = fromLift + (toLift - fromLift) * guest.progress
           const leading = guest.progress < 0.5
-          drawGuest(guest, x, y, leading ? guest.fromX : guest.toX, leading ? guest.fromY : guest.toY)
+          drawGuest(guest, x, y, leading ? guest.fromX : guest.toX, leading ? guest.fromY : guest.toY, lift)
         }
 
         // 道路が撤去されるなどして完全に孤立した場合、歩ける道は無視して最寄りの道路のマスへ直線的に進む
@@ -2290,7 +2548,8 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           const walkable = walkableFor(guest, leaving)
           const options = guestNeighbours
             .map(({ x, y }) => ({ x: guest.toX + x, y: guest.toY + y }))
-            .filter(({ x, y }) => walkable(x, y))
+            .filter(({ x, y }) => walkable(x, y)
+              && (sameHeight(x, y, guest.toX, guest.toY) || stairsLink(guest.toX, guest.toY, x, y)))
           if (options.length === 0) return strandedRoadStep(guest)
           const forward = options.filter(({ x, y }) => !(x === guest.previousX && y === guest.previousY))
           const pool = forward.length > 0 ? forward : options
