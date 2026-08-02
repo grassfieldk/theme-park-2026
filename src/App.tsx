@@ -53,6 +53,7 @@ export default function App() {
   const [facilityMenuIndex, setFacilityMenuIndex] = useState(0)
   const [shopBuildStep, setShopBuildStep] = useState<'body' | 'direction'>('body')
   const [facilityBuildStep, setFacilityBuildStep] = useState<'body' | 'direction'>('body')
+  const [stairsBuildStep, setStairsBuildStep] = useState<'body' | 'direction'>('body')
   const [attractionBuildStep, setAttractionBuildStep] = useState<AttractionBuildStep>('body')
   const [cash, setCash] = useState(game.park.initialCash)
   const [titleStep, setTitleStep] = useState<'menu' | 'mode'>('menu')
@@ -284,7 +285,8 @@ export default function App() {
         return
       }
       if ((parkMode === 'pathBuild' || parkMode === 'queueBuild' || parkMode === 'stairsBuild') && input === 'cancel') {
-        setParkMode('roadMenu')
+        if (parkMode === 'stairsBuild' && stairsBuildStep === 'direction') parkMap.current?.handleAction('cancel')
+        else setParkMode('roadMenu')
         return
       }
       if (parkMode === 'attractionQueueBuild' && input === 'cancel') {
@@ -344,7 +346,7 @@ export default function App() {
     const nextCountry = moveCountry(selectedCountry, input)
     if (nextCountry === selectedCountry) return
     setSelectedCountry(nextCountry)
-  }, [screen, selectedCountry, parkMode, mainMenuIndex, roadMenuIndex, attractionMenuIndex, shopMenuIndex, facilityMenuIndex, menuPageSize, shopBuildStep, facilityBuildStep, titleStep, titleIndex, confirmPrompt, answerConfirm, activateTitleItem, openMenuItem, startNewGame, countryAttractions, countryShops, countryFacilities])
+  }, [screen, selectedCountry, parkMode, mainMenuIndex, roadMenuIndex, attractionMenuIndex, shopMenuIndex, facilityMenuIndex, menuPageSize, shopBuildStep, facilityBuildStep, stairsBuildStep, titleStep, titleIndex, confirmPrompt, answerConfirm, activateTitleItem, openMenuItem, startNewGame, countryAttractions, countryShops, countryFacilities])
 
 
   useEffect(() => setBuildMessage(''), [parkMode])
@@ -405,7 +407,7 @@ export default function App() {
   const buildModeLabel = parkMode === 'pathBuild'
     ? '歩道設置中'
     : parkMode === 'stairsBuild'
-      ? '階段設置中'
+      ? stairsBuildStep === 'direction' ? '向きを選んでください' : '階段設置中'
       : parkMode === 'queueBuild' || parkMode === 'attractionQueueBuild'
       ? '整列歩道設置中'
       : parkMode === 'attractionBuild'
@@ -488,6 +490,7 @@ export default function App() {
               facilityBuild={parkMode === 'facilityBuild' ? countryFacilities[facilityMenuIndex] : null}
               onFacilityPlaced={(cost) => setCash((current) => current - cost)}
               onFacilityBuildStep={setFacilityBuildStep}
+              onStairsBuildStep={setStairsBuildStep}
               availableCash={cash}
               onAttractionPlaced={(cost) => {
                 setCash((current) => current - cost)

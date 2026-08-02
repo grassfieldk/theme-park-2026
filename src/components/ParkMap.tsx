@@ -37,6 +37,7 @@ type Props = {
   onShopComplete: () => void
   onFacilityPlaced: (cost: number) => void
   onFacilityBuildStep: (step: 'body' | 'direction') => void
+  onStairsBuildStep: (step: 'body' | 'direction') => void
   secondsPerDay: number
   onAdmissionPaid: (fee: number) => void
   onShopSale: (amount: number) => void
@@ -103,6 +104,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
   onShopComplete,
   onFacilityPlaced,
   onFacilityBuildStep,
+  onStairsBuildStep,
   secondsPerDay,
   onAdmissionPaid,
   onShopSale,
@@ -128,6 +130,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
   const shopCompleteHandler = useRef(onShopComplete)
   const facilityPlacedHandler = useRef(onFacilityPlaced)
   const facilityStepHandler = useRef(onFacilityBuildStep)
+  const stairsStepHandler = useRef(onStairsBuildStep)
   const admissionHandler = useRef(onAdmissionPaid)
   const shopSaleHandler = useRef(onShopSale)
   const guestCountHandler = useRef(onGuestCountChange)
@@ -142,6 +145,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
   shopCompleteHandler.current = onShopComplete
   facilityPlacedHandler.current = onFacilityPlaced
   facilityStepHandler.current = onFacilityBuildStep
+  stairsStepHandler.current = onStairsBuildStep
   admissionHandler.current = onAdmissionPaid
   shopSaleHandler.current = onShopSale
   guestCountHandler.current = onGuestCountChange
@@ -303,6 +307,8 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         let facilityDirection = 0
         let facilityStep: 'body' | 'direction' = 'body'
         let pendingFacility: { x: number, y: number } | null = null
+        let stairsStep: 'body' | 'direction' = 'body'
+        let pendingStairs: { x: number, y: number, direction: { dx: number, dy: number, frame: number }, image: Phaser.GameObjects.Image } | null = null
         let currentCash = availableCash
         let daysPerMs = gameDaysPerMs(initialSecondsPerDay.current)
         let confirmHeld = false
@@ -629,6 +635,9 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         // ショップ設置時に自動で敷かれる道。見た目と接続は通常の歩道と同じだが、
         // 通るのはそのショップを利用する客だけなので、ふだんの歩行では通り道にしない
         const shopRoads = new Set<string>()
+        // 店の入口マス(店前の道の 1 マス外)→ 店。通りすがりの客が偶然そこに来たときの
+        // 入店判定に使う(shopEntranceSpots)
+        const shopEntranceSpots = new Map<string, PlacedShop>()
         const roadImages = new Map<string, Phaser.GameObjects.Image>()
         const queueRoads = new Set<string>()
         const queueStates = new Map<string, number>()
@@ -683,8 +692,9 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           heightAt(x, y) === heightAt(otherX, otherY)
         )
         const roadConnects = (x: number, y: number, otherX: number, otherY: number) => (
-          (hasRoadConnection(otherX, otherY) && sameHeight(x, y, otherX, otherY))
-          || stairsLink(x, y, otherX, otherY)
+          ((hasRoadConnection(otherX, otherY) && sameHeight(x, y, otherX, otherY))
+            || stairsLink(x, y, otherX, otherY))
+          && stairsTraversable(x, y, otherX, otherY)
         )
         const roadMaskAt = (x: number, y: number) => (
           (roadConnects(x, y, x + 1, y) ? 1 : 0)
@@ -692,27 +702,40 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           | (roadConnects(x, y, x, y + 1) ? 4 : 0)
           | (roadConnects(x, y, x, y - 1) ? 8 : 0)
         )
-        // 階段(階段設置メニュー)。1 段高いマスに面した低い側のマスへ置き、その 2 マスをつなぐ。
-        // 絵はシートのグループ 12 を下段(自マスの面)と上段(壁の帯)に重ねる。
-        // コマと向きの対応は暫定([北, 南, 西, 東] × [下段, 上段])
+        // 階段(階段設置メニュー、オブジェクトコード 0x59〜0x5C)。
+        // 1 段高いマスに面した低い側のマスへ置き、その 2 マスをつなぐ。
+        // 絵はシーナリー種・季節で替わる terrain-stairs のコマ 0〜3(北・南・西・東へ上る)
+        type StairsDirection = { dx: number, dy: number, frame: number }
         type PlacedStairs = { x: number, y: number, dx: number, dy: number, images: Phaser.GameObjects.Image[] }
         const stairsTiles = new Map<string, PlacedStairs>()
-        const stairsDirections = [
-          { dx: 0, dy: -1, lowerFrame: 0, upperFrame: 1 },
-          { dx: 0, dy: 1, lowerFrame: 2, upperFrame: 3 },
-          { dx: -1, dy: 0, lowerFrame: 4, upperFrame: 5 },
-          { dx: 1, dy: 0, lowerFrame: 6, upperFrame: 7 },
+        const stairsDirections: StairsDirection[] = [
+          { dx: 0, dy: -1, frame: 0 },
+          { dx: 0, dy: 1, frame: 1 },
+          { dx: 1, dy: 0, frame: 2 },
+          { dx: -1, dy: 0, frame: 3 },
         ]
-        const stairsDirectionAt = (x: number, y: number) => (
-          stairsDirections.find((dir) => heightAt(x + dir.dx, y + dir.dy) === heightAt(x, y) + 1) ?? null
+        // そのマスから上れる方向の一覧(2 方向以上あるときは設置時に選ぶ)
+        const stairsOptionsAt = (x: number, y: number) => (
+          stairsDirections.filter((dir) => heightAt(x + dir.dx, y + dir.dy) === heightAt(x, y) + 1)
         )
+        const stairsDirectionAt = (x: number, y: number) => stairsOptionsAt(x, y)[0] ?? null
         // 2 マスが階段でつながっているか(どちら向きの一歩でも真)
         const stairsLink = (fromX: number, fromY: number, toX: number, toY: number) => {
           const from = stairsTiles.get(tileKey(fromX, fromY))
           if (from && fromX + from.dx === toX && fromY + from.dy === toY) return true
           const to = stairsTiles.get(tileKey(toX, toY))
-          return Boolean(to && toX + to.dx === fromX && toY + to.dy === fromY)
+          return Boolean(to && to.x + to.dx === fromX && to.y + to.dy === fromY)
         }
+        // 階段のマスは上る方向の軸(上り先とその反対側)でしか出入りできない
+        const stairsAxisAllows = (x: number, y: number, otherX: number, otherY: number) => {
+          const stairs = stairsTiles.get(tileKey(x, y))
+          if (!stairs) return true
+          return (otherX === x + stairs.dx && otherY === y + stairs.dy)
+            || (otherX === x - stairs.dx && otherY === y - stairs.dy)
+        }
+        const stairsTraversable = (fromX: number, fromY: number, toX: number, toY: number) => (
+          stairsAxisAllows(fromX, fromY, toX, toY) && stairsAxisAllows(toX, toY, fromX, fromY)
+        )
         const entranceFrameForSide = { top: 1, bottom: 0, left: 2, right: 3 } as const
         // entranceFrameToward: 入口がこのオフセット方向を向くときのフレーム
         // entranceFrameFacingBack: このオフセット先にある入口が手前を向くときのフレーム
@@ -795,6 +818,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         const pointer = this.add.image(0, 0, 'pointer-arrow').setOrigin(0).setDepth(overlayDepth)
         let attractionPreview: Phaser.GameObjects.Image | null = null
         let accessPreview: Phaser.GameObjects.Image | null = null
+        let stairsPreview: Phaser.GameObjects.Image | null = null
         const buildBasePreview: Phaser.GameObjects.Image[] = []
         const cursorShape = [
           new Phaser.Geom.Point(0, 0),
@@ -969,7 +993,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           [[-1, 1, 1], [-1, 0, 4], [0, 1, 8]],
           [[1, -1, 2], [0, -1, 4], [1, 0, 8]],
         ]
-        type PlacedFacility = { facility: Facility, frame: number, image: Phaser.GameObjects.Image }
+        type PlacedFacility = { facility: Facility, frame: number, image: Phaser.GameObjects.Image, used: number }
         const placedFacilities = new Map<string, PlacedFacility>()
         const placedBuildings = new Set<string>()
         const facilityFootprint = (facility: Facility): Footprint => (
@@ -1017,12 +1041,30 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           placed.frame = frame
           const position = facilityImagePosition(placed.facility, frame, x, y)
           placed.image.setTexture(facilityTexture(placed.facility, frame)).setPosition(position.x, position.y)
+          if (facilityUseOf(placed.facility)) rebuildFacilitySpots()
         }
         const removeFacility = (x: number, y: number) => {
           const placed = facilityAt(x, y)
           if (!placed) return
+          // 利用中・利用に向かっている客はその場に戻して徘徊を再開させる
+          guests.forEach((guest) => {
+            if (guest.facility?.spot.key !== tileKey(x, y)) return
+            occupiedSpotTiles.delete(tileKey(guest.facility.spot.tile.x, guest.facility.spot.tile.y))
+            guest.image.setVisible(true)
+            guest.phase = 'walking'
+            const front = guest.facility.front
+            guest.fromX = front.x
+            guest.fromY = front.y
+            guest.toX = front.x
+            guest.toY = front.y
+            guest.previousX = front.x
+            guest.previousY = front.y
+            guest.progress = 0
+            guest.facility = null
+          })
           placed.image.destroy()
           placedFacilities.delete(tileKey(x, y))
+          rebuildFacilitySpots()
           const origin = facilityOrigin(placed.facility, x, y)
           // origin は前(下)左タイルなので、奥(上)左に直してから解除する
           markFootprint({
@@ -1091,7 +1133,8 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           const position = facilityImagePosition(facility, frame, x, y)
           const image = this.add.image(position.x, position.y, facilityTexture(facility, frame)).setOrigin(0)
             .setDepth(renderDepthAt('facility', origin.x, origin.y))
-          placedFacilities.set(tileKey(x, y), { facility, frame, image })
+          placedFacilities.set(tileKey(x, y), { facility, frame, image, used: 0 })
+          rebuildFacilitySpots()
         }
         const placePond = (facility: Facility, x: number, y: number) => {
           const full = pondFrameByCorner[15]
@@ -1145,6 +1188,36 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         const directionStep = (direction: number) => (
           { 0: { x: 0, y: 1 }, 1: { x: 0, y: -1 }, 2: { x: -1, y: 0 }, 3: { x: 1, y: 0 } }[direction] ?? { x: 0, y: 1 }
         )
+        // 客が利用できる設備(ゴミバコ・トイレ・スーパートイレ・ベンチ)の
+        // 「立ち位置 → 利用マス」対応表。立ち位置は設備の向きの正面 1 マスで、
+        // ベンチは向いている側の 1 列(2 席)がそれぞれ席になる
+        type FacilityUseKind = 'trash' | 'toilet' | 'bench'
+        type FacilitySpot = { key: string, kind: FacilityUseKind, tile: { x: number, y: number } }
+        const facilitySpots = new Map<string, FacilitySpot>()
+        const occupiedSpotTiles = new Set<string>()
+        const facilityUseOf = (facility: Facility) => ('use' in facility ? facility.use : null)
+        const facilityCapacityOf = (facility: Facility) => {
+          const use = facilityUseOf(facility)
+          return use && 'capacityUses' in use ? use.capacityUses ?? Infinity : Infinity
+        }
+        const rebuildFacilitySpots = () => {
+          facilitySpots.clear()
+          for (const [key, placed] of placedFacilities) {
+            const use = facilityUseOf(placed.facility)
+            if (!use) continue
+            const { x, y } = parseKey(key)
+            const step = directionStep(placed.frame)
+            const tiles = use.kind === 'bench'
+              ? (placed.frame === 0 ? [{ x, y }, { x: x + 1, y }]
+                : placed.frame === 1 ? [{ x, y: y - 1 }, { x: x + 1, y: y - 1 }]
+                  : placed.frame === 2 ? [{ x, y: y - 1 }, { x, y }]
+                    : [{ x: x + 1, y: y - 1 }, { x: x + 1, y }])
+              : [{ x, y }]
+            tiles.forEach((tile) => {
+              facilitySpots.set(tileKey(tile.x + step.x, tile.y + step.y), { key, kind: use.kind as FacilityUseKind, tile })
+            })
+          }
+        }
         const drawFacilityArrow = () => {
           const facility = activeFacility
           shopArrow.clear()
@@ -1354,6 +1427,20 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
               .setDepth(renderDepthAt('facility', attractionOrigin.x, attractionOrigin.y))
               .setAlpha(valid ? 0.7 : 0.4).setTint(valid ? 0xffffff : 0xff6048)
           }
+          // 階段は設置予定地に半透明のプレビューを出し、確定時に実体化する。
+          // 置けないマスでも赤みがかった半透明で表示する
+          stairsPreview?.setVisible(false)
+          if (activeRoadBuildMode === 'stairs' && stairsStep === 'body') {
+            const stairsValid = canPlaceStairs(cursorPosition.x, cursorPosition.y)
+            const option = stairsDirectionAt(cursorPosition.x, cursorPosition.y) ?? stairsDirections[0]
+            const tile = point(cursorPosition.x, cursorPosition.y)
+            const offset = terrainObjects.stairs[sceneryKind][option.frame]
+            const key = `terrain-stairs-${option.frame}-s${seasonIndex}`
+            if (!stairsPreview) stairsPreview = this.add.image(0, 0, key).setOrigin(0)
+            stairsPreview.setTexture(key).setPosition(tile.x - offset.x, tile.y - offset.y)
+              .setDepth(roadPieceDepth(cursorPosition.x, cursorPosition.y))
+              .setVisible(true).setAlpha(stairsValid ? 0.7 : 0.4).setTint(stairsValid ? 0xffffff : 0xff6048)
+          }
           // ポインタはメニューやダイアログが開いている間は隠す(原作のフラグ 0x8000 相当)
           const pointerConfig = activeRoadBuildMode || attraction || shop || activeFacility
             ? { key: 'pointer-shovel', offset: pointers.shovel.offset }
@@ -1541,24 +1628,72 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           placeCursor(nextX, nextY)
           keepCursorVisible(direction === 'left' || direction === 'right' ? 'x' : 'y')
         }
+        // 階段の絵。重ね順は自分のマスの道路と同じ扱い
+        const stairsImage = (x: number, y: number, direction: StairsDirection) => {
+          const tile = point(x, y)
+          const offset = terrainObjects.stairs[sceneryKind][direction.frame]
+          return this.add.image(tile.x - offset.x, tile.y - offset.y, `terrain-stairs-${direction.frame}-s${seasonIndex}`)
+            .setOrigin(0).setDepth(roadPieceDepth(x, y))
+        }
         // 階段を置く。設置操作とセーブデータからの復元で共通に使う
-        const addStairs = (x: number, y: number) => {
-          const direction = stairsDirectionAt(x, y)
+        const addStairs = (x: number, y: number, direction = stairsDirectionAt(x, y), image?: Phaser.GameObjects.Image) => {
           if (!direction) return null
-          const lower = point(x, y)
-          const upperFace = point(x + direction.dx, y + direction.dy)
-          // 下段は自マスの面、上段は面と 1 段高い面の間の帯に描く
-          const images = [
-            seasonFrame(this.add.image(lower.x, lower.y, `stairs-frame-${direction.lowerFrame}`)
-              .setOrigin(0).setDepth(roadPieceDepth(x, y))),
-            seasonFrame(this.add.image(upperFace.x, upperFace.y + stepY, `stairs-frame-${direction.upperFrame}`)
-              .setOrigin(0).setDepth(roadPieceDepth(x + direction.dx, y + direction.dy))),
-          ]
-          const placed: PlacedStairs = { x, y, dx: direction.dx, dy: direction.dy, images }
+          const placed: PlacedStairs = {
+            x, y, dx: direction.dx, dy: direction.dy,
+            images: [image ?? stairsImage(x, y, direction)],
+          }
           stairsTiles.set(tileKey(x, y), placed)
           redrawRoadTiles(x, y)
           redrawRoadTiles(x + direction.dx, y + direction.dy)
           return placed
+        }
+        // 向き番号(0=手前 1=奥 2=左 3=右)は「降りる方向」の指定として受け取り、
+        // その反対側を上り方向にする。上れない向きは無視する。
+        // どちら向きに使うかは人によるので、方向を示す矢印は出さずプレビューの絵だけで見せる
+        const setStairsDirection = (direction: number) => {
+          if (stairsStep !== 'direction' || !pendingStairs) return
+          const step = directionStep(direction)
+          const option = stairsOptionsAt(pendingStairs.x, pendingStairs.y)
+            .find((candidate) => candidate.dx === -step.x && candidate.dy === -step.y)
+          if (!option || option === pendingStairs.direction) return
+          pendingStairs.image.destroy()
+          pendingStairs.direction = option
+          pendingStairs.image = stairsImage(pendingStairs.x, pendingStairs.y, option).setAlpha(0.7)
+        }
+        const stairsDirectionAtPointer = (px: number, py: number) => {
+          if (!pendingStairs) return 0
+          const center = point(pendingStairs.x + 0.5, pendingStairs.y + 0.5)
+          const pointerAngle = Math.atan2(py - center.y, px - center.x)
+          let best = 0
+          let bestDelta = Infinity
+          for (let direction = 0; direction < 4; direction += 1) {
+            const step = directionStep(direction)
+            const target = point(pendingStairs.x + 0.5 + step.x, pendingStairs.y + 0.5 + step.y)
+            const angle = Math.atan2(target.y - center.y, target.x - center.x)
+            const delta = Math.abs(Phaser.Math.Angle.Wrap(angle - pointerAngle))
+            if (delta < bestDelta) {
+              bestDelta = delta
+              best = direction
+            }
+          }
+          return best
+        }
+        const finishStairsDirection = () => {
+          if (stairsStep !== 'direction' || !pendingStairs) return
+          pendingStairs.image.setAlpha(1)
+          addStairs(pendingStairs.x, pendingStairs.y, pendingStairs.direction, pendingStairs.image)
+          pendingStairs = null
+          stairsStep = 'body'
+          stairsStepHandler.current('body')
+          drawCursor()
+        }
+        const cancelStairsDirection = () => {
+          if (stairsStep !== 'direction' || !pendingStairs) return
+          pendingStairs.image.destroy()
+          pendingStairs = null
+          stairsStep = 'body'
+          stairsStepHandler.current('body')
+          drawCursor()
         }
         const placeStairs = () => {
           const { x, y } = cursorPosition
@@ -1567,7 +1702,16 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             return
           }
           buildMessageHandler.current('')
-          addStairs(x, y)
+          const options = stairsOptionsAt(x, y)
+          if (options.length === 1) {
+            addStairs(x, y, options[0])
+          }
+          else {
+            // 上れる方向が複数あるときは向きを選ばせる(確定までは半透明のまま)
+            pendingStairs = { x, y, direction: options[0], image: stairsImage(x, y, options[0]).setAlpha(0.7) }
+            stairsStep = 'direction'
+            stairsStepHandler.current('direction')
+          }
           drawCursor()
         }
         const placeRoad = () => {
@@ -1665,7 +1809,8 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           if (ground === 'stairs') {
             const centerX = x + (attraction.width >> 1)
             const centerY = y + attraction.height - 1 - (attraction.height >> 1)
-            terrainObjects.stairs[sceneryKind].forEach((offset, index) => {
+            // 使うのは北へ上る階段(コマ 0)と踊り場に流用する南向きのコマ 1 だけ
+            terrainObjects.stairs[sceneryKind].slice(0, 2).forEach((offset, index) => {
               const tileY = centerY - index
               const tile = point(centerX, tileY)
               baseImages.push(
@@ -1790,10 +1935,20 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           return this.add.image(imagePosition.x, imagePosition.y, `shop-${shop.id}-${direction}`)
             .setOrigin(0).setDepth(renderDepthAt('facility', bottomX, bottomY))
         }
+        // 入口マス→店の対応を引き直す。設置・撤去のたびに全件作り直すことで、
+        // 同じ入口マスを共有する店があっても残った店の分が登録され直る
+        const rebuildShopEntranceSpots = () => {
+          shopEntranceSpots.clear()
+          for (const placed of placedShops) {
+            const entrance = shopEntranceTile(placed.shop, placed.x, placed.y, placed.direction)
+            shopEntranceSpots.set(tileKey(entrance.x, entrance.y), placed)
+          }
+        }
         // 向きが確定したショップを記録し、前の道を敷く
         const completeShop = (shop: Shop, x: number, y: number, direction: number, image: Phaser.GameObjects.Image) => {
           placedShops.push({ shop, x, y, direction, image })
           layShopWalkway(shop, x, y, direction)
+          rebuildShopEntranceSpots()
         }
         const placeShop = () => {
           const shop = activeShop
@@ -2066,6 +2221,8 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           const index = placedShops.indexOf(placed)
           if (index >= 0) placedShops.splice(index, 1)
           const { shop, x, y } = placed
+          rebuildShopEntranceSpots()
+          const entrance = shopEntranceTile(shop, x, y, placed.direction)
           // この店を目指していた客・利用中の客は入口マスへ出して徘徊に戻す
           guests.forEach((guest) => {
             if (guest.targetShop !== placed) return
@@ -2073,7 +2230,6 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             guest.path = null
             guest.pathIndex = 0
             if (guest.phase === 'shopping') {
-              const entrance = shopEntranceTile(shop, x, y, placed.direction)
               guest.phase = 'walking'
               guest.image.setVisible(true)
               guest.serviceRemaining = 0
@@ -2141,10 +2297,13 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           if (confirmed) remove?.()
         }
         // 道路・設備を置いているところか(連続設置できる系統)
-        const isGroundBuild = () => Boolean(activeRoadBuildMode || (activeFacility && facilityStep === 'body'))
+        const isGroundBuild = () => Boolean(
+          (activeRoadBuildMode && stairsStep === 'body')
+          || (activeFacility && facilityStep === 'body'),
+        )
         // カーソル位置に今のモードのものを置く
         const placeAtCursor = () => {
-          if (activeRoadBuildMode) placeRoad()
+          if (activeRoadBuildMode) stairsStep === 'direction' ? finishStairsDirection() : placeRoad()
           else if (activeFacility) facilityStep === 'direction' ? finishFacilityDirection() : placeFacility()
           else if (activeShop) shopStep === 'direction' ? confirmShopDirection() : placeShop()
           else if (activeAttraction) {
@@ -2221,6 +2380,11 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             setFacilityDirection(facilityDirectionAtPointer(world.x, world.y))
             return
           }
+          if (pendingStairs && stairsStep === 'direction') {
+            const world = pointer.positionToCamera(camera) as Phaser.Math.Vector2
+            setStairsDirection(stairsDirectionAtPointer(world.x, world.y))
+            return
+          }
           const moved = selectTileAtPointer(pointer)
           if (!moved || !pointer.isDown) return
           // 左ドラッグはボタンの押しっぱなしと同じ扱い
@@ -2242,6 +2406,11 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             setFacilityDirection(facilityDirectionAtPointer(world.x, world.y))
             finishFacilityDirection()
           }
+          else if (pendingStairs && stairsStep === 'direction') {
+            const world = pointer.positionToCamera(camera) as Phaser.Math.Vector2
+            setStairsDirection(stairsDirectionAtPointer(world.x, world.y))
+            finishStairsDirection()
+          }
           else if (selectTileAtPointer(pointer)) placeAtCursor()
         })
         this.input.on('wheel', (
@@ -2260,6 +2429,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           if (direction === 'left' || direction === 'right' || direction === 'up' || direction === 'down') {
             if (activeShop && shopStep === 'direction') setShopDirection(directionByPad[direction])
             else if (activeFacility && facilityStep === 'direction') setFacilityDirection(directionByPad[direction])
+            else if (pendingStairs && stairsStep === 'direction') setStairsDirection(directionByPad[direction])
             else if (pendingAttraction && activeAttractionBuildStep !== 'body') moveAccessCursor(direction)
             else {
               moveCursor(direction)
@@ -2276,6 +2446,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           if (direction === 'confirmRelease') confirmHeld = false
           if (direction === 'cancel' && activeShop && shopStep === 'direction') cancelShopDirection()
           if (direction === 'cancel' && activeFacility && facilityStep === 'direction') cancelFacilityDirection()
+          if (direction === 'cancel' && stairsStep === 'direction') cancelStairsDirection()
           if (direction === 'remove') {
             removeHeld = true
             removeAtCursor()
@@ -2287,6 +2458,8 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         this.events.on('road-build-mode', (mode: RoadBuildMode) => {
           activeRoadBuildMode = mode
           if (!mode) confirmHeld = false
+          // モードが変わったら向き選び中の階段は取り消す
+          if (mode !== 'stairs') cancelStairsDirection()
           drawCursor()
         })
         this.events.on('attraction-build-mode', (attraction: Attraction | null) => {
@@ -2344,7 +2517,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         // 園の中身を書き出す。ショップ前の道はショップから敷き直せるので含めない
         takeSnapshot.current = (): ParkSnapshot => ({
           roads: [...roads].filter((key) => !shopRoads.has(key)),
-          stairs: [...stairsTiles.values()].map(({ x, y }) => ({ x, y })),
+          stairs: [...stairsTiles.values()].map(({ x, y, dx, dy }) => ({ x, y, dx, dy })),
           queues: [...queueStates].map(([key, state]) => ({ key, state })),
           attractions: placedAttractions
             // 入口・出口を置いている途中のものは完成扱いにしない
@@ -2379,7 +2552,10 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           // 道と整列歩道を先に並べる。ショップの前の道を敷く処理が入口の向きを見に来るので、
           // 整列歩道がそろう前に見られると入口のつなぎ先が失われる
           snapshot.roads.forEach((key) => roads.add(key))
-          snapshot.stairs?.forEach(({ x, y }) => addStairs(x, y))
+          snapshot.stairs?.forEach(({ x, y, dx, dy }) => {
+            const direction = stairsDirections.find((entry) => entry.dx === dx && entry.dy === dy)
+            addStairs(x, y, direction ?? stairsDirectionAt(x, y))
+          })
           snapshot.queues.forEach(({ key, state }) => {
             queueRoads.add(key)
             queueStates.set(key, state)
@@ -2437,8 +2613,9 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
 
         // 来園者は 4 つの段階を一方向に進む。
         // walking(マス目を歩く) → queued(看板前で待つ) → toSign(看板へ) → toBus(バスへ乗り消える)
-        // shopping はショップ利用中で、姿を消して一定時間後に walking へ戻る
-        type GuestPhase = 'walking' | 'queued' | 'toSign' | 'toBus' | 'shopping'
+        // shopping はショップ利用中で、姿を消して一定時間後に walking へ戻る。
+        // facility は設備(ゴミバコ・トイレ・ベンチ)の利用中
+        type GuestPhase = 'walking' | 'queued' | 'toSign' | 'toBus' | 'shopping' | 'facility'
         type Guest = {
           type: number
           bank: GuestBank
@@ -2454,6 +2631,14 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           fullFood: boolean
           fullDrink: boolean
           satiety: number
+          // 疲労(0〜250)。歩いている間増え、ベンチとトイレで回復する
+          fatigue: number
+          // 持っているゴミの数(独自仕様)。屋台型ショップの利用で増え、ゴミバコに移す
+          trash: number
+          // トイレ欲求(0〜250)。飲食すると発生し、しきい値以上で正面のトイレを使う
+          toiletUrge: number
+          // 利用中の設備。enter(利用マスへ) → stay(利用) → exit(立ち位置へ戻る)
+          facility: { spot: FacilitySpot, placed: PlacedFacility, stage: 'enter' | 'stay' | 'exit', front: { x: number, y: number }, timer: number } | null
           // 欲求更新の端数持ち越し
           needTick: number
           // ショップが見つからなかったあとの再探索までの残り日数
@@ -2569,7 +2754,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             drawGuest(guest, guest.fromX, guest.fromY, guest.fromX, guest.fromY)
             return
           }
-          if (guest.phase !== 'walking') {
+          if (guest.phase !== 'walking' && guest.phase !== 'facility') {
             drawGuest(guest, guest.queueX, guest.queueY, Math.round(guest.queueX), Math.round(guest.queueY))
             return
           }
@@ -2610,7 +2795,8 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           const options = guestNeighbours
             .map(({ x, y }) => ({ x: guest.toX + x, y: guest.toY + y }))
             .filter(({ x, y }) => walkable(x, y)
-              && (sameHeight(x, y, guest.toX, guest.toY) || stairsLink(guest.toX, guest.toY, x, y)))
+              && (sameHeight(x, y, guest.toX, guest.toY) || stairsLink(guest.toX, guest.toY, x, y))
+              && stairsTraversable(guest.toX, guest.toY, x, y))
           if (options.length === 0) return strandedRoadStep(guest)
           const forward = options.filter(({ x, y }) => !(x === guest.previousX && y === guest.previousY))
           const pool = forward.length > 0 ? forward : options
@@ -2649,6 +2835,13 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
                 guest.fullDrink = false
               }
             }
+            // トイレ欲求は飲食後に発生し、限界に達すると我慢できずに消える
+            if (guest.toiletUrge > 0) {
+              guest.toiletUrge = guest.toiletUrge < needsConfig.max ? guest.toiletUrge + 1 : 0
+            }
+            if (guest.phase === 'walking') {
+              guest.fatigue = Math.min(needsConfig.max, guest.fatigue + needsConfig.fatigueWalkPerUpdate)
+            }
           }
         }
         // 客の現在地から歩ける各マスへ、1 つ手前のマスを幅優先で記録する。
@@ -2665,6 +2858,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
               const key = tileKey(x, y)
               if (previous.has(key) || !walkable(x, y)) continue
               if (!sameHeight(x, y, current.x, current.y) && !stairsLink(current.x, current.y, x, y)) continue
+              if (!stairsTraversable(current.x, current.y, x, y)) continue
               previous.set(key, tileKey(current.x, current.y))
               frontier.push({ x, y })
             }
@@ -2689,6 +2883,17 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           path.push(walkway[walkway.length - 1])
           return path
         }
+        // 店を利用できるか(支払い能力とキッズ制限)。探索と通りすがり発見で共通
+        const canAffordShop = (guest: Guest, shop: Shop) => {
+          if (shopUseConfig.initialPrice * guestConfig.types[guest.type].people > guest.money) return false
+          return !(guestConfig.types[guest.type].id === 'kids' && 'kidsAllowed' in shop && shop.kidsAllowed === false)
+        }
+        // その分類の商品を欲しがっているか(満腹でなく、欲求がしきい値以上)
+        const wantsShopCategory = (guest: Guest, category: 'food' | 'drink') => (
+          category === 'food'
+            ? !guest.fullFood && guest.hunger >= needsConfig.seekThreshold
+            : !guest.fullDrink && guest.thirst >= needsConfig.seekThreshold
+        )
         // 空腹・渇きがしきい値に達した客の行き先を選ぶ。原作と同じく食べ物を先に調べ、
         // 営業中で支払額(価格 × 人数倍率)を払えるショップから無作為に 1 件選ぶ。
         // キッズはビアホールを利用できない
@@ -2698,14 +2903,10 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           if (guest.hunger >= needsConfig.seekThreshold) wants.push('food')
           if (guest.thirst >= needsConfig.seekThreshold) wants.push('drink')
           if (wants.length === 0) return null
-          const people = guestConfig.types[guest.type].people
-          const isKids = guestConfig.types[guest.type].id === 'kids'
           let reach: Map<string, string | null> | null = null
           for (const category of wants) {
             const candidates = placedShops.filter(({ shop }) => (
-              shop.category === category
-              && shopUseConfig.initialPrice * people <= guest.money
-              && !(isKids && 'kidsAllowed' in shop && shop.kidsAllowed === false)
+              shop.category === category && canAffordShop(guest, shop)
             ))
             if (candidates.length === 0) continue
             reach = reach ?? buildReachMap(guest.fromX, guest.fromY, walkableFor(guest, false))
@@ -2724,8 +2925,139 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           guest.seekCooldown = 1
           return null
         }
+        // 経路探索(マップ全体を探索して最短経路で向かわせる処理)を使うかどうか。
+        // 原作にはこの探索がなく、無効時の下と同じ「通りかかったら気づく」挙動だけだった。
+        // 将来、地図所持・リピーターなど条件付きで有効化する拡張を見込んで、処理自体は
+        // chooseShopTarget/buildReachMap/shopApproachPath に残したまま呼び出しだけ止める
+        const guestRouteSearchEnabled = false
+        // 徘徊中に店の前(入口の 1 マス外、shopEntranceSpots)を通りかかった客が、
+        // 条件を満たせばその場で気づいて入店する(原作 FUN_801eddc4: 立ち止まるたびに
+        // 隣接マスの目印を調べる処理に相当。ショップ前の道はその店の一部なので、
+        // そこにつながるマスを通ったときに見つかる)
+        const tryDiscoverShopAtEntrance = (guest: Guest, leaving: boolean): boolean => {
+          if (leaving || !guest.paid) return false
+          const placed = shopEntranceSpots.get(tileKey(guest.fromX, guest.fromY))
+          if (!placed) return false
+          const { shop } = placed
+          if (shop.category !== 'food' && shop.category !== 'drink') return false
+          if (!wantsShopCategory(guest, shop.category) || !canAffordShop(guest, shop)) return false
+          const walkway = shopWalkwayTiles(shop, placed.x, placed.y, placed.direction)
+          guest.targetShop = placed
+          guest.path = [walkway[walkway.length - 1]]
+          guest.pathIndex = 0
+          return true
+        }
         // 入口マスから店を向く方向(店の向きの反対)
         const facingByShopDirection = [1, 0, 3, 2]
+        // ---- 設備の利用 ----
+        // 立ち止まったマスが設備の正面なら条件を確認して利用マスへ 1 マス進む。
+        // トイレは欲求 100 以上、ベンチは乱数(1〜100)が疲労 ÷ 5 未満のときに座る。
+        // ゴミバコは独自仕様で、ゴミを持っていれば利用して全部移す(上限まで)
+        const facilityUseConfig = game.facilityUse
+        const tryUseFacility = (guest: Guest, spot: FacilitySpot): boolean => {
+          const placed = placedFacilities.get(spot.key)
+          if (!placed) return false
+          // 向き選択中(未確定)の設備は使わせない。確定前に回転すると座り位置がずれるため
+          if (pendingFacility && spot.key === tileKey(pendingFacility.x, pendingFacility.y)) return false
+          const tile = tileKey(spot.tile.x, spot.tile.y)
+          if (occupiedSpotTiles.has(tile)) return false
+          if (!sameHeight(guest.fromX, guest.fromY, spot.tile.x, spot.tile.y)) return false
+          if (spot.kind === 'trash') {
+            if (guest.trash <= 0) return false
+            if (placed.used >= facilityCapacityOf(placed.facility)) return false
+          }
+          else if (spot.kind === 'toilet') {
+            if (guest.toiletUrge < needsConfig.toiletSeekThreshold) return false
+            if (placed.used >= facilityCapacityOf(placed.facility)) return false
+          }
+          else if (Math.floor(Math.random() * 100) + 1 >= guest.fatigue / 5) return false
+          occupiedSpotTiles.add(tile)
+          // ショップへ向かう途中でも立ち寄れる。経路は保持し、利用後に続きを歩く
+          guest.facility = { spot, placed, stage: 'enter', front: { x: guest.fromX, y: guest.fromY }, timer: 0 }
+          guest.phase = 'facility'
+          guest.progress = 0
+          guest.toX = spot.tile.x
+          guest.toY = spot.tile.y
+          guest.facing = directionOf(spot.tile.x - guest.fromX, spot.tile.y - guest.fromY)
+          return true
+        }
+        const releaseFacilityGuest = (guest: Guest) => {
+          const info = guest.facility
+          if (!info) return
+          occupiedSpotTiles.delete(tileKey(info.spot.tile.x, info.spot.tile.y))
+          guest.facility = null
+          guest.phase = 'walking'
+          guest.image.setVisible(true)
+          // 次の更新で待ち時間なく歩き出す
+          guest.progress = 1
+        }
+        const updateFacilityGuest = (guest: Guest, step: number, days: number) => {
+          const info = guest.facility
+          if (!info) {
+            guest.phase = 'walking'
+            return
+          }
+          if (info.stage === 'enter') {
+            guest.walked += step
+            guest.progress += step
+            if (guest.progress < 1) return
+            guest.progress = 0
+            guest.previousX = guest.fromX
+            guest.previousY = guest.fromY
+            guest.fromX = guest.toX
+            guest.fromY = guest.toY
+            info.stage = 'stay'
+            if (info.spot.kind === 'toilet') {
+              // トイレは中に入るので姿を消す
+              guest.image.setVisible(false)
+              info.timer = facilityUseConfig.serviceDays
+            }
+            else if (info.spot.kind === 'bench') {
+              // 座るときに外側を向き、疲労が回復する。立つのは翌日の日付更新のとき。
+              // ベンチで休むとショップへの用事は取りやめる
+              guest.facing = directionOf(info.front.x - guest.fromX, info.front.y - guest.fromY)
+              guest.fatigue = Math.max(0, guest.fatigue - needsConfig.benchFatigueRelief)
+              guest.targetShop = null
+              guest.path = null
+              guest.pathIndex = 0
+              info.timer = Math.floor(elapsedDays) + 1 - elapsedDays
+            }
+            else info.timer = facilityUseConfig.serviceDays
+            return
+          }
+          if (info.stage === 'stay') {
+            info.timer -= days
+            if (info.timer > 0) return
+            if (info.spot.kind === 'trash') {
+              // 持っているゴミをゴミバコの空きぶんだけ移す
+              const moved = Math.min(guest.trash, facilityCapacityOf(info.placed.facility) - info.placed.used)
+              info.placed.used += moved
+              guest.trash -= moved
+            }
+            else if (info.spot.kind === 'toilet') {
+              info.placed.used += 1
+              guest.toiletUrge = 0
+              guest.fatigue = Math.max(0, guest.fatigue - needsConfig.toiletFatigueRelief)
+              guest.image.setVisible(true)
+            }
+            info.stage = 'exit'
+            guest.progress = 0
+            guest.toX = info.front.x
+            guest.toY = info.front.y
+            guest.facing = directionOf(info.front.x - guest.fromX, info.front.y - guest.fromY)
+            return
+          }
+          guest.walked += step
+          guest.progress += step
+          if (guest.progress < 1) return
+          guest.progress = 0
+          guest.previousX = guest.fromX
+          guest.previousY = guest.fromY
+          guest.fromX = guest.toX
+          guest.fromY = guest.toY
+          releaseFacilityGuest(guest)
+        }
+
         const enterShop = (guest: Guest) => {
           guest.phase = 'shopping'
           guest.serviceRemaining = shopUseConfig.serviceDays
@@ -2755,12 +3087,19 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           if (placed.shop.category === 'food') guest.fullFood = true
           else guest.fullDrink = true
           guest.satiety = needsConfig.satietyMax
+          // 飲食するとトイレ欲求が発生する
+          guest.toiletUrge = Math.min(needsConfig.max, guest.toiletUrge + 1)
+          // 屋台型の商品はゴミが出る(独自仕様)
+          if (placed.shop.serviceStyle === 'stall') guest.trash += 1
           // 所持金がなくなった来園者は帰宅する
           if (guest.money <= 0) guest.leaveAtDay = elapsedDays
-          // 入口マスへ 1 マス出てから徘徊に戻る
+          // 店とは反対を向き、入口マスへ 1 マス出てから徘徊に戻る。
+          // progress を 1 にしておくと次の更新で待ち時間なく歩き出す
           const entrance = shopEntranceTile(placed.shop, placed.x, placed.y, placed.direction)
           guest.path = [entrance]
           guest.pathIndex = 0
+          guest.facing = placed.direction
+          guest.progress = 1
         }
 
         const spawnGuest = () => {
@@ -2782,6 +3121,10 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             fullFood: false,
             fullDrink: false,
             satiety: 0,
+            fatigue: 0,
+            trash: 0,
+            toiletUrge: 0,
+            facility: null,
             needTick: 0,
             seekCooldown: 0,
             targetShop: null,
@@ -2848,6 +3191,14 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
               guest.toY = guest.fromY
               return
             }
+            // 立ち止まったマスが設備の正面なら利用を試みる
+            if (!leaving && guest.paid) {
+              const spot = facilitySpots.get(tileKey(guest.fromX, guest.fromY))
+              if (spot && tryUseFacility(guest, spot)) return
+            }
+            // 通りかかった店の前で条件を満たせば気づいて入る(経路探索とは独立に毎回判定)。
+            // 見つけたらそのまま下の経路処理が店前の道への一歩を進める
+            if (!guest.targetShop) tryDiscoverShopAtEntrance(guest, leaving)
             // ショップへの経路の途中なら次のマスへ進む。終点(店の中心)に着いたら利用を始める
             if (guest.path) {
               if (guest.pathIndex >= guest.path.length) {
@@ -2866,7 +3217,8 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
                 const nextKey = tileKey(nextTile.x, nextTile.y)
                 if ((roads.has(nextKey) || stairsTiles.has(nextKey))
                   && (sameHeight(nextTile.x, nextTile.y, guest.fromX, guest.fromY)
-                    || stairsLink(guest.fromX, guest.fromY, nextTile.x, nextTile.y))) {
+                    || stairsLink(guest.fromX, guest.fromY, nextTile.x, nextTile.y))
+                  && stairsTraversable(guest.fromX, guest.fromY, nextTile.x, nextTile.y)) {
                   guest.pathIndex += 1
                   guest.toX = nextTile.x
                   guest.toY = nextTile.y
@@ -2878,8 +3230,8 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
                 guest.targetShop = null
               }
             }
-            // 空腹・渇きがしきい値に達していたら行き先のショップを探す
-            if (!leaving && guest.paid && !guest.targetShop && guest.seekCooldown <= 0) {
+            // 空腹・渇きがしきい値に達していたら行き先のショップを探す(経路探索が有効なときだけ)
+            if (guestRouteSearchEnabled && !leaving && guest.paid && !guest.targetShop && guest.seekCooldown <= 0) {
               const chosenPath = chooseShopTarget(guest)
               if (chosenPath && chosenPath.length > 0) {
                 guest.pathIndex = 1
@@ -2896,7 +3248,10 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             guest.toX = next.x
             guest.toY = next.y
           }
-          guest.facing = directionOf(guest.toX - guest.fromX, guest.toY - guest.fromY)
+          // その場に留まっている間(移動量ゼロ)は向きを変えない
+          if (guest.toX !== guest.fromX || guest.toY !== guest.fromY) {
+            guest.facing = directionOf(guest.toX - guest.fromX, guest.toY - guest.fromY)
+          }
         }
         // 看板前の客を目標地点へ近づける。バスに乗り込んだら true(呼び出し側が取り除く)
         const updateQueuedGuest = (guest: Guest, days: number) => {
@@ -3080,6 +3435,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             updateGuestNeeds(guest, days)
             if (guest.seekCooldown > 0) guest.seekCooldown = Math.max(0, guest.seekCooldown - days)
             if (guest.phase === 'walking') updateWalkingGuest(guest, guest.tilesPerDay * days)
+            else if (guest.phase === 'facility') updateFacilityGuest(guest, guest.tilesPerDay * days, days)
             else if (guest.phase === 'shopping') {
               guest.serviceRemaining -= days
               if (guest.serviceRemaining <= 0) finishShopping(guest)

@@ -97,8 +97,6 @@ GROUP_ASSETS = {
     "cliff-west-corner-1.png": (7, 1),
     "outside-cover-0.png": (16, 0),
     "outside-cover-1.png": (16, 1),
-    # 階段(オブジェクトコード 0x37〜0x42 の描画元)。コマと向きの対応は未確定
-    **{f"stairs-frame-{frame}.png": (12, frame) for frame in range(8)},
 }
 # 高さマップ: UNPACK.PAK リソース 392(0x188)+ 国番号
 HEIGHT_RESOURCE_BASE = 392

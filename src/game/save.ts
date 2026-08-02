@@ -12,7 +12,7 @@ export type SaveMode = 'standard' | 'scenario'
 /** 園の中身。来園者とバスは保存せず、再開時は無人の状態から始める */
 export type ParkSnapshot = {
   roads: string[]
-  stairs?: Array<{ x: number, y: number }>
+  stairs?: Array<{ x: number, y: number, dx?: number, dy?: number }>
   queues: Array<{ key: string, state: number }>
   attractions: Array<{
     id: string

@@ -40,9 +40,18 @@ TERRAIN_DESTINATION = ROOT / "public" / "assets" / "park"
 TERRAIN_CONFIG = ROOT / "src" / "config" / "terrainObjects.json"
 
 # 地形オブジェクト → (グループ番号, 使うフレーム)
-# アルバトロスの敷地中央に置かれる階段と踊り場。オブジェクトコード 0x59 / 0x5a が
-# `FUN_801d9694` 経由でグループ 20 のフレーム 0 / 1 を引く。
-TERRAIN_OBJECTS = {"stairs": (20, [0, 1])}
+# 階段(オブジェクトコード 0x59〜0x5C)。`FUN_801d9694` の番号 22〜25 が
+# グループ 20 のフレーム 0〜3 を引く。0 = 北へ上る、1 = 南へ上る、2 = 東へ上る、
+# 3 = 西へ上る(2/3 は左右反転ペア)。アルバトロスの敷地中央の階段と踊り場は 0 / 1 の流用。
+TERRAIN_OBJECTS = {"stairs": (20, [0, 1, 2, 3])}
+
+# 来園者が利用する設備の設定(design/16 の仕様。生成時に facilities.json へ引き継ぐ)
+FACILITY_USES = {
+    7: {"kind": "toilet", "capacityUses": 3},
+    8: {"kind": "toilet", "capacityUses": 6},
+    15: {"kind": "trash", "capacityUses": 3},
+    16: {"kind": "bench"},
+}
 
 # バス。`FUN_800b0710(handle, バージョン/5 + 0x15)` がグループ 21(バージョン 1〜5)/
 # 22(6〜10)を選び、フレーム 0(先頭)を基準点に、フレーム 1(中間)をバージョン数だけ
@@ -299,7 +308,8 @@ def main() -> None:
 
     terrain = {
         "_note": [
-            "アルバトロス用の階段。外側の配列 = シーナリー種(seasons.json の countryScenery)。",
+            "階段。外側の配列 = シーナリー種(seasons.json の countryScenery)。",
+            "番号 0 = 北へ上る、1 = 南へ上る、2 = 東へ上る、3 = 西へ上る。アルバトロスは 0 / 1 を使う。",
             "画像は /assets/park/facilities/{種}/terrain-stairs-{番号}-s{季節}.png。",
         ],
         "stairs": stairs_by_kind,
@@ -343,6 +353,8 @@ def main() -> None:
             "imageOffsetsByKind": offsets_by_kind,
             "assetBase": asset_base,
         }
+        if facility_id in FACILITY_USES:
+            entry = {"id": slug, "use": FACILITY_USES[facility_id], **{k: v for k, v in entry.items() if k != "id"}}
         if facility_id == 6:
             entry["countryNames"] = COUNTRY_PLANTS
             entry["countryConstructionCosts"] = country_costs
