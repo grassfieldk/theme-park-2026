@@ -2741,11 +2741,32 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           }
           return renderDepthAt('facility', tileX, tileY)
         }
+        // 客の表示位置(マス単位)。tileOffset はマス内の足元の基準点、
+        // benchSeatOffsets は着席中だけ足すずらし(添字は向き 0=下 1=上 2=左 3=右)
+        const guestDisplay = guestConfig.display
+        // ベンチの席にいる客の重なり順。上(奥)向きのベンチだけ背もたれが客より手前に
+        // 来るので絵のすぐ後ろに、それ以外の向きは絵のすぐ前に描く
+        const benchSeatDepth = (guest: Guest, tileX: number, tileY: number) => {
+          const info = guest.facility
+          if (!info || info.spot.kind !== 'bench') return null
+          if (tileX !== info.spot.tile.x || tileY !== info.spot.tile.y) return null
+          const placed = placedFacilities.get(info.spot.key)
+          if (!placed) return null
+          const anchor = parseKey(info.spot.key)
+          const depth = renderDepthAt('facility', anchor.x, anchor.y)
+          // 同じベンチの 2 席の間でも位置深度の原則(左・下が前)を守る。
+          // 下・上向きは横並びで左の席、左・右向きは縦並びで下の席が前
+          const front = placed.frame <= 1 ? tileX === anchor.x : tileY === anchor.y
+          const bias = front ? 2 : 1
+          return placed.frame === 1 ? depth - 3 + bias : depth + bias
+        }
         const drawGuest = (guest: Guest, x: number, y: number, tileX: number, tileY: number, lift = heightAt(tileX, tileY)) => {
-          const base = flatPoint(x + 0.4, y + 0.52)
-          guest.image.setFrame(guest.facing * 4 + (Math.floor(guest.walked * 4) % 4))
+          // 着席中は専用ポーズ(シート 5 行目、列 = 方向)で固定。それ以外は歩行 4 コマ送り
+          const seated = guest.facility?.spot.kind === 'bench' && guest.facility.stage === 'stay'
+          const base = flatPoint(x + guestDisplay.tileOffset.x, y + guestDisplay.tileOffset.y)
+          guest.image.setFrame(seated ? 16 + guest.facing : guest.facing * 4 + (Math.floor(guest.walked * 4) % 4))
             .setPosition(base.x - guest.bank.anchorX, base.y - lift * terrain.heightStepPx - guest.bank.anchorY)
-            .setDepth(guestDepthAt(tileX, tileY))
+            .setDepth(benchSeatDepth(guest, tileX, tileY) ?? guestDepthAt(tileX, tileY))
         }
         const placeGuestImage = (guest: Guest) => {
           if (guest.phase === 'shopping') {
@@ -2756,6 +2777,12 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           }
           if (guest.phase !== 'walking' && guest.phase !== 'facility') {
             drawGuest(guest, guest.queueX, guest.queueY, Math.round(guest.queueX), Math.round(guest.queueY))
+            return
+          }
+          // ベンチ着席中だけ、席マスの通常位置に benchSeatOffsets を足した位置に描く
+          if (guest.facility?.stage === 'stay' && guest.facility.spot.kind === 'bench') {
+            const offset = guestDisplay.benchSeatOffsets[guest.facing]
+            drawGuest(guest, guest.fromX + offset.x, guest.fromY + offset.y, guest.fromX, guest.fromY)
             return
           }
           // 投影はマス座標に対して線形なので、マス座標で補間してから投影してよい。

@@ -1,7 +1,8 @@
 {
  "_note": [
   "来園者のスプライト。set は国ごとの PEOPLE ファイル、bank は見た目の種類。",
-  "1 枚のシートに 4 行(方向)× 4 列(コマ)。方向は 0=下 1=上 2=左 3=右。",
+  "1 枚のシートに 4 行(方向)× 4 列(コマ)+ 5 行目に着席ポーズ(列 = 方向)。",
+  "方向は 0=下 1=上 2=左 3=右。",
   "画像は /assets/park/guests/{set}-{bank}.png。anchorX/anchorY は足元の基準点。"
  ],
  "peopleSetByCountry": {
@@ -34,45 +35,45 @@
    },
    {
     "bank": 2,
-    "frameWidth": 18,
+    "frameWidth": 19,
     "frameHeight": 25,
-    "anchorX": 8,
+    "anchorX": 9,
     "anchorY": 24
    },
    {
     "bank": 3,
-    "frameWidth": 18,
+    "frameWidth": 19,
     "frameHeight": 25,
-    "anchorX": 8,
+    "anchorX": 9,
     "anchorY": 24
    },
    {
     "bank": 4,
     "frameWidth": 26,
-    "frameHeight": 25,
+    "frameHeight": 26,
     "anchorX": 13,
-    "anchorY": 24
+    "anchorY": 25
    },
    {
     "bank": 5,
     "frameWidth": 26,
-    "frameHeight": 25,
+    "frameHeight": 26,
     "anchorX": 13,
-    "anchorY": 24
+    "anchorY": 25
    },
    {
     "bank": 6,
-    "frameWidth": 28,
-    "frameHeight": 28,
+    "frameWidth": 29,
+    "frameHeight": 30,
     "anchorX": 14,
-    "anchorY": 25
+    "anchorY": 27
    },
    {
     "bank": 7,
-    "frameWidth": 28,
-    "frameHeight": 28,
+    "frameWidth": 29,
+    "frameHeight": 30,
     "anchorX": 14,
-    "anchorY": 25
+    "anchorY": 27
    }
   ],
   "b": [
@@ -92,45 +93,45 @@
    },
    {
     "bank": 2,
-    "frameWidth": 18,
+    "frameWidth": 19,
     "frameHeight": 25,
-    "anchorX": 8,
+    "anchorX": 9,
     "anchorY": 24
    },
    {
     "bank": 3,
-    "frameWidth": 18,
+    "frameWidth": 19,
     "frameHeight": 25,
-    "anchorX": 8,
+    "anchorX": 9,
     "anchorY": 24
    },
    {
     "bank": 4,
     "frameWidth": 26,
-    "frameHeight": 25,
+    "frameHeight": 26,
     "anchorX": 13,
-    "anchorY": 24
+    "anchorY": 25
    },
    {
     "bank": 5,
     "frameWidth": 26,
-    "frameHeight": 25,
+    "frameHeight": 26,
     "anchorX": 13,
-    "anchorY": 24
+    "anchorY": 25
    },
    {
     "bank": 6,
-    "frameWidth": 28,
-    "frameHeight": 28,
+    "frameWidth": 29,
+    "frameHeight": 30,
     "anchorX": 14,
-    "anchorY": 25
+    "anchorY": 27
    },
    {
     "bank": 7,
-    "frameWidth": 28,
-    "frameHeight": 28,
+    "frameWidth": 29,
+    "frameHeight": 30,
     "anchorX": 14,
-    "anchorY": 25
+    "anchorY": 27
    }
   ],
   "c": [
@@ -150,45 +151,45 @@
    },
    {
     "bank": 2,
-    "frameWidth": 18,
+    "frameWidth": 19,
     "frameHeight": 25,
-    "anchorX": 8,
+    "anchorX": 9,
     "anchorY": 24
    },
    {
     "bank": 3,
-    "frameWidth": 18,
+    "frameWidth": 19,
     "frameHeight": 25,
-    "anchorX": 8,
+    "anchorX": 9,
     "anchorY": 24
    },
    {
     "bank": 4,
     "frameWidth": 26,
-    "frameHeight": 25,
+    "frameHeight": 26,
     "anchorX": 13,
-    "anchorY": 24
+    "anchorY": 25
    },
    {
     "bank": 5,
     "frameWidth": 26,
-    "frameHeight": 25,
+    "frameHeight": 26,
     "anchorX": 13,
-    "anchorY": 24
+    "anchorY": 25
    },
    {
     "bank": 6,
-    "frameWidth": 28,
-    "frameHeight": 28,
+    "frameWidth": 29,
+    "frameHeight": 30,
     "anchorX": 14,
-    "anchorY": 25
+    "anchorY": 27
    },
    {
     "bank": 7,
-    "frameWidth": 28,
-    "frameHeight": 28,
+    "frameWidth": 29,
+    "frameHeight": 30,
     "anchorX": 14,
-    "anchorY": 25
+    "anchorY": 27
    }
   ]
  }

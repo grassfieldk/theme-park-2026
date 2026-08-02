@@ -42,6 +42,9 @@ PEOPLE_BY_COUNTRY = {
 }
 WALK_GROUPS = 4
 WALK_FRAMES = 4
+# ベンチ着席ポーズ。FUN_801e6554 の着席分岐がアニメ 8 を設定し、コマ番号 = 方向
+# (DAT_801fae08 経由で歩行グループと同じ並び)で固定表示する
+SEAT_GROUP = 8
 FLIP_X = 0x0100
 # 来園者は種別 1〜8 = バンク 0〜7。`DAT_801facb7`(種別 → 人数)が 1,1,1,1,2,2,3,3 で、
 # キッズ・ヤング = 1 人、カップル = 2 人、ファミリー = 3 人に対応する。
@@ -106,7 +109,13 @@ def read_part(bank: bytes, vram: list[int], offset: int):
     return flags, offset_x, offset_y, image
 
 
-def compose_frame(bank: bytes, vram: list[int], descriptor_offset: int):
+def compose_frame(
+    bank: bytes,
+    vram: list[int],
+    descriptor_offset: int,
+    squeeze_family: bool = False,
+    child_order: str | None = None,
+):
     parts = []
     offset = descriptor_offset
     for _guard in range(32):
@@ -115,6 +124,19 @@ def compose_frame(bank: bytes, vram: list[int], descriptor_offset: int):
         if flags & 0x8000:
             break
         offset += 20
+    # ファミリー(3 人)の着席は親 2 人(両端の部品)をそれぞれ中点へ半分寄せて
+    # 間隔を半分にする(独自調整。原作の間隔だと横幅が広すぎるため)。子供は中央のまま
+    if squeeze_family and len(parts) == 3:
+        (x0, y0, im0), (x2, y2, im2) = parts[0], parts[2]
+        mid_x, mid_y = (x0 + x2) / 2, (y0 + y2) / 2
+        parts[0] = (round((x0 + mid_x) / 2), round((y0 + mid_y) / 2), im0)
+        parts[2] = (round((x2 + mid_x) / 2), round((y2 + mid_y) / 2), im2)
+        # 着席の子供(中央の部品)の描画順を歩行時と揃える。
+        # 下向きは手前(最後)、上向きは奥(最初)。左右向きは歩行時も中央のまま
+        if child_order == "front":
+            parts.append(parts.pop(1))
+        elif child_order == "back":
+            parts.insert(0, parts.pop(1))
     left = min(-offset_x for offset_x, _oy, _im in parts)
     top = min(-offset_y for _ox, offset_y, _im in parts)
     right = max(-offset_x + im.width for offset_x, _oy, im in parts)
@@ -180,11 +202,23 @@ def main() -> None:
                     composed.append(compose_frame(body, vram, descriptor))
             if not composed:
                 continue
+            # 着席ポーズ(グループ 8)を 5 行目に足す。コマ順は歩行の方向順と同じ
+            if group_count > SEAT_GROUP + 1:
+                table = group_offsets[SEAT_GROUP]
+                if (group_offsets[SEAT_GROUP + 1] - table) // 4 == WALK_FRAMES:
+                    for frame in range(WALK_FRAMES):
+                        descriptor = struct.unpack_from("<H", body, table + frame * 4 + 2)[0]
+                        composed.append(compose_frame(
+                            body, vram, descriptor,
+                            squeeze_family=True,
+                            child_order=("front", "back", None, None)[frame],
+                        ))
+            rows = len(composed) // WALK_FRAMES
             anchor_x = max(anchor for _im, anchor, _ay in composed)
             anchor_y = max(anchor for _im, _ax, anchor in composed)
             cell_width = max(anchor_x + image.width - ax for image, ax, _ay in composed)
             cell_height = max(anchor_y + image.height - ay for image, _ax, ay in composed)
-            sheet = Image.new("RGBA", (cell_width * WALK_FRAMES, cell_height * WALK_GROUPS))
+            sheet = Image.new("RGBA", (cell_width * WALK_FRAMES, cell_height * rows))
             for position, (image, ax, ay) in enumerate(composed):
                 column = position % WALK_FRAMES
                 row = position // WALK_FRAMES
@@ -203,7 +237,8 @@ def main() -> None:
     config = {
         "_note": [
             "来園者のスプライト。set は国ごとの PEOPLE ファイル、bank は見た目の種類。",
-            "1 枚のシートに 4 行(方向)× 4 列(コマ)。方向は 0=下 1=上 2=左 3=右。",
+            "1 枚のシートに 4 行(方向)× 4 列(コマ)+ 5 行目に着席ポーズ(列 = 方向)。",
+            "方向は 0=下 1=上 2=左 3=右。",
             "画像は /assets/park/guests/{set}-{bank}.png。anchorX/anchorY は足元の基準点。",
         ],
         "peopleSetByCountry": PEOPLE_BY_COUNTRY,

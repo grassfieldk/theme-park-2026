@@ -13,6 +13,15 @@
   "input": { "initialRepeatDelayMs": 400, "repeatIntervalMs": 60, "cameraPanPixelsPerSecond": 480 },
   "time": { "defaultSpeedIndex": 1, "framesPerSecond": 60 },
   "guests": {
+    "display": {
+      "tileOffset": { "x": 0.45, "y": 0.52 },
+      "benchSeatOffsets": [
+        { "x": 0.05, "y": -0.3 },
+        { "x": 0.05, "y": 0.6 },
+        { "x": 0.25, "y": 0.25 },
+        { "x": -0.35, "y": 0.25 }
+      ]
+    },
     "admissionFee": 100,
     "stayDays": 18,
     "money": { "base": 600, "randomRange": 100 },
