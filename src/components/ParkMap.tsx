@@ -758,15 +758,25 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           ((y === top || y === bottom) && x >= left && x <= right && !(y === bottom && x === gateCenter))
           || ((x === left || x === right) && y >= top && y <= bottom)
         )
-        // 設置できる範囲は敷地の x 範囲(外周ブロック除く)と、その下の園外(マップ下端手前まで)。
-        // 上と左右は敷地の外に出ない
-        const isBuildableTile = (x: number, y: number) => (
-          x > left && x < right
-          && y > top && y < gridHeight - 1
-          && !isOuterEdge(x, y)
-          && !isLockedEntranceTile(x, y)
-          && !occupiedByAttraction.has(tileKey(x, y))
+        // 敷地の中。外周ブロックの内側と、そこへ通り抜けるゲート下の中央マス
+        const isInsidePark = (x: number, y: number) => x > left && x < right && y > top && y <= bottom
+        // 入口ゲートが建っているマス。固定歩道の間と、その両脇(外へ 1 マスずつ広い)
+        const isGateStructureTile = (x: number, y: number) => (
+          (y === gateRow || y === gateRow + 1) && x >= gateLeft - 1 && x <= gateLeft + 5
         )
+        // 設置できるのは敷地の x 範囲(外周ブロック除く)と、その下の園外 3 行
+        // (外周のすぐ下からバス待ち列の手前まで)。園外は敷地より横に 1 マスずつ広い
+        const buildBottomRow = gateRow + 2
+        const isBuildableTile = (x: number, y: number) => {
+          const outside = y > bottom
+          return x >= (outside ? left : left + 1)
+            && x <= (outside ? right : right - 1)
+            && y > top && y <= buildBottomRow
+            && !isOuterEdge(x, y)
+            && !isLockedEntranceTile(x, y)
+            && !isGateStructureTile(x, y)
+            && !occupiedByAttraction.has(tileKey(x, y))
+        }
         const hasRoadConnection = (x: number, y: number) => (
           roads.has(tileKey(x, y)) || stairsTiles.has(tileKey(x, y)) || isLockedEntranceTile(x, y)
         )
@@ -1559,9 +1569,9 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         // カメラ追従に使う、マスに丸める前のカーソル位置(画面座標)
         const cursorTrack = { x: 0, y: 0 }
         const setCursorTile = (x: number, y: number) => {
-          // カーソルは敷地の x 範囲内、上は敷地の上端、下は園外を経てマップ下端手前まで
+          // カーソルが動けるのは設置できる範囲まで。上は敷地の上端、下は園外の 3 行目
           cursorPosition.x = Phaser.Math.Clamp(x, left, right)
-          cursorPosition.y = Phaser.Math.Clamp(y, top, gridHeight - 2)
+          cursorPosition.y = Phaser.Math.Clamp(y, top, buildBottomRow)
           const position = point(cursorPosition.x, cursorPosition.y)
           cursor.setPosition(position.x, position.y)
           drawCursor()
@@ -1725,7 +1735,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           const nextY = Phaser.Math.Clamp(
             cursorPosition.y + (direction === 'up' ? -1 : direction === 'down' ? 1 : 0),
             top,
-            gridHeight - 2,
+            buildBottomRow,
           )
           placeCursor(nextX, nextY)
           keepCursorVisible(direction === 'left' || direction === 'right' ? 'x' : 'y')
@@ -2453,7 +2463,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         const selectTileAtPointer = (pointer: Phaser.Input.Pointer) => {
           const world = pointer.positionToCamera(camera) as Phaser.Math.Vector2
           const { x, y } = tileAtWorld(world.x, world.y)
-          if (x < left || x > right || y < top || y >= gridHeight - 1) return false
+          if (x < left || x > right || y < top || y > buildBottomRow) return false
           // 入口・出口を置いている間は敷地の縁から離れられない
           if (pendingAttraction && activeAttractionBuildStep !== 'body') snapAccessCursor(x, y)
           else placeCursor(x, y)
@@ -3360,7 +3370,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         // 隣接マスの目印を調べる処理に相当。ショップ前の道はその店の一部なので、
         // そこにつながるマスを通ったときに見つかる)
         const tryDiscoverShopAtEntrance = (guest: Guest, leaving: boolean): boolean => {
-          if (leaving || !guest.paid) return false
+          if (leaving) return false
           const placed = shopEntranceSpots.get(tileKey(guest.fromX, guest.fromY))
           if (!placed) return false
           const { shop } = placed
@@ -3547,7 +3557,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         }
         // 立ち止まったマスの隣の整列歩道(入口につながっているもの)から列に入るかどうか
         const tryJoinAttractionQueue = (guest: Guest, leaving: boolean): boolean => {
-          if (leaving || !guest.paid) return false
+          if (leaving) return false
           for (const { x: ox, y: oy } of guestNeighbours) {
             const x = guest.fromX + ox
             const y = guest.fromY + oy
@@ -3943,8 +3953,11 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             guest.previousY = guest.fromY
             guest.fromX = guest.toX
             guest.fromY = guest.toY
-            // 敷地内に道路が敷かれ、実際にそこへ足を踏み入れた時点で入場料を払う
-            if (!guest.paid && roads.has(tileKey(guest.fromX, guest.fromY))) {
+            // 敷地内に道路が敷かれ、実際にそこへ足を踏み入れた時点で入場料を払う。
+            // 園外の道路では払わない(払うまでは固定歩道も歩けるので、ゲートへ戻れる)
+            if (!guest.paid
+              && roads.has(tileKey(guest.fromX, guest.fromY))
+              && isInsidePark(guest.fromX, guest.fromY)) {
               guest.paid = true
               guest.money -= guestConfig.admissionFee
               admissionHandler.current(guestConfig.admissionFee)
@@ -3959,8 +3972,8 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
               guest.toY = guest.fromY
               return
             }
-            // 立ち止まったマスが設備の正面なら利用を試みる
-            if (!leaving && guest.paid) {
+            // 立ち止まったマスが設備の正面なら利用を試みる(入園前の園外でも使う)
+            if (!leaving) {
               const spot = facilitySpots.get(tileKey(guest.fromX, guest.fromY))
               if (spot && tryUseFacility(guest, spot)) return
             }
@@ -4001,7 +4014,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
               }
             }
             // 空腹・渇きがしきい値に達していたら行き先のショップを探す(経路探索が有効なときだけ)
-            if (guestRouteSearchEnabled && !leaving && guest.paid && !guest.targetShop && guest.seekCooldown <= 0) {
+            if (guestRouteSearchEnabled && !leaving && !guest.targetShop && guest.seekCooldown <= 0) {
               const chosenPath = chooseShopTarget(guest)
               if (chosenPath && chosenPath.length > 0) {
                 guest.pathIndex = 1
