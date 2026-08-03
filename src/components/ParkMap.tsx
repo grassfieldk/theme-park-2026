@@ -8,6 +8,7 @@ import game from '../config/game.json'
 import type { MenuAction } from './GamepadController'
 import busSprites from '../config/busSprites.json'
 import guestSprites from '../config/guestSprites.json'
+import riderSprites from '../config/riderSprites.json'
 import pointers from '../config/pointers.json'
 import seasons from '../config/seasons.json'
 import terrain from '../config/terrain.json'
@@ -80,6 +81,17 @@ type PlacedAttraction = {
   width: number
   height: number
   cost: number
+  attraction: Attraction
+  // 定員(人数)と運転時間の設定値。どちらも運転設定メニューで変えられる想定の初期値。
+  // 乗車中の客は Guest 型がシーン内で定義されるため rideStates 側で持つ
+  capacity: number
+  rideTimeSetting: number
+  // 表示中のコマと、そのコマの残り表示フレーム数
+  animFrame: number
+  animRemaining: number
+  // 乗車客の姿勢を決める位相カウンタと、席ごとに描いている絵
+  riderPhase: number
+  riderImages: Phaser.GameObjects.Image[]
   image: Phaser.GameObjects.Image
   baseImages: Phaser.GameObjects.Image[]
   entrance?: AccessPoint
@@ -190,6 +202,10 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
     const peopleSet = (peopleSetByCountry[country.id] ?? 'A').toLowerCase()
     const guestBanks = (guestSprites.sets as Record<string, GuestBank[]>)[peopleSet] ?? []
     const guestBankById = new Map(guestBanks.map((bank) => [bank.bank, bank]))
+    // 乗車中の客の見た目。歩行バンクごとに、人数ぶんの乗車用バンクが決まっている
+    type RiderBank = { frameWidth: number, frameHeight: number, anchorX: number, anchorY: number }
+    const riderBanks = (riderSprites.sets as Record<string, Record<string, RiderBank>>)[peopleSet] ?? {}
+    const riderCodesByBank = riderSprites.codesByBank
     // 木・設備・階段・バスの絵柄は国ごとのシーナリー種で決まる
     const sceneryKind = (seasons.countryScenery as Record<string, number>)[country.id] ?? 0
 
@@ -217,7 +233,11 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
       }
 
       preload() {
-        attractions.forEach((attraction) => this.load.image(attraction.id, `${attraction.asset}?v=4`))
+        attractions.forEach((attraction) => {
+          for (let frame = 0; frame < attraction.animation.frames; frame += 1) {
+            this.load.image(`${attraction.id}-${frame}`, `${attraction.assetBase}-${frame}.png?v=5`)
+          }
+        })
         shops.forEach((shop) => {
           for (let direction = 0; direction < shop.directions; direction += 1) {
             this.load.image(`shop-${shop.id}-${direction}`, `${shop.assetBase}-${direction}.png`)
@@ -243,6 +263,13 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           this.load.spritesheet(`guest-${bank.bank}`, `/assets/park/guests/${peopleSet}-${bank.bank}.png`, {
             frameWidth: bank.frameWidth,
             frameHeight: bank.frameHeight,
+          })
+        })
+        // 乗車中の客は姿勢の数だけ横に並んだシート
+        Object.entries(riderBanks).forEach(([bank, size]) => {
+          this.load.spritesheet(`rider-${bank}`, `/assets/park/riders/${peopleSet}-${bank}.png`, {
+            frameWidth: size.frameWidth,
+            frameHeight: size.frameHeight,
           })
         })
         // 季節で色が変わる地形パーツは [通常|秋|冬] の 3 コマのシート
@@ -347,6 +374,13 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         })
         const attractionForm = (attraction: Attraction) => (
           seasonIndex >= 2 ? seasonalFormByBase.get(attraction.id) ?? attraction : attraction
+        )
+        // アトラクションの絵はコマ送りのアニメ。グループが 2 つ以上ある種類は
+        // 先頭が停止中、末尾が稼働中の絵で、1 つしかない種類は稼働中だけ送る
+        const attractionFrameKey = (id: string, frame: number) => `${id}-${frame}`
+        const idleGroupOf = (attraction: Attraction) => attraction.animation.groups[0]
+        const runGroupOf = (attraction: Attraction) => (
+          attraction.animation.groups[attraction.animation.groups.length - 1]
         )
 
         const ground = this.add.renderTexture(0, 0, worldWidth, worldHeight).setOrigin(0)
@@ -612,9 +646,12 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             const base = attractions.find((entry) => entry.id === placed.id)
             if (!base) return
             const form = attractionForm(base)
-            if (placed.image.texture.key === form.id) return
+            const idle = idleGroupOf(form)
+            if (placed.image.texture.key === attractionFrameKey(form.id, idle.from)) return
             const position = attractionImagePosition(base, form.imageOffset, placed.x, placed.y + base.height - 1)
-            placed.image.setTexture(form.id).setPosition(position.x, position.y)
+            placed.animFrame = idle.from
+            placed.animRemaining = idle.durations[0]
+            placed.image.setTexture(attractionFrameKey(form.id, idle.from)).setPosition(position.x, position.y)
           })
         }
 
@@ -642,6 +679,8 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         const queueRoads = new Set<string>()
         const queueStates = new Map<string, number>()
         const queueRoadImages = new Map<string, Phaser.GameObjects.Image>()
+        // アトラクションごとの「整列歩道の各マス → 入口前までの歩数」。列が変わったら作り直す
+        const queueDistanceCache = new Map<PlacedAttraction, Map<string, number>>()
         const occupiedByAttraction = new Set<string>()
         const placedAttractions: PlacedAttraction[] = []
         let pendingAttraction: PlacedAttraction | null = null
@@ -787,6 +826,8 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           })
         }
         const redrawQueueTiles = (x: number, y: number) => {
+          // 列の形が変わった可能性があるので、入口までの歩数の対応表は作り直す
+          queueDistanceCache.clear()
           const affectedTiles = [[x, y], [x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]]
           affectedTiles.forEach(([tileX, tileY]) => {
             const key = tileKey(tileX, tileY)
@@ -944,6 +985,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         // 敷地の地面。多くは盛り上げ台座だけだが、水系は台座の内側が水面になり、
         // アルバトロスは中央に階段が立つ(原作 FUN_801f4a48)
         const attractionGround = (attraction: Attraction) => ('ground' in attraction ? attraction.ground : 'raised')
+        const attractionUseConfig = game.attractionUse
         const pondFacility = facilities.find((facility) => facility.id === 'pond')!
         // 水面の 9 分割はイケのフレームをそのまま使う(原作テーブル DAT_801f92a2)
         const waterFrameAt = (offsetX: number, offsetY: number, width: number, height: number) => {
@@ -1345,7 +1387,10 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
                 ? facilityFootprint(placingFacility)
                 : null
           const previewImage = placingBody
-            ? { key: attractionForm(attraction).id, offset: attractionForm(attraction).imageOffset }
+            ? {
+              key: attractionFrameKey(attractionForm(attraction).id, idleGroupOf(attractionForm(attraction)).from),
+              offset: attractionForm(attraction).imageOffset,
+            }
             : placingShopBody
               ? { key: `shop-${shop.id}-${shopDirection}`, offset: shop.imageOffsets[shopDirection] }
               : placingFacility
@@ -1820,16 +1865,24 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             })
           }
           const form = attractionForm(attraction)
+          const idle = idleGroupOf(form)
           const imagePosition = attractionImagePosition(attraction, form.imageOffset, bottomX, bottomY)
-          const image = this.add.image(imagePosition.x, imagePosition.y, form.id)
+          const image = this.add.image(imagePosition.x, imagePosition.y, attractionFrameKey(form.id, idle.from))
             .setOrigin(0).setDepth(renderDepthAt('facility', bottomX, bottomY))
           const placed: PlacedAttraction = {
             id: attraction.id,
+            attraction,
             x,
             y,
             width: attraction.width,
             height: attraction.height,
             cost: attraction.constructionCost,
+            capacity: attraction.capacity,
+            animFrame: idle.from,
+            animRemaining: idle.durations[0],
+            riderPhase: 0,
+            riderImages: [],
+            rideTimeSetting: attractionUseConfig.rideTimeSetting,
             image,
             baseImages,
           }
@@ -2044,8 +2097,9 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             tile.y + offsetY,
             `facility-${accessStep}-frame-${frame}`,
           ).setOrigin(accessStep === 'entrance' ? 0.5 : 0, accessStep === 'entrance' ? 1 : 0)
-            // 入口・出口は設備や建物と同じ扱い。前後は位置だけで決まる
-            .setDepth(renderDepthAt('facility', drawn.x, drawn.y)))
+            // 入口・出口は設備や建物と同じ扱い。前後は位置だけで決まる。
+            // 出口は降りた客が立つマスに描くので、客より奥にする
+            .setDepth(renderDepthAt('facility', drawn.x, drawn.y) - (accessStep === 'exit' ? 1 : 0)))
           // 入口は敷地の外のマスを 1 つ占める。出口は敷地の内側なのですでに占有済み
           if (accessStep === 'entrance') occupiedByAttraction.add(tileKey(x, y))
           return { x, y, frame, image }
@@ -2207,9 +2261,16 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         const removeAttraction = (placed: PlacedAttraction) => {
           const index = placedAttractions.indexOf(placed)
           if (index >= 0) placedAttractions.splice(index, 1)
+          // 乗車中の客は支払いなしで降ろし、並んでいた客は列を離れさせる
+          releaseRiders(placed, false)
+          guests.forEach((guest) => {
+            if (guest.targetAttraction === placed && guest.phase === 'queueing') abandonQueue(guest)
+          })
+          queueDistanceCache.delete(placed)
           markFootprint(placed, false)
           if (placed.entrance) occupiedByAttraction.delete(tileKey(placed.entrance.x, placed.entrance.y))
           placed.image.destroy()
+          placed.riderImages.forEach((image) => image.destroy())
           placed.baseImages.forEach((image) => image.destroy())
           placed.entrance?.image.destroy()
           placed.exit?.image.destroy()
@@ -2614,8 +2675,9 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         // 来園者は 4 つの段階を一方向に進む。
         // walking(マス目を歩く) → queued(看板前で待つ) → toSign(看板へ) → toBus(バスへ乗り消える)
         // shopping はショップ利用中で、姿を消して一定時間後に walking へ戻る。
-        // facility は設備(ゴミバコ・トイレ・ベンチ)の利用中
-        type GuestPhase = 'walking' | 'queued' | 'toSign' | 'toBus' | 'shopping' | 'facility'
+        // facility は設備(ゴミバコ・トイレ・ベンチ)の利用中。
+        // queueing は整列歩道でアトラクション待ち、riding は乗車中(姿を消す)
+        type GuestPhase = 'walking' | 'queued' | 'toSign' | 'toBus' | 'shopping' | 'facility' | 'queueing' | 'riding'
         type Guest = {
           type: number
           bank: GuestBank
@@ -2647,6 +2709,11 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           targetShop: PlacedShop | null
           path: Array<{ x: number, y: number }> | null
           pathIndex: number
+          // 並んでいる・乗っているアトラクションと、待機値(0〜250)。
+          // ridden は乗車済みのアトラクション(種類 ID)で、同じ種類には乗り直さない
+          targetAttraction: PlacedAttraction | null
+          queueWait: number
+          ridden: Set<string>
           // shopping 中の残り日数
           serviceRemaining: number
           // walking 用。マス間を progress(0〜1)で補間する
@@ -2769,13 +2836,15 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             .setDepth(benchSeatDepth(guest, tileX, tileY) ?? guestDepthAt(tileX, tileY))
         }
         const placeGuestImage = (guest: Guest) => {
+          // 乗車中は姿を消しているので描かない
+          if (guest.phase === 'riding') return
           if (guest.phase === 'shopping') {
             // 店舗型は中にいるので描かない。屋台型は店先に立ち止まった姿を描く
             if (guest.targetShop?.shop.serviceStyle === 'building') return
             drawGuest(guest, guest.fromX, guest.fromY, guest.fromX, guest.fromY)
             return
           }
-          if (guest.phase !== 'walking' && guest.phase !== 'facility') {
+          if (guest.phase !== 'walking' && guest.phase !== 'facility' && guest.phase !== 'queueing') {
             drawGuest(guest, guest.queueX, guest.queueY, Math.round(guest.queueX), Math.round(guest.queueY))
             return
           }
@@ -2849,7 +2918,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         const shopUseConfig = game.shopUse
         const shopUseEffectOf = (shop: Shop) => ('useEffect' in shop ? shop.useEffect : null)
         const updateGuestNeeds = (guest: Guest, days: number) => {
-          if (guest.phase === 'shopping') return
+          if (guest.phase === 'shopping' || guest.phase === 'riding') return
           guest.needTick += days * needsConfig.updatesPerDay
           while (guest.needTick >= 1) {
             guest.needTick -= 1
@@ -2976,6 +3045,309 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         }
         // 入口マスから店を向く方向(店の向きの反対)
         const facingByShopDirection = [1, 0, 3, 2]
+        // ---- アトラクションの利用 ----
+        // 原作仕様: 立ち止まるたびに隣の整列歩道を調べ、条件(未乗車の種類・所持金・確率)を
+        // 満たすと列に入る。列は 1 マス 1 組で入口へ詰め、待機値が 250 に達すると離脱する。
+        // 入口に着くと定員まで乗り込んで姿を消し、乗車が終わると全員が出口の前に出て
+        // 乗車額を払う(原作 FUN_801eddc4 / FUN_801ec200 / FUN_801e6950)
+        const occupiedQueueTiles = new Set<string>()
+        // 受け入れ(loading)と稼働(running)を繰り返す。受け入れ中に定員に達するか
+        // 受け入れ時間が過ぎると入口を閉めて動き出し、乗車時間が過ぎると全員降ろす
+        // seats は席順に並んだ乗車中の客の見た目(乗車用バンク番号)
+        type RideState = {
+          aboard: Guest[], people: number, seats: number[],
+          phase: 'loading' | 'running', timer: number,
+        }
+        // 稼働 1 回の日数。原作は (運転時間の設定値 + 1) × 一段あたりの時間
+        const rideDaysOf = (placed: PlacedAttraction) => (
+          (placed.rideTimeSetting + 1) * attractionUseConfig.rideDaysPerStep
+        )
+        // アニメのコマを切り替える。絵が変わったら true
+        const showAttractionFrame = (placed: PlacedAttraction, frame: number, remaining: number) => {
+          placed.animRemaining = remaining
+          if (placed.animFrame === frame) return false
+          placed.animFrame = frame
+          placed.image.setTexture(attractionFrameKey(attractionForm(placed.attraction).id, frame))
+          return true
+        }
+        // 動き出すとき。停止中の絵を持つ種類は稼働中の絵の先頭へ切り替え、
+        // 1 つしかない種類は止めた続きから送る(そうしないと乗車客との位相がずれる)
+        const startRideAnimation = (placed: PlacedAttraction) => {
+          const form = attractionForm(placed.attraction)
+          if (form.animation.groups.length < 2) return
+          const group = runGroupOf(form)
+          showAttractionFrame(placed, group.from, group.durations[0])
+        }
+        // 止まったら停止中の絵に戻す。グループが 1 つしかない種類は止めた位置のまま
+        const stopRideAnimation = (placed: PlacedAttraction) => {
+          const form = attractionForm(placed.attraction)
+          if (form.animation.groups.length < 2) return
+          const group = idleGroupOf(form)
+          showAttractionFrame(placed, group.from, group.durations[0])
+        }
+        // 稼働中のコマ送り。繰り返す絵は先頭へ戻り、繰り返さない絵は最後のコマで止まる。
+        // 絵が変わったら true
+        const advanceRideAnimation = (placed: PlacedAttraction, days: number) => {
+          const group = runGroupOf(attractionForm(placed.attraction))
+          if (group.count <= 1) return false
+          let index = placed.animFrame - group.from
+          if (index < 0 || index >= group.count) index = 0
+          let remaining = placed.animRemaining - days * attractionUseConfig.animationFramesPerDay
+          while (remaining <= 0) {
+            if (index + 1 < group.count) index += 1
+            else if (group.loop) index = 0
+            else {
+              remaining = 0
+              break
+            }
+            remaining += group.durations[index]
+          }
+          return showAttractionFrame(placed, group.from + index, remaining)
+        }
+        // 施設の基準点(絵をマスに合わせる位置)。乗車客の位置はここからのずれで決まる
+        const attractionAnchorPoint = (placed: PlacedAttraction) => point(
+          placed.x + Math.floor(placed.width / 2),
+          placed.y + placed.height - 1 - Math.floor(placed.height / 2),
+        )
+        const ridersOf = (placed: PlacedAttraction) => {
+          const form = attractionForm(placed.attraction)
+          return 'riders' in form ? form.riders : null
+        }
+        // 席ごとに、位相から決まる姿勢で客を描く(原作 FUN_801f8094)
+        const drawRiders = (placed: PlacedAttraction) => {
+          const riders = ridersOf(placed)
+          const seats = rideStates.get(placed)?.seats ?? []
+          const shown = riders ? Math.min(seats.length, riders.seatPhases.length) : 0
+          const anchor = attractionAnchorPoint(placed)
+          const depth = renderDepthAt('facility', placed.x, placed.y + placed.height - 1) + 1
+          for (let seat = 0; seat < shown; seat += 1) {
+            const pose = riders!.poses[(placed.riderPhase + riders!.seatPhases[seat]) % riders!.poses.length]
+            const bank = riderBanks[String(seats[seat])]
+            if (!pose || !bank) {
+              placed.riderImages[seat]?.setVisible(false)
+              continue
+            }
+            const key = `rider-${seats[seat]}`
+            const image = placed.riderImages[seat] ?? this.add.image(0, 0, key).setOrigin(0)
+            placed.riderImages[seat] = image
+            image.setTexture(key, pose.frame)
+              .setPosition(anchor.x + pose.x - bank.anchorX, anchor.y + pose.y - bank.anchorY)
+              // 先の席ほど手前(原作は先に描いたものが手前に来る)
+              .setDepth(depth + shown - seat)
+              .setVisible(true)
+          }
+          for (let seat = shown; seat < placed.riderImages.length; seat += 1) {
+            placed.riderImages[seat].setVisible(false)
+          }
+        }
+        const rideStates = new Map<PlacedAttraction, RideState>()
+        const queueDistanceMap = (placed: PlacedAttraction) => {
+          const cached = queueDistanceCache.get(placed)
+          if (cached) return cached
+          const map = new Map<string, number>()
+          if (placed.entranceQueueKey && queueRoads.has(placed.entranceQueueKey)) {
+            map.set(placed.entranceQueueKey, 0)
+            const frontier = [parseKey(placed.entranceQueueKey)]
+            for (let head = 0; head < frontier.length; head += 1) {
+              const current = frontier[head]
+              const currentState = queueStates.get(tileKey(current.x, current.y))
+              if (currentState === undefined) continue
+              const distance = map.get(tileKey(current.x, current.y))!
+              for (const neighbor of queueNeighbors) {
+                // 絵に出ているつながりに沿ってだけ辿る。隣り合っただけのマスへは進まないので、
+                // コの字に折り返した列でも近道せずに道順どおりに並ぶ
+                if ((queueMaskByState[currentState] & neighbor.mask) === 0) continue
+                const x = current.x + neighbor.x
+                const y = current.y + neighbor.y
+                const key = tileKey(x, y)
+                if (map.has(key) || !queueRoads.has(key)) continue
+                if (!sameHeight(x, y, current.x, current.y)) continue
+                map.set(key, distance + 1)
+                frontier.push({ x, y })
+              }
+            }
+          }
+          queueDistanceCache.set(placed, map)
+          return map
+        }
+        // 列で立ち止まっているときに向く方向。列の道順で 1 つ前のマス(先頭は入口)を向く
+        const queueFacingAt = (placed: PlacedAttraction, x: number, y: number) => {
+          const distances = queueDistanceMap(placed)
+          const distance = distances.get(tileKey(x, y))
+          if (distance === undefined) return null
+          if (distance === 0) {
+            const entrance = placed.entrance
+            return entrance ? directionOf(entrance.x - x, entrance.y - y) : null
+          }
+          const ahead = queueNeighbors.find((neighbor) => (
+            distances.get(tileKey(x + neighbor.x, y + neighbor.y)) === distance - 1
+          ))
+          return ahead ? directionOf(ahead.x, ahead.y) : null
+        }
+        const rideStateOf = (placed: PlacedAttraction) => {
+          let state = rideStates.get(placed)
+          if (!state) {
+            state = { aboard: [], people: 0, seats: [], phase: 'loading', timer: 0 }
+            rideStates.set(placed, state)
+          }
+          return state
+        }
+        // 立ち止まったマスの隣の整列歩道(入口につながっているもの)から列に入るかどうか
+        const tryJoinAttractionQueue = (guest: Guest, leaving: boolean): boolean => {
+          if (leaving || !guest.paid) return false
+          for (const { x: ox, y: oy } of guestNeighbours) {
+            const x = guest.fromX + ox
+            const y = guest.fromY + oy
+            const key = tileKey(x, y)
+            if (!queueRoads.has(key) || occupiedQueueTiles.has(key)) continue
+            if (!sameHeight(guest.fromX, guest.fromY, x, y)) continue
+            const placed = placedAttractions.find((attraction) => (
+              attraction.exit && queueDistanceMap(attraction).has(key)
+            ))
+            if (!placed || guest.ridden.has(placed.id)) continue
+            if (attractionUseConfig.initialPrice * guestConfig.types[guest.type].people > guest.money) continue
+            if (Math.random() >= attractionUseConfig.joinChance) continue
+            occupiedQueueTiles.add(key)
+            guest.targetAttraction = placed
+            guest.phase = 'queueing'
+            guest.progress = 0
+            guest.toX = x
+            guest.toY = y
+            guest.facing = directionOf(ox, oy)
+            return true
+          }
+          return false
+        }
+        // 列から離れて徘徊に戻す。待ちくたびれて離れた場合(goHome)は待機値を戻して帰宅へ向かう
+        const abandonQueue = (guest: Guest, goHome = false) => {
+          occupiedQueueTiles.delete(tileKey(guest.fromX, guest.fromY))
+          occupiedQueueTiles.delete(tileKey(guest.toX, guest.toY))
+          guest.targetAttraction = null
+          guest.phase = 'walking'
+          if (!goHome) return
+          guest.queueWait = guestConfig.types[guest.type].queueWaitBase
+          guest.leaveAtDay = elapsedDays
+        }
+        // 出口の絵のあるマス(敷地のすぐ外)。出口が未設置なら敷地の手前中央
+        const rideExitSpot = (placed: PlacedAttraction) => (
+          placed.exit
+            ? accessDrawTile('exit', placed.exit.x, placed.exit.y, placed.exit.frame)
+            : { x: placed.x + (placed.width >> 1), y: placed.y + placed.height }
+        )
+        // 乗車終了。全員を出口の前に出し、乗車額を払って徘徊に戻す。
+        // 撤去で降ろすときは支払いなし
+        const releaseRiders = (placed: PlacedAttraction, charge: boolean) => {
+          const state = rideStates.get(placed)
+          if (!state) return
+          stopRideAnimation(placed)
+          const spot = rideExitSpot(placed)
+          const facing = placed.exit?.frame ?? 0
+          state.aboard.forEach((guest) => {
+            if (charge) {
+              const payment = attractionUseConfig.initialPrice * guestConfig.types[guest.type].people
+              guest.money -= payment
+              shopSaleHandler.current(payment)
+              guest.ridden.add(placed.id)
+              guest.fatigue = Math.max(0, guest.fatigue - attractionUseConfig.rideFatigueRelief)
+              // 乗り終えると待ちくたびれ具合が種類ごとの初期値に戻る
+              guest.queueWait = guestConfig.types[guest.type].queueWaitBase
+              if (guest.money <= 0) guest.leaveAtDay = elapsedDays
+            }
+            guest.targetAttraction = null
+            guest.phase = 'walking'
+            guest.image.setVisible(true)
+            guest.fromX = spot.x
+            guest.fromY = spot.y
+            guest.toX = spot.x
+            guest.toY = spot.y
+            guest.previousX = spot.x
+            guest.previousY = spot.y
+            guest.progress = 1
+            guest.facing = facing
+          })
+          rideStates.delete(placed)
+          drawRiders(placed)
+        }
+        // 列の先頭で乗り込む。入口のマスへは踏み込まず、その手前で姿を消す
+        const boardRide = (guest: Guest, placed: PlacedAttraction) => {
+          occupiedQueueTiles.delete(tileKey(guest.fromX, guest.fromY))
+          const state = rideStateOf(placed)
+          // 最初の 1 組が乗った時点から受け入れ時間を数え始める
+          if (state.aboard.length === 0) state.timer = attractionUseConfig.loadTimeoutDays
+          state.aboard.push(guest)
+          state.people += guestConfig.types[guest.type].people
+          state.seats.push(...(riderCodesByBank[guest.bank.bank] ?? []))
+          // 定員に達したら受け入れを締め切ってすぐ動き出す
+          if (state.people >= placed.capacity) {
+            state.phase = 'running'
+            state.timer = rideDaysOf(placed)
+            startRideAnimation(placed)
+          }
+          guest.phase = 'riding'
+          guest.image.setVisible(false)
+          drawRiders(placed)
+        }
+        // 整列歩道を入口へ向かって進む客を 1 フレーム分進める
+        const updateQueueingGuest = (guest: Guest, step: number, days: number) => {
+          const placed = guest.targetAttraction
+          if (!placed || !placedAttractions.includes(placed)) {
+            abandonQueue(guest)
+            return
+          }
+          // 待機値は列にいる間ずっと増え、限界に達すると待ちくたびれて帰宅へ向かう。
+          // 帰宅時刻が来ても列は離れず、乗り終えてから帰る
+          guest.queueWait = Math.min(needsConfig.max, guest.queueWait + days * needsConfig.updatesPerDay)
+          if (guest.queueWait >= needsConfig.max) {
+            abandonQueue(guest, true)
+            return
+          }
+          const entrance = placed.entrance
+          if (guest.toX !== guest.fromX || guest.toY !== guest.fromY) {
+            guest.walked += step
+            guest.progress += step
+            if (guest.progress < 1) return
+            guest.progress = 0
+            occupiedQueueTiles.delete(tileKey(guest.fromX, guest.fromY))
+            guest.previousX = guest.fromX
+            guest.previousY = guest.fromY
+            guest.fromX = guest.toX
+            guest.fromY = guest.toY
+          }
+          const distances = queueDistanceMap(placed)
+          const distance = distances.get(tileKey(guest.fromX, guest.fromY))
+          // 列や入口・出口がなくなっていたら離脱する
+          if (distance === undefined || !entrance || !placed.exit) {
+            abandonQueue(guest)
+            return
+          }
+          if (distance === 0) {
+            // 入口の前。受け入れ中で定員に空きがあればここで乗り込む。
+            // 稼働中は入口が閉まっているので次の受け入れまで待つ
+            const state = rideStates.get(placed)
+            const boardable = (!state || state.phase === 'loading')
+              && (state?.people ?? 0) + guestConfig.types[guest.type].people <= placed.capacity
+            if (boardable) {
+              guest.facing = directionOf(entrance.x - guest.fromX, entrance.y - guest.fromY)
+              boardRide(guest, placed)
+              return
+            }
+          }
+          else {
+            for (const { x: ox, y: oy } of guestNeighbours) {
+              const x = guest.fromX + ox
+              const y = guest.fromY + oy
+              const key = tileKey(x, y)
+              if (distances.get(key) !== distance - 1 || occupiedQueueTiles.has(key)) continue
+              occupiedQueueTiles.add(key)
+              guest.toX = x
+              guest.toY = y
+              guest.facing = directionOf(ox, oy)
+              return
+            }
+          }
+          // 前が詰まっているので動かない。立ち止まっている間は列の道順のほうを向く
+          guest.facing = queueFacingAt(placed, guest.fromX, guest.fromY) ?? guest.facing
+        }
         // ---- 設備の利用 ----
         // 立ち止まったマスが設備の正面なら条件を確認して利用マスへ 1 マス進む。
         // トイレは欲求 100 以上、ベンチは乱数(1〜100)が疲労 ÷ 5 未満のときに座る。
@@ -3157,6 +3529,9 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             targetShop: null,
             path: null,
             pathIndex: 0,
+            targetAttraction: null,
+            queueWait: guestConfig.types[type].queueWaitBase,
+            ridden: new Set(),
             serviceRemaining: 0,
             fromX: gateCrossing.x,
             fromY: gateCrossing.y,
@@ -3226,6 +3601,8 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             // 通りかかった店の前で条件を満たせば気づいて入る(経路探索とは独立に毎回判定)。
             // 見つけたらそのまま下の経路処理が店前の道への一歩を進める
             if (!guest.targetShop) tryDiscoverShopAtEntrance(guest, leaving)
+            // 隣に整列歩道があれば並び始める(店と同じ立ち止まり判定)
+            if (!guest.targetShop && !guest.path && tryJoinAttractionQueue(guest, leaving)) return
             // ショップへの経路の途中なら次のマスへ進む。終点(店の中心)に着いたら利用を始める
             if (guest.path) {
               if (guest.pathIndex >= guest.path.length) {
@@ -3456,12 +3833,33 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             }
           }
           updateBus(days)
+          // 受け入れ中は時間切れで入口を閉めて動き出し、稼働が終わったら全員降ろす
+          rideStates.forEach((state, placed) => {
+            if (state.aboard.length === 0) return
+            if (state.phase === 'running') {
+              // 原作は「今の位相で客を描いてから、絵が変わっていれば位相を 1 進める」
+              const changed = advanceRideAnimation(placed, days)
+              drawRiders(placed)
+              const riders = ridersOf(placed)
+              if (changed && riders) placed.riderPhase = (placed.riderPhase + 1) % riders.period
+            }
+            state.timer -= days
+            if (state.timer > 0) return
+            if (state.phase === 'loading') {
+              state.phase = 'running'
+              state.timer = rideDaysOf(placed)
+              startRideAnimation(placed)
+            }
+            else releaseRiders(placed, true)
+          })
 
           for (let index = guests.length - 1; index >= 0; index -= 1) {
             const guest = guests[index]
             updateGuestNeeds(guest, days)
             if (guest.seekCooldown > 0) guest.seekCooldown = Math.max(0, guest.seekCooldown - days)
             if (guest.phase === 'walking') updateWalkingGuest(guest, guest.tilesPerDay * days)
+            else if (guest.phase === 'queueing') updateQueueingGuest(guest, guest.tilesPerDay * days, days)
+            else if (guest.phase === 'riding') { /* 降車はアトラクション側の時間経過で行う */ }
             else if (guest.phase === 'facility') updateFacilityGuest(guest, guest.tilesPerDay * days, days)
             else if (guest.phase === 'shopping') {
               guest.serviceRemaining -= days

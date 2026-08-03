@@ -1,38 +1,2510 @@
 [
-  { "id": "bungee-jump", "name": "バンジージャンプ", "width": 5, "height": 5, "constructionCost": 1000, "maintenanceCost": 3000, "imageOffset": { "x": 32, "y": 96 }, "asset": "/assets/park/attractions/bungee-jump-0.png" },
-  { "id": "g-shock", "name": "Ｇショック", "width": 5, "height": 5, "constructionCost": 6000, "maintenanceCost": 6000, "imageOffset": { "x": 6, "y": 75 }, "asset": "/assets/park/attractions/g-shock-0.png" },
-  { "id": "space-dive", "name": "スペースダイブ", "width": 5, "height": 5, "constructionCost": 5000, "maintenanceCost": 6000, "imageOffset": { "x": 30, "y": 77 }, "asset": "/assets/park/attractions/space-dive-0.png" },
-  { "id": "dome-zero", "name": "ドームゼロ", "width": 5, "height": 5, "constructionCost": 9000, "maintenanceCost": 8000, "imageOffset": { "x": 26, "y": 70 }, "asset": "/assets/park/attractions/dome-zero-0.png" },
-  { "id": "pirate-ship", "name": "パイレーツシップ", "width": 5, "height": 5, "constructionCost": 5000, "maintenanceCost": 2000, "imageOffset": { "x": 32, "y": 46 }, "asset": "/assets/park/attractions/pirate-ship-0.png" },
-  { "id": "space-shuttle", "name": "スペースシャトル", "width": 5, "height": 5, "constructionCost": 3000, "maintenanceCost": 4000, "imageOffset": { "x": 17, "y": 40 }, "asset": "/assets/park/attractions/space-shuttle-0.png" },
-  { "id": "magic-carpet", "name": "マジックカーペット", "width": 5, "height": 5, "constructionCost": 5000, "maintenanceCost": 6000, "imageOffset": { "x": 33, "y": 43 }, "asset": "/assets/park/attractions/magic-carpet-0.png" },
-  { "id": "hammer-swing", "name": "ハンマースイング", "width": 5, "height": 5, "constructionCost": 7000, "maintenanceCost": 8000, "imageOffset": { "x": 30, "y": 60 }, "asset": "/assets/park/attractions/hammer-swing-0.png" },
-  { "id": "coffee-cup", "name": "コーヒーカップ", "width": 5, "height": 5, "constructionCost": 1000, "maintenanceCost": 2000, "imageOffset": { "x": 32, "y": 54 }, "asset": "/assets/park/attractions/coffee-cup-0.png" },
-  { "id": "merry-go-round", "name": "メリーゴーランド", "width": 5, "height": 5, "constructionCost": 3000, "maintenanceCost": 5000, "imageOffset": { "x": 28, "y": 66 }, "asset": "/assets/park/attractions/merry-go-round-0.png" },
-  { "id": "joy-plane", "name": "ジョイプレーン", "width": 5, "height": 5, "constructionCost": 4000, "maintenanceCost": 4000, "imageOffset": { "x": 40, "y": 57 }, "asset": "/assets/park/attractions/joy-plane-0.png" },
-  { "id": "parasol-chair", "name": "パラソルチェアー", "width": 5, "height": 5, "constructionCost": 4000, "maintenanceCost": 4000, "imageOffset": { "x": 27, "y": 67 }, "asset": "/assets/park/attractions/parasol-chair-0.png" },
-  { "id": "super-spinner", "name": "スーパースピナー", "width": 5, "height": 5, "constructionCost": 5000, "maintenanceCost": 4000, "imageOffset": { "x": 20, "y": 48 }, "asset": "/assets/park/attractions/super-spinner-0.png" },
-  { "id": "wild-roll", "name": "ワイルドロール", "width": 5, "height": 5, "constructionCost": 6000, "maintenanceCost": 6000, "imageOffset": { "x": 32, "y": 46 }, "asset": "/assets/park/attractions/wild-roll-0.png" },
-  { "id": "dish-spin", "name": "ディッシュスピン", "width": 5, "height": 5, "constructionCost": 7000, "maintenanceCost": 6000, "imageOffset": { "x": 36, "y": 68 }, "asset": "/assets/park/attractions/dish-spin-0.png" },
-  { "id": "ferris-wheel", "name": "かんらんしゃ", "width": 5, "height": 5, "constructionCost": 2000, "maintenanceCost": 2000, "imageOffset": { "x": 19, "y": 76 }, "asset": "/assets/park/attractions/ferris-wheel-0.png" },
-  { "id": "sky-tower", "name": "スカイタワー", "width": 5, "height": 5, "constructionCost": 3000, "maintenanceCost": 5000, "imageOffset": { "x": 30, "y": 78 }, "asset": "/assets/park/attractions/sky-tower-0.png" },
-  { "id": "great-wheel", "name": "グレートホイール", "width": 5, "height": 5, "constructionCost": 7000, "maintenanceCost": 9000, "imageOffset": { "x": 25, "y": 96 }, "asset": "/assets/park/attractions/great-wheel-0.png" },
-  { "id": "albatross", "name": "アルバトロス", "width": 9, "height": 9, "constructionCost": 5000, "maintenanceCost": 7000, "imageOffset": { "x": 29, "y": 15 }, "asset": "/assets/park/attractions/albatross-0.png", "ground": "stairs" },
-  { "id": "virtual-flight", "name": "バーチャルフライト", "width": 5, "height": 5, "constructionCost": 9000, "maintenanceCost": 6000, "imageOffset": { "x": 9, "y": 70 }, "asset": "/assets/park/attractions/virtual-flight-0.png" },
-  { "id": "jigoku-meguri", "name": "ジゴクメグリ", "width": 5, "height": 5, "constructionCost": 2000, "maintenanceCost": 3000, "imageOffset": { "x": 21, "y": 59 }, "asset": "/assets/park/attractions/jigoku-meguri-0.png" },
-  { "id": "haunted-mansion", "name": "ホーンテッドマンション", "width": 5, "height": 5, "constructionCost": 8000, "maintenanceCost": 6000, "imageOffset": { "x": 24, "y": 62 }, "asset": "/assets/park/attractions/haunted-mansion-0.png" },
-  { "id": "inferno", "name": "インフェルノ", "width": 5, "height": 5, "constructionCost": 7000, "maintenanceCost": 6000, "imageOffset": { "x": 32, "y": 66 }, "asset": "/assets/park/attractions/inferno-0.png" },
-  { "id": "athletic", "name": "アスレチック", "width": 5, "height": 5, "constructionCost": 4000, "maintenanceCost": 3000, "imageOffset": { "x": 35, "y": 56 }, "asset": "/assets/park/attractions/athletic-0.png" },
-  { "id": "circus-show", "name": "サーカスショー", "width": 7, "height": 7, "constructionCost": 8000, "maintenanceCost": 5000, "imageOffset": { "x": 40, "y": 55 }, "asset": "/assets/park/attractions/circus-show-0.png" },
-  { "id": "virtual-wars", "name": "バーチャルウォーズ", "width": 5, "height": 5, "constructionCost": 8000, "maintenanceCost": 8000, "imageOffset": { "x": 26, "y": 54 }, "asset": "/assets/park/attractions/virtual-wars-0.png" },
-  { "id": "maze", "name": "メイロ", "width": 5, "height": 5, "constructionCost": 7000, "maintenanceCost": 3000, "imageOffset": { "x": 39, "y": 26 }, "asset": "/assets/park/attractions/maze-0.png" },
-  { "id": "ninja-house", "name": "ニンジャやしき", "width": 5, "height": 5, "constructionCost": 7000, "maintenanceCost": 5000, "imageOffset": { "x": 27, "y": 60 }, "asset": "/assets/park/attractions/ninja-house-0.png" },
-  { "id": "marine-show", "name": "マリンショー", "width": 7, "height": 7, "constructionCost": 9900, "maintenanceCost": 5000, "imageOffset": { "x": 65, "y": 57 }, "asset": "/assets/park/attractions/marine-show-0.png" },
-  { "id": "fantasy-castle", "name": "ファンタジーキャッスル", "width": 7, "height": 7, "constructionCost": 9900, "maintenanceCost": 9000, "imageOffset": { "x": 44, "y": 77 }, "asset": "/assets/park/attractions/fantasy-castle-0.png" },
-  { "id": "oedo-castle", "name": "おおえどキャッスル", "width": 7, "height": 7, "constructionCost": 9900, "maintenanceCost": 7000, "imageOffset": { "x": 63, "y": 69 }, "asset": "/assets/park/attractions/oedo-castle-0.png" },
-  { "id": "pool-skate-rink", "name": "プール・スケートリンク", "width": 6, "height": 6, "constructionCost": 9900, "maintenanceCost": 7000, "imageOffset": { "x": 47, "y": 49 }, "asset": "/assets/park/attractions/pool-skate-rink-0.png" },
-  { "id": "skate-rink-pool", "name": "スケートリンク・プール", "width": 6, "height": 6, "constructionCost": 9900, "maintenanceCost": 7000, "imageOffset": { "x": 52, "y": 50 }, "asset": "/assets/park/attractions/skate-rink-pool-0.png", "seasonalFormOf": "pool-skate-rink" },
-  { "id": "boat-dock", "name": "ボートのりば", "width": 9, "height": 9, "constructionCost": 8000, "maintenanceCost": 2000, "imageOffset": { "x": 27, "y": 22 }, "asset": "/assets/park/attractions/boat-dock-0.png", "ground": "water" },
-  { "id": "mississippi-cruise", "name": "ミシシッピークルーズ", "width": 9, "height": 9, "constructionCost": 9000, "maintenanceCost": 5000, "imageOffset": { "x": 27, "y": 34 }, "asset": "/assets/park/attractions/mississippi-cruise-0.png", "ground": "water" },
-  { "id": "treasure-island", "name": "トレジャーアイランド", "width": 6, "height": 6, "constructionCost": 6000, "maintenanceCost": 3000, "imageOffset": { "x": 49, "y": 49 }, "asset": "/assets/park/attractions/treasure-island-0.png", "ground": "water" }
+ {
+  "id": "bungee-jump",
+  "name": "バンジージャンプ",
+  "width": 5,
+  "height": 5,
+  "constructionCost": 1000,
+  "maintenanceCost": 3000,
+  "capacity": 4,
+  "imageOffset": {
+   "x": 39,
+   "y": 108
+  },
+  "assetBase": "/assets/park/attractions/bungee-jump",
+  "animation": {
+   "frames": 16,
+   "groups": [
+    {
+     "from": 0,
+     "count": 1,
+     "loop": false,
+     "durations": [
+      8
+     ]
+    },
+    {
+     "from": 1,
+     "count": 15,
+     "loop": false,
+     "durations": [
+      50,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      50
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "id": "g-shock",
+  "name": "Ｇショック",
+  "width": 5,
+  "height": 5,
+  "constructionCost": 6000,
+  "maintenanceCost": 6000,
+  "capacity": 5,
+  "imageOffset": {
+   "x": 6,
+   "y": 75
+  },
+  "assetBase": "/assets/park/attractions/g-shock",
+  "animation": {
+   "frames": 4,
+   "groups": [
+    {
+     "from": 0,
+     "count": 4,
+     "loop": true,
+     "durations": [
+      8,
+      8,
+      8,
+      8
+     ]
+    }
+   ]
+  },
+  "riders": {
+   "period": 4,
+   "seatPhases": [
+    0,
+    4,
+    8
+   ],
+   "poses": [
+    {
+     "x": 5,
+     "y": 5,
+     "frame": 1
+    },
+    {
+     "x": 5,
+     "y": -13,
+     "frame": 1
+    },
+    {
+     "x": 5,
+     "y": -29,
+     "frame": 1
+    },
+    {
+     "x": 5,
+     "y": -13,
+     "frame": 1
+    },
+    {
+     "x": 15,
+     "y": 6,
+     "frame": 0
+    },
+    {
+     "x": 15,
+     "y": -10,
+     "frame": 0
+    },
+    {
+     "x": 15,
+     "y": -26,
+     "frame": 0
+    },
+    {
+     "x": 15,
+     "y": -10,
+     "frame": 0
+    },
+    {
+     "x": 25,
+     "y": 5,
+     "frame": 2
+    },
+    {
+     "x": 25,
+     "y": -13,
+     "frame": 2
+    },
+    {
+     "x": 25,
+     "y": -29,
+     "frame": 2
+    },
+    {
+     "x": 25,
+     "y": -13,
+     "frame": 2
+    }
+   ]
+  }
+ },
+ {
+  "id": "space-dive",
+  "name": "スペースダイブ",
+  "width": 5,
+  "height": 5,
+  "constructionCost": 5000,
+  "maintenanceCost": 6000,
+  "capacity": 5,
+  "imageOffset": {
+   "x": 30,
+   "y": 77
+  },
+  "assetBase": "/assets/park/attractions/space-dive",
+  "animation": {
+   "frames": 12,
+   "groups": [
+    {
+     "from": 0,
+     "count": 12,
+     "loop": true,
+     "durations": [
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8
+     ]
+    }
+   ]
+  },
+  "riders": {
+   "period": 12,
+   "seatPhases": [
+    0
+   ],
+   "poses": [
+    {
+     "x": 33,
+     "y": -53,
+     "frame": 5
+    },
+    {
+     "x": 33,
+     "y": -45,
+     "frame": 5
+    },
+    {
+     "x": 33,
+     "y": -32,
+     "frame": 5
+    },
+    {
+     "x": 31,
+     "y": -13,
+     "frame": 11
+    },
+    {
+     "x": 20,
+     "y": -6,
+     "frame": 6
+    },
+    {
+     "x": 9,
+     "y": -8,
+     "frame": 6
+    },
+    {
+     "x": -6,
+     "y": -8,
+     "frame": 6
+    },
+    {
+     "x": 9,
+     "y": -8,
+     "frame": 6
+    },
+    {
+     "x": 20,
+     "y": -6,
+     "frame": 6
+    },
+    {
+     "x": 31,
+     "y": -13,
+     "frame": 11
+    },
+    {
+     "x": 33,
+     "y": -32,
+     "frame": 5
+    },
+    {
+     "x": 33,
+     "y": -45,
+     "frame": 5
+    }
+   ]
+  }
+ },
+ {
+  "id": "dome-zero",
+  "name": "ドームゼロ",
+  "width": 5,
+  "height": 5,
+  "constructionCost": 9000,
+  "maintenanceCost": 8000,
+  "capacity": 7,
+  "imageOffset": {
+   "x": 26,
+   "y": 70
+  },
+  "assetBase": "/assets/park/attractions/dome-zero",
+  "animation": {
+   "frames": 4,
+   "groups": [
+    {
+     "from": 0,
+     "count": 1,
+     "loop": false,
+     "durations": [
+      8
+     ]
+    },
+    {
+     "from": 1,
+     "count": 3,
+     "loop": true,
+     "durations": [
+      8,
+      8,
+      8
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "id": "pirate-ship",
+  "name": "パイレーツシップ",
+  "width": 5,
+  "height": 5,
+  "constructionCost": 5000,
+  "maintenanceCost": 2000,
+  "capacity": 5,
+  "imageOffset": {
+   "x": 33,
+   "y": 53
+  },
+  "assetBase": "/assets/park/attractions/pirate-ship",
+  "animation": {
+   "frames": 8,
+   "groups": [
+    {
+     "from": 0,
+     "count": 8,
+     "loop": true,
+     "durations": [
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8
+     ]
+    }
+   ]
+  },
+  "riders": {
+   "period": 8,
+   "seatPhases": [
+    8,
+    0,
+    24,
+    16
+   ],
+   "poses": [
+    {
+     "x": 13,
+     "y": -10,
+     "frame": 5
+    },
+    {
+     "x": 8,
+     "y": -10,
+     "frame": 5
+    },
+    {
+     "x": 3,
+     "y": -9,
+     "frame": 11
+    },
+    {
+     "x": 8,
+     "y": -10,
+     "frame": 5
+    },
+    {
+     "x": 13,
+     "y": -10,
+     "frame": 5
+    },
+    {
+     "x": 17,
+     "y": -10,
+     "frame": 5
+    },
+    {
+     "x": 26,
+     "y": -13,
+     "frame": 12
+    },
+    {
+     "x": 17,
+     "y": -10,
+     "frame": 5
+    },
+    {
+     "x": 17,
+     "y": -4,
+     "frame": 5
+    },
+    {
+     "x": 13,
+     "y": -2,
+     "frame": 5
+    },
+    {
+     "x": 5,
+     "y": -6,
+     "frame": 11
+    },
+    {
+     "x": 13,
+     "y": -2,
+     "frame": 5
+    },
+    {
+     "x": 17,
+     "y": -4,
+     "frame": 5
+    },
+    {
+     "x": 21,
+     "y": -4,
+     "frame": 5
+    },
+    {
+     "x": 31,
+     "y": -8,
+     "frame": 12
+    },
+    {
+     "x": 21,
+     "y": -4,
+     "frame": 5
+    },
+    {
+     "x": 24,
+     "y": -12,
+     "frame": 5
+    },
+    {
+     "x": 17,
+     "y": -10,
+     "frame": 5
+    },
+    {
+     "x": 12,
+     "y": -8,
+     "frame": 11
+    },
+    {
+     "x": 17,
+     "y": -10,
+     "frame": 5
+    },
+    {
+     "x": 24,
+     "y": -12,
+     "frame": 5
+    },
+    {
+     "x": 27,
+     "y": -15,
+     "frame": 5
+    },
+    {
+     "x": 32,
+     "y": -19,
+     "frame": 12
+    },
+    {
+     "x": 27,
+     "y": -15,
+     "frame": 5
+    },
+    {
+     "x": 30,
+     "y": -7,
+     "frame": 5
+    },
+    {
+     "x": 20,
+     "y": -4,
+     "frame": 5
+    },
+    {
+     "x": 15,
+     "y": -2,
+     "frame": 11
+    },
+    {
+     "x": 20,
+     "y": -4,
+     "frame": 5
+    },
+    {
+     "x": 30,
+     "y": -7,
+     "frame": 5
+    },
+    {
+     "x": 31,
+     "y": -8,
+     "frame": 5
+    },
+    {
+     "x": 38,
+     "y": -14,
+     "frame": 12
+    },
+    {
+     "x": 31,
+     "y": -8,
+     "frame": 5
+    }
+   ]
+  }
+ },
+ {
+  "id": "space-shuttle",
+  "name": "スペースシャトル",
+  "width": 5,
+  "height": 5,
+  "constructionCost": 3000,
+  "maintenanceCost": 4000,
+  "capacity": 6,
+  "imageOffset": {
+   "x": 25,
+   "y": 73
+  },
+  "assetBase": "/assets/park/attractions/space-shuttle",
+  "animation": {
+   "frames": 8,
+   "groups": [
+    {
+     "from": 0,
+     "count": 8,
+     "loop": true,
+     "durations": [
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8
+     ]
+    }
+   ]
+  },
+  "riders": {
+   "period": 8,
+   "seatPhases": [
+    0,
+    8
+   ],
+   "poses": [
+    {
+     "x": 29,
+     "y": -5,
+     "frame": 7
+    },
+    {
+     "x": 44,
+     "y": -16,
+     "frame": 13
+    },
+    {
+     "x": 48,
+     "y": -25,
+     "frame": 8
+    },
+    {
+     "x": 39,
+     "y": -37,
+     "frame": 14
+    },
+    {
+     "x": 26,
+     "y": -38,
+     "frame": 9
+    },
+    {
+     "x": 12,
+     "y": -26,
+     "frame": 15
+    },
+    {
+     "x": 13,
+     "y": -18,
+     "frame": 10
+    },
+    {
+     "x": 16,
+     "y": -5,
+     "frame": 16
+    },
+    {
+     "x": 19,
+     "y": -2,
+     "frame": 7
+    },
+    {
+     "x": 38,
+     "y": -6,
+     "frame": 13
+    },
+    {
+     "x": 48,
+     "y": -14,
+     "frame": 8
+    },
+    {
+     "x": 49,
+     "y": -33,
+     "frame": 14
+    },
+    {
+     "x": 35,
+     "y": -40,
+     "frame": 9
+    },
+    {
+     "x": 18,
+     "y": -35,
+     "frame": 15
+    },
+    {
+     "x": 9,
+     "y": -26,
+     "frame": 10
+    },
+    {
+     "x": 7,
+     "y": -11,
+     "frame": 16
+    }
+   ]
+  }
+ },
+ {
+  "id": "magic-carpet",
+  "name": "マジックカーペット",
+  "width": 5,
+  "height": 5,
+  "constructionCost": 5000,
+  "maintenanceCost": 6000,
+  "capacity": 6,
+  "imageOffset": {
+   "x": 49,
+   "y": 59
+  },
+  "assetBase": "/assets/park/attractions/magic-carpet",
+  "animation": {
+   "frames": 8,
+   "groups": [
+    {
+     "from": 0,
+     "count": 8,
+     "loop": true,
+     "durations": [
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8
+     ]
+    }
+   ]
+  },
+  "riders": {
+   "period": 8,
+   "seatPhases": [
+    0,
+    8,
+    16,
+    24
+   ],
+   "poses": [
+    {
+     "x": 19,
+     "y": 11,
+     "frame": 5
+    },
+    null,
+    {
+     "x": 3,
+     "y": -3,
+     "frame": 5
+    },
+    {
+     "x": 8,
+     "y": -13,
+     "frame": 5
+    },
+    {
+     "x": 20,
+     "y": -17,
+     "frame": 5
+    },
+    {
+     "x": 33,
+     "y": -13,
+     "frame": 5
+    },
+    {
+     "x": 37,
+     "y": -3,
+     "frame": 5
+    },
+    {
+     "x": 31,
+     "y": 8,
+     "frame": 5
+    },
+    {
+     "x": 15,
+     "y": 4,
+     "frame": 5
+    },
+    {
+     "x": 1,
+     "y": -1,
+     "frame": 5
+    },
+    {
+     "x": -1,
+     "y": -10,
+     "frame": 5
+    },
+    {
+     "x": 3,
+     "y": -21,
+     "frame": 5
+    },
+    {
+     "x": 15,
+     "y": -24,
+     "frame": 5
+    },
+    {
+     "x": 27,
+     "y": -20,
+     "frame": 5
+    },
+    {
+     "x": 31,
+     "y": -10,
+     "frame": 5
+    },
+    {
+     "x": 26,
+     "y": 1,
+     "frame": 5
+    },
+    {
+     "x": 38,
+     "y": 11,
+     "frame": 5
+    },
+    {
+     "x": 25,
+     "y": 6,
+     "frame": 5
+    },
+    {
+     "x": 21,
+     "y": -3,
+     "frame": 5
+    },
+    {
+     "x": 25,
+     "y": -13,
+     "frame": 5
+    },
+    {
+     "x": 38,
+     "y": -17,
+     "frame": 5
+    },
+    {
+     "x": 51,
+     "y": -13,
+     "frame": 5
+    },
+    {
+     "x": 55,
+     "y": -3,
+     "frame": 5
+    },
+    {
+     "x": 53,
+     "y": 8,
+     "frame": 5
+    },
+    {
+     "x": 32,
+     "y": 4,
+     "frame": 5
+    },
+    {
+     "x": 20,
+     "y": -1,
+     "frame": 5
+    },
+    {
+     "x": 15,
+     "y": -10,
+     "frame": 5
+    },
+    {
+     "x": 20,
+     "y": -21,
+     "frame": 5
+    },
+    {
+     "x": 34,
+     "y": -24,
+     "frame": 5
+    },
+    {
+     "x": 44,
+     "y": -20,
+     "frame": 5
+    },
+    {
+     "x": 49,
+     "y": -10,
+     "frame": 5
+    },
+    {
+     "x": 47,
+     "y": 1,
+     "frame": 5
+    }
+   ]
+  }
+ },
+ {
+  "id": "hammer-swing",
+  "name": "ハンマースイング",
+  "width": 5,
+  "height": 5,
+  "constructionCost": 7000,
+  "maintenanceCost": 8000,
+  "capacity": 7,
+  "imageOffset": {
+   "x": 35,
+   "y": 84
+  },
+  "assetBase": "/assets/park/attractions/hammer-swing",
+  "animation": {
+   "frames": 8,
+   "groups": [
+    {
+     "from": 0,
+     "count": 8,
+     "loop": true,
+     "durations": [
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8
+     ]
+    }
+   ]
+  },
+  "riders": {
+   "period": 8,
+   "seatPhases": [
+    0,
+    8,
+    16
+   ],
+   "poses": [
+    {
+     "x": 4,
+     "y": 2,
+     "frame": 0
+    },
+    {
+     "x": -19,
+     "y": -13,
+     "frame": 4
+    },
+    {
+     "x": -23,
+     "y": -43,
+     "frame": 20
+    },
+    {
+     "x": -5,
+     "y": -67,
+     "frame": 23
+    },
+    null,
+    null,
+    null,
+    {
+     "x": 33,
+     "y": -4,
+     "frame": 3
+    },
+    {
+     "x": 17,
+     "y": 2,
+     "frame": 0
+    },
+    {
+     "x": -11,
+     "y": -6,
+     "frame": 4
+    },
+    {
+     "x": -23,
+     "y": -32,
+     "frame": 20
+    },
+    {
+     "x": -12,
+     "y": -63,
+     "frame": 23
+    },
+    null,
+    null,
+    null,
+    {
+     "x": 42,
+     "y": -12,
+     "frame": 3
+    },
+    {
+     "x": 30,
+     "y": 2,
+     "frame": 0
+    },
+    {
+     "x": -1,
+     "y": 2,
+     "frame": 4
+    },
+    {
+     "x": -23,
+     "y": -21,
+     "frame": 20
+    },
+    {
+     "x": -22,
+     "y": -56,
+     "frame": 23
+    },
+    null,
+    null,
+    null,
+    {
+     "x": 51,
+     "y": -19,
+     "frame": 3
+    }
+   ]
+  }
+ },
+ {
+  "id": "coffee-cup",
+  "name": "コーヒーカップ",
+  "width": 5,
+  "height": 5,
+  "constructionCost": 1000,
+  "maintenanceCost": 2000,
+  "capacity": 6,
+  "imageOffset": {
+   "x": 33,
+   "y": 54
+  },
+  "assetBase": "/assets/park/attractions/coffee-cup",
+  "animation": {
+   "frames": 6,
+   "groups": [
+    {
+     "from": 0,
+     "count": 6,
+     "loop": true,
+     "durations": [
+      8,
+      8,
+      8,
+      8,
+      8,
+      8
+     ]
+    }
+   ]
+  },
+  "riders": {
+   "period": 24,
+   "seatPhases": [
+    0,
+    6,
+    12,
+    18
+   ],
+   "poses": [
+    {
+     "x": 15,
+     "y": 2,
+     "frame": 17
+    },
+    {
+     "x": 26,
+     "y": 1,
+     "frame": 17
+    },
+    {
+     "x": 35,
+     "y": -1,
+     "frame": 17
+    },
+    {
+     "x": 42,
+     "y": -1,
+     "frame": 5
+    },
+    {
+     "x": 46,
+     "y": -4,
+     "frame": 5
+    },
+    {
+     "x": 46,
+     "y": -2,
+     "frame": 5
+    },
+    {
+     "x": 50,
+     "y": -9,
+     "frame": 5
+    },
+    {
+     "x": 46,
+     "y": -11,
+     "frame": 5
+    },
+    {
+     "x": 41,
+     "y": -15,
+     "frame": 5
+    },
+    {
+     "x": 35,
+     "y": -18,
+     "frame": 18
+    },
+    null,
+    null,
+    null,
+    {
+     "x": 3,
+     "y": -19,
+     "frame": 18
+    },
+    {
+     "x": -3,
+     "y": -16,
+     "frame": 18
+    },
+    {
+     "x": -8,
+     "y": -13,
+     "frame": 18
+    },
+    {
+     "x": -16,
+     "y": -13,
+     "frame": 7
+    },
+    {
+     "x": -16,
+     "y": -12,
+     "frame": 7
+    },
+    {
+     "x": -20,
+     "y": -8,
+     "frame": 7
+    },
+    {
+     "x": -16,
+     "y": -3,
+     "frame": 7
+    },
+    {
+     "x": -11,
+     "y": 0,
+     "frame": 7
+    },
+    {
+     "x": -6,
+     "y": 1,
+     "frame": 7
+    },
+    {
+     "x": 3,
+     "y": 2,
+     "frame": 17
+    },
+    {
+     "x": 6,
+     "y": 2,
+     "frame": 17
+    }
+   ]
+  }
+ },
+ {
+  "id": "merry-go-round",
+  "name": "メリーゴーランド",
+  "width": 5,
+  "height": 5,
+  "constructionCost": 3000,
+  "maintenanceCost": 5000,
+  "capacity": 5,
+  "imageOffset": {
+   "x": 28,
+   "y": 66
+  },
+  "assetBase": "/assets/park/attractions/merry-go-round",
+  "animation": {
+   "frames": 3,
+   "groups": [
+    {
+     "from": 0,
+     "count": 3,
+     "loop": true,
+     "durations": [
+      8,
+      8,
+      8
+     ]
+    }
+   ]
+  },
+  "riders": {
+   "period": 12,
+   "seatPhases": [
+    0,
+    3,
+    6,
+    9
+   ],
+   "poses": [
+    null,
+    null,
+    {
+     "x": 28,
+     "y": -3,
+     "frame": 1
+    },
+    {
+     "x": 17,
+     "y": 5,
+     "frame": 1
+    },
+    {
+     "x": 6,
+     "y": 6,
+     "frame": 1
+    },
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ]
+  }
+ },
+ {
+  "id": "joy-plane",
+  "name": "ジョイプレーン",
+  "width": 5,
+  "height": 5,
+  "constructionCost": 4000,
+  "maintenanceCost": 4000,
+  "capacity": 5,
+  "imageOffset": {
+   "x": 40,
+   "y": 57
+  },
+  "assetBase": "/assets/park/attractions/joy-plane",
+  "animation": {
+   "frames": 3,
+   "groups": [
+    {
+     "from": 0,
+     "count": 3,
+     "loop": true,
+     "durations": [
+      8,
+      8,
+      8
+     ]
+    }
+   ]
+  },
+  "riders": {
+   "period": 12,
+   "seatPhases": [
+    0,
+    3,
+    6,
+    9
+   ],
+   "poses": [
+    {
+     "x": -16,
+     "y": -15,
+     "frame": 17
+    },
+    {
+     "x": -12,
+     "y": -6,
+     "frame": 7
+    },
+    {
+     "x": 3,
+     "y": 0,
+     "frame": 7
+    },
+    {
+     "x": 20,
+     "y": 2,
+     "frame": 7
+    },
+    {
+     "x": 35,
+     "y": -3,
+     "frame": 7
+    },
+    {
+     "x": 45,
+     "y": -11,
+     "frame": 18
+    },
+    {
+     "x": 47,
+     "y": -18,
+     "frame": 18
+    },
+    {
+     "x": 39,
+     "y": -27,
+     "frame": 5
+    },
+    null,
+    null,
+    {
+     "x": -3,
+     "y": -28,
+     "frame": 5
+    },
+    {
+     "x": -13,
+     "y": -24,
+     "frame": 5
+    }
+   ]
+  }
+ },
+ {
+  "id": "parasol-chair",
+  "name": "パラソルチェアー",
+  "width": 5,
+  "height": 5,
+  "constructionCost": 4000,
+  "maintenanceCost": 4000,
+  "capacity": 6,
+  "imageOffset": {
+   "x": 29,
+   "y": 68
+  },
+  "assetBase": "/assets/park/attractions/parasol-chair",
+  "animation": {
+   "frames": 3,
+   "groups": [
+    {
+     "from": 0,
+     "count": 3,
+     "loop": true,
+     "durations": [
+      8,
+      8,
+      8
+     ]
+    }
+   ]
+  },
+  "riders": {
+   "period": 24,
+   "seatPhases": [
+    0,
+    3,
+    6,
+    9,
+    12,
+    15,
+    18,
+    21
+   ],
+   "poses": [
+    {
+     "x": 18,
+     "y": -12,
+     "frame": 1
+    },
+    {
+     "x": 6,
+     "y": -13,
+     "frame": 1
+    },
+    {
+     "x": 0,
+     "y": -17,
+     "frame": 5
+    },
+    {
+     "x": -6,
+     "y": -22,
+     "frame": 5
+    },
+    {
+     "x": -10,
+     "y": -27,
+     "frame": 5
+    },
+    {
+     "x": -14,
+     "y": -32,
+     "frame": 18
+    },
+    {
+     "x": -16,
+     "y": -35,
+     "frame": 18
+    },
+    {
+     "x": -15,
+     "y": -40,
+     "frame": 18
+    },
+    {
+     "x": -13,
+     "y": -44,
+     "frame": 7
+    },
+    {
+     "x": -7,
+     "y": -47,
+     "frame": 7
+    },
+    {
+     "x": 0,
+     "y": -50,
+     "frame": 7
+    },
+    null,
+    null,
+    null,
+    {
+     "x": 34,
+     "y": -42,
+     "frame": 2
+    },
+    {
+     "x": 40,
+     "y": -42,
+     "frame": 2
+    },
+    {
+     "x": 46,
+     "y": -39,
+     "frame": 2
+    },
+    {
+     "x": 49,
+     "y": -35,
+     "frame": 17
+    },
+    {
+     "x": 51,
+     "y": -29,
+     "frame": 0
+    },
+    {
+     "x": 49,
+     "y": -23,
+     "frame": 1
+    },
+    {
+     "x": 46,
+     "y": -20,
+     "frame": 1
+    },
+    {
+     "x": 41,
+     "y": -16,
+     "frame": 1
+    },
+    {
+     "x": 33,
+     "y": -13,
+     "frame": 1
+    },
+    {
+     "x": 26,
+     "y": -13,
+     "frame": 1
+    }
+   ]
+  }
+ },
+ {
+  "id": "super-spinner",
+  "name": "スーパースピナー",
+  "width": 5,
+  "height": 5,
+  "constructionCost": 5000,
+  "maintenanceCost": 4000,
+  "capacity": 6,
+  "imageOffset": {
+   "x": 20,
+   "y": 48
+  },
+  "assetBase": "/assets/park/attractions/super-spinner",
+  "animation": {
+   "frames": 1,
+   "groups": [
+    {
+     "from": 0,
+     "count": 1,
+     "loop": false,
+     "durations": [
+      8
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "id": "wild-roll",
+  "name": "ワイルドロール",
+  "width": 5,
+  "height": 5,
+  "constructionCost": 6000,
+  "maintenanceCost": 6000,
+  "capacity": 6,
+  "imageOffset": {
+   "x": 32,
+   "y": 46
+  },
+  "assetBase": "/assets/park/attractions/wild-roll",
+  "animation": {
+   "frames": 3,
+   "groups": [
+    {
+     "from": 0,
+     "count": 3,
+     "loop": true,
+     "durations": [
+      8,
+      8,
+      8
+     ]
+    }
+   ]
+  },
+  "riders": {
+   "period": 12,
+   "seatPhases": [
+    0,
+    3,
+    6,
+    9
+   ],
+   "poses": [
+    null,
+    null,
+    {
+     "x": 36,
+     "y": 9,
+     "frame": 22
+    },
+    {
+     "x": 17,
+     "y": 14,
+     "frame": 19
+    },
+    {
+     "x": -3,
+     "y": 8,
+     "frame": 21
+    },
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ]
+  }
+ },
+ {
+  "id": "dish-spin",
+  "name": "ディッシュスピン",
+  "width": 5,
+  "height": 5,
+  "constructionCost": 7000,
+  "maintenanceCost": 6000,
+  "capacity": 6,
+  "imageOffset": {
+   "x": 36,
+   "y": 75
+  },
+  "assetBase": "/assets/park/attractions/dish-spin",
+  "animation": {
+   "frames": 6,
+   "groups": [
+    {
+     "from": 0,
+     "count": 6,
+     "loop": true,
+     "durations": [
+      8,
+      8,
+      8,
+      8,
+      8,
+      8
+     ]
+    }
+   ]
+  },
+  "riders": {
+   "period": 24,
+   "seatPhases": [
+    0,
+    6,
+    12,
+    18
+   ],
+   "poses": [
+    {
+     "x": 22,
+     "y": -25,
+     "frame": 5
+    },
+    {
+     "x": 14,
+     "y": -17,
+     "frame": 5
+    },
+    {
+     "x": 6,
+     "y": -13,
+     "frame": 1
+    },
+    {
+     "x": 0,
+     "y": -22,
+     "frame": 5
+    },
+    {
+     "x": -9,
+     "y": -30,
+     "frame": 5
+    },
+    {
+     "x": -14,
+     "y": -40,
+     "frame": 18
+    },
+    {
+     "x": -21,
+     "y": -39,
+     "frame": 7
+    },
+    {
+     "x": -20,
+     "y": -42,
+     "frame": 7
+    },
+    {
+     "x": -15,
+     "y": -45,
+     "frame": 2
+    },
+    {
+     "x": -11,
+     "y": -51,
+     "frame": 7
+    },
+    {
+     "x": -6,
+     "y": -54,
+     "frame": 7
+    },
+    {
+     "x": 1,
+     "y": -54,
+     "frame": 7
+    },
+    {
+     "x": 9,
+     "y": -58,
+     "frame": 7
+    },
+    {
+     "x": 17,
+     "y": -61,
+     "frame": 7
+    },
+    {
+     "x": 25,
+     "y": -57,
+     "frame": 2
+    },
+    {
+     "x": 33,
+     "y": -57,
+     "frame": 7
+    },
+    {
+     "x": 38,
+     "y": -53,
+     "frame": 7
+    },
+    {
+     "x": 45,
+     "y": -50,
+     "frame": 17
+    },
+    {
+     "x": 48,
+     "y": -44,
+     "frame": 17
+    },
+    {
+     "x": 49,
+     "y": -38,
+     "frame": 5
+    },
+    {
+     "x": 46,
+     "y": -28,
+     "frame": 1
+    },
+    {
+     "x": 42,
+     "y": -25,
+     "frame": 5
+    },
+    {
+     "x": 35,
+     "y": -30,
+     "frame": 5
+    },
+    {
+     "x": 27,
+     "y": -35,
+     "frame": 5
+    }
+   ]
+  }
+ },
+ {
+  "id": "ferris-wheel",
+  "name": "かんらんしゃ",
+  "width": 5,
+  "height": 5,
+  "constructionCost": 2000,
+  "maintenanceCost": 2000,
+  "capacity": 5,
+  "imageOffset": {
+   "x": 19,
+   "y": 76
+  },
+  "assetBase": "/assets/park/attractions/ferris-wheel",
+  "animation": {
+   "frames": 3,
+   "groups": [
+    {
+     "from": 0,
+     "count": 3,
+     "loop": true,
+     "durations": [
+      8,
+      8,
+      8
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "id": "sky-tower",
+  "name": "スカイタワー",
+  "width": 5,
+  "height": 5,
+  "constructionCost": 3000,
+  "maintenanceCost": 5000,
+  "capacity": 7,
+  "imageOffset": {
+   "x": 30,
+   "y": 78
+  },
+  "assetBase": "/assets/park/attractions/sky-tower",
+  "animation": {
+   "frames": 4,
+   "groups": [
+    {
+     "from": 0,
+     "count": 4,
+     "loop": true,
+     "durations": [
+      8,
+      8,
+      8,
+      8
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "id": "great-wheel",
+  "name": "グレートホイール",
+  "width": 5,
+  "height": 5,
+  "constructionCost": 7000,
+  "maintenanceCost": 9000,
+  "capacity": 7,
+  "imageOffset": {
+   "x": 25,
+   "y": 96
+  },
+  "assetBase": "/assets/park/attractions/great-wheel",
+  "animation": {
+   "frames": 3,
+   "groups": [
+    {
+     "from": 0,
+     "count": 3,
+     "loop": true,
+     "durations": [
+      8,
+      8,
+      8
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "id": "albatross",
+  "name": "アルバトロス",
+  "width": 9,
+  "height": 9,
+  "constructionCost": 5000,
+  "maintenanceCost": 7000,
+  "capacity": 6,
+  "imageOffset": {
+   "x": 46,
+   "y": 41
+  },
+  "ground": "stairs",
+  "assetBase": "/assets/park/attractions/albatross",
+  "animation": {
+   "frames": 8,
+   "groups": [
+    {
+     "from": 0,
+     "count": 4,
+     "loop": true,
+     "durations": [
+      8,
+      8,
+      8,
+      8
+     ]
+    },
+    {
+     "from": 4,
+     "count": 4,
+     "loop": true,
+     "durations": [
+      8,
+      8,
+      8,
+      8
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "id": "virtual-flight",
+  "name": "バーチャルフライト",
+  "width": 5,
+  "height": 5,
+  "constructionCost": 9000,
+  "maintenanceCost": 6000,
+  "capacity": 4,
+  "imageOffset": {
+   "x": 18,
+   "y": 70
+  },
+  "assetBase": "/assets/park/attractions/virtual-flight",
+  "animation": {
+   "frames": 4,
+   "groups": [
+    {
+     "from": 0,
+     "count": 4,
+     "loop": true,
+     "durations": [
+      15,
+      15,
+      20,
+      15
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "id": "jigoku-meguri",
+  "name": "ジゴクメグリ",
+  "width": 5,
+  "height": 5,
+  "constructionCost": 2000,
+  "maintenanceCost": 3000,
+  "capacity": 5,
+  "imageOffset": {
+   "x": 21,
+   "y": 59
+  },
+  "assetBase": "/assets/park/attractions/jigoku-meguri",
+  "animation": {
+   "frames": 15,
+   "groups": [
+    {
+     "from": 0,
+     "count": 15,
+     "loop": true,
+     "durations": [
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "id": "haunted-mansion",
+  "name": "ホーンテッドマンション",
+  "width": 5,
+  "height": 5,
+  "constructionCost": 8000,
+  "maintenanceCost": 6000,
+  "capacity": 6,
+  "imageOffset": {
+   "x": 24,
+   "y": 62
+  },
+  "assetBase": "/assets/park/attractions/haunted-mansion",
+  "animation": {
+   "frames": 21,
+   "groups": [
+    {
+     "from": 0,
+     "count": 21,
+     "loop": true,
+     "durations": [
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "id": "inferno",
+  "name": "インフェルノ",
+  "width": 5,
+  "height": 5,
+  "constructionCost": 7000,
+  "maintenanceCost": 6000,
+  "capacity": 6,
+  "imageOffset": {
+   "x": 32,
+   "y": 66
+  },
+  "assetBase": "/assets/park/attractions/inferno",
+  "animation": {
+   "frames": 4,
+   "groups": [
+    {
+     "from": 0,
+     "count": 4,
+     "loop": true,
+     "durations": [
+      8,
+      8,
+      8,
+      8
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "id": "athletic",
+  "name": "アスレチック",
+  "width": 5,
+  "height": 5,
+  "constructionCost": 4000,
+  "maintenanceCost": 3000,
+  "capacity": 6,
+  "imageOffset": {
+   "x": 40,
+   "y": 56
+  },
+  "assetBase": "/assets/park/attractions/athletic",
+  "animation": {
+   "frames": 17,
+   "groups": [
+    {
+     "from": 0,
+     "count": 1,
+     "loop": false,
+     "durations": [
+      8
+     ]
+    },
+    {
+     "from": 1,
+     "count": 16,
+     "loop": false,
+     "durations": [
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "id": "circus-show",
+  "name": "サーカスショー",
+  "width": 7,
+  "height": 7,
+  "constructionCost": 8000,
+  "maintenanceCost": 5000,
+  "capacity": 6,
+  "imageOffset": {
+   "x": 40,
+   "y": 55
+  },
+  "assetBase": "/assets/park/attractions/circus-show",
+  "animation": {
+   "frames": 1,
+   "groups": [
+    {
+     "from": 0,
+     "count": 1,
+     "loop": false,
+     "durations": [
+      8
+     ]
+    }
+   ]
+  },
+  "riders": {
+   "period": 1,
+   "seatPhases": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+   ],
+   "poses": [
+    {
+     "x": -8,
+     "y": 3,
+     "frame": 17
+    },
+    {
+     "x": 6,
+     "y": 3,
+     "frame": 17
+    },
+    {
+     "x": 45,
+     "y": 3,
+     "frame": 17
+    },
+    {
+     "x": 32,
+     "y": -2,
+     "frame": 17
+    },
+    {
+     "x": 46,
+     "y": -2,
+     "frame": 17
+    },
+    {
+     "x": -12,
+     "y": -9,
+     "frame": 17
+    },
+    {
+     "x": 28,
+     "y": -9,
+     "frame": 17
+    },
+    {
+     "x": -1,
+     "y": -16,
+     "frame": 17
+    }
+   ]
+  }
+ },
+ {
+  "id": "virtual-wars",
+  "name": "バーチャルウォーズ",
+  "width": 5,
+  "height": 5,
+  "constructionCost": 8000,
+  "maintenanceCost": 8000,
+  "capacity": 6,
+  "imageOffset": {
+   "x": 26,
+   "y": 54
+  },
+  "assetBase": "/assets/park/attractions/virtual-wars",
+  "animation": {
+   "frames": 1,
+   "groups": [
+    {
+     "from": 0,
+     "count": 1,
+     "loop": false,
+     "durations": [
+      8
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "id": "maze",
+  "name": "メイロ",
+  "width": 5,
+  "height": 5,
+  "constructionCost": 7000,
+  "maintenanceCost": 3000,
+  "capacity": 6,
+  "imageOffset": {
+   "x": 39,
+   "y": 42
+  },
+  "assetBase": "/assets/park/attractions/maze",
+  "animation": {
+   "frames": 9,
+   "groups": [
+    {
+     "from": 0,
+     "count": 1,
+     "loop": false,
+     "durations": [
+      8
+     ]
+    },
+    {
+     "from": 1,
+     "count": 8,
+     "loop": false,
+     "durations": [
+      60,
+      12,
+      8,
+      8,
+      8,
+      8,
+      8,
+      50
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "id": "ninja-house",
+  "name": "ニンジャやしき",
+  "width": 5,
+  "height": 5,
+  "constructionCost": 7000,
+  "maintenanceCost": 5000,
+  "capacity": 6,
+  "imageOffset": {
+   "x": 27,
+   "y": 60
+  },
+  "assetBase": "/assets/park/attractions/ninja-house",
+  "animation": {
+   "frames": 1,
+   "groups": [
+    {
+     "from": 0,
+     "count": 1,
+     "loop": false,
+     "durations": [
+      8
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "id": "marine-show",
+  "name": "マリンショー",
+  "width": 7,
+  "height": 7,
+  "constructionCost": 9900,
+  "maintenanceCost": 5000,
+  "capacity": 6,
+  "imageOffset": {
+   "x": 65,
+   "y": 57
+  },
+  "assetBase": "/assets/park/attractions/marine-show",
+  "animation": {
+   "frames": 1,
+   "groups": [
+    {
+     "from": 0,
+     "count": 1,
+     "loop": false,
+     "durations": [
+      8
+     ]
+    }
+   ]
+  },
+  "riders": {
+   "period": 1,
+   "seatPhases": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+   ],
+   "poses": [
+    {
+     "x": -1,
+     "y": 0,
+     "frame": 17
+    },
+    {
+     "x": 11,
+     "y": 0,
+     "frame": 17
+    },
+    {
+     "x": 44,
+     "y": 1,
+     "frame": 17
+    },
+    {
+     "x": -29,
+     "y": -5,
+     "frame": 17
+    },
+    {
+     "x": 15,
+     "y": -6,
+     "frame": 17
+    },
+    {
+     "x": -7,
+     "y": -14,
+     "frame": 17
+    },
+    {
+     "x": 50,
+     "y": -13,
+     "frame": 17
+    },
+    {
+     "x": 28,
+     "y": -19,
+     "frame": 17
+    }
+   ]
+  }
+ },
+ {
+  "id": "fantasy-castle",
+  "name": "ファンタジーキャッスル",
+  "width": 7,
+  "height": 7,
+  "constructionCost": 9900,
+  "maintenanceCost": 9000,
+  "capacity": 7,
+  "imageOffset": {
+   "x": 44,
+   "y": 77
+  },
+  "assetBase": "/assets/park/attractions/fantasy-castle",
+  "animation": {
+   "frames": 1,
+   "groups": [
+    {
+     "from": 0,
+     "count": 1,
+     "loop": false,
+     "durations": [
+      8
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "id": "oedo-castle",
+  "name": "おおえどキャッスル",
+  "width": 7,
+  "height": 7,
+  "constructionCost": 9900,
+  "maintenanceCost": 7000,
+  "capacity": 7,
+  "imageOffset": {
+   "x": 63,
+   "y": 69
+  },
+  "assetBase": "/assets/park/attractions/oedo-castle",
+  "animation": {
+   "frames": 1,
+   "groups": [
+    {
+     "from": 0,
+     "count": 1,
+     "loop": false,
+     "durations": [
+      8
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "id": "pool-skate-rink",
+  "name": "プール・スケートリンク",
+  "width": 6,
+  "height": 6,
+  "constructionCost": 9900,
+  "maintenanceCost": 7000,
+  "capacity": 8,
+  "imageOffset": {
+   "x": 47,
+   "y": 49
+  },
+  "assetBase": "/assets/park/attractions/pool-skate-rink",
+  "animation": {
+   "frames": 17,
+   "groups": [
+    {
+     "from": 0,
+     "count": 1,
+     "loop": false,
+     "durations": [
+      8
+     ]
+    },
+    {
+     "from": 1,
+     "count": 16,
+     "loop": true,
+     "durations": [
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "id": "skate-rink-pool",
+  "name": "スケートリンク・プール",
+  "width": 6,
+  "height": 6,
+  "constructionCost": 9900,
+  "maintenanceCost": 7000,
+  "capacity": 8,
+  "imageOffset": {
+   "x": 52,
+   "y": 50
+  },
+  "seasonalFormOf": "pool-skate-rink",
+  "assetBase": "/assets/park/attractions/skate-rink-pool",
+  "animation": {
+   "frames": 15,
+   "groups": [
+    {
+     "from": 0,
+     "count": 1,
+     "loop": false,
+     "durations": [
+      8
+     ]
+    },
+    {
+     "from": 1,
+     "count": 14,
+     "loop": false,
+     "durations": [
+      8,
+      8,
+      8,
+      8,
+      8,
+      8,
+      4,
+      4,
+      8,
+      8,
+      8,
+      8,
+      8,
+      8
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "id": "boat-dock",
+  "name": "ボートのりば",
+  "width": 9,
+  "height": 9,
+  "constructionCost": 8000,
+  "maintenanceCost": 2000,
+  "capacity": 6,
+  "imageOffset": {
+   "x": 27,
+   "y": 40
+  },
+  "ground": "water",
+  "assetBase": "/assets/park/attractions/boat-dock",
+  "animation": {
+   "frames": 7,
+   "groups": [
+    {
+     "from": 0,
+     "count": 1,
+     "loop": false,
+     "durations": [
+      8
+     ]
+    },
+    {
+     "from": 1,
+     "count": 2,
+     "loop": true,
+     "durations": [
+      15,
+      15
+     ]
+    },
+    {
+     "from": 3,
+     "count": 4,
+     "loop": true,
+     "durations": [
+      40,
+      40,
+      20,
+      20
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "id": "mississippi-cruise",
+  "name": "ミシシッピークルーズ",
+  "width": 9,
+  "height": 9,
+  "constructionCost": 9000,
+  "maintenanceCost": 5000,
+  "capacity": 7,
+  "imageOffset": {
+   "x": 27,
+   "y": 34
+  },
+  "ground": "water",
+  "assetBase": "/assets/park/attractions/mississippi-cruise",
+  "animation": {
+   "frames": 2,
+   "groups": [
+    {
+     "from": 0,
+     "count": 2,
+     "loop": true,
+     "durations": [
+      8,
+      8
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "id": "treasure-island",
+  "name": "トレジャーアイランド",
+  "width": 6,
+  "height": 6,
+  "constructionCost": 6000,
+  "maintenanceCost": 3000,
+  "capacity": 7,
+  "imageOffset": {
+   "x": 49,
+   "y": 49
+  },
+  "ground": "water",
+  "assetBase": "/assets/park/attractions/treasure-island",
+  "animation": {
+   "frames": 1,
+   "groups": [
+    {
+     "from": 0,
+     "count": 1,
+     "loop": false,
+     "durations": [
+      8
+     ]
+    }
+   ]
+  }
+ }
 ]

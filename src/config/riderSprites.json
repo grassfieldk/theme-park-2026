@@ -1,0 +1,228 @@
+{
+ "_note": [
+  "アトラクションに乗っている客のスプライト。set は国ごとの PEOPLE ファイル。",
+  "画像は /assets/park/riders/{set}-{bank}.png で、姿勢の数だけ横に並ぶ。",
+  "codesByBank は来園者の歩行バンク(0〜7)→ 乗車中のバンク(人数ぶん)。"
+ ],
+ "codesByBank": [
+  [
+   26
+  ],
+  [
+   27
+  ],
+  [
+   28
+  ],
+  [
+   29
+  ],
+  [
+   28,
+   29
+  ],
+  [
+   28,
+   29
+  ],
+  [
+   37,
+   30,
+   31
+  ],
+  [
+   38,
+   39,
+   40
+  ]
+ ],
+ "poseCount": 24,
+ "sets": {
+  "a": {
+   "26": {
+    "frameWidth": 35,
+    "frameHeight": 30,
+    "anchorX": 17,
+    "anchorY": 16
+   },
+   "27": {
+    "frameWidth": 32,
+    "frameHeight": 31,
+    "anchorX": 16,
+    "anchorY": 17
+   },
+   "28": {
+    "frameWidth": 35,
+    "frameHeight": 33,
+    "anchorX": 17,
+    "anchorY": 19
+   },
+   "29": {
+    "frameWidth": 32,
+    "frameHeight": 34,
+    "anchorX": 16,
+    "anchorY": 19
+   },
+   "30": {
+    "frameWidth": 35,
+    "frameHeight": 35,
+    "anchorX": 17,
+    "anchorY": 20
+   },
+   "31": {
+    "frameWidth": 33,
+    "frameHeight": 33,
+    "anchorX": 16,
+    "anchorY": 19
+   },
+   "37": {
+    "frameWidth": 32,
+    "frameHeight": 31,
+    "anchorX": 16,
+    "anchorY": 17
+   },
+   "38": {
+    "frameWidth": 35,
+    "frameHeight": 30,
+    "anchorX": 17,
+    "anchorY": 16
+   },
+   "39": {
+    "frameWidth": 35,
+    "frameHeight": 35,
+    "anchorX": 17,
+    "anchorY": 20
+   },
+   "40": {
+    "frameWidth": 33,
+    "frameHeight": 33,
+    "anchorX": 16,
+    "anchorY": 19
+   }
+  },
+  "b": {
+   "26": {
+    "frameWidth": 35,
+    "frameHeight": 30,
+    "anchorX": 17,
+    "anchorY": 16
+   },
+   "27": {
+    "frameWidth": 32,
+    "frameHeight": 31,
+    "anchorX": 16,
+    "anchorY": 17
+   },
+   "28": {
+    "frameWidth": 35,
+    "frameHeight": 33,
+    "anchorX": 17,
+    "anchorY": 19
+   },
+   "29": {
+    "frameWidth": 32,
+    "frameHeight": 34,
+    "anchorX": 16,
+    "anchorY": 19
+   },
+   "30": {
+    "frameWidth": 35,
+    "frameHeight": 35,
+    "anchorX": 17,
+    "anchorY": 20
+   },
+   "31": {
+    "frameWidth": 33,
+    "frameHeight": 33,
+    "anchorX": 16,
+    "anchorY": 19
+   },
+   "37": {
+    "frameWidth": 32,
+    "frameHeight": 31,
+    "anchorX": 16,
+    "anchorY": 17
+   },
+   "38": {
+    "frameWidth": 35,
+    "frameHeight": 30,
+    "anchorX": 17,
+    "anchorY": 16
+   },
+   "39": {
+    "frameWidth": 35,
+    "frameHeight": 35,
+    "anchorX": 17,
+    "anchorY": 20
+   },
+   "40": {
+    "frameWidth": 33,
+    "frameHeight": 33,
+    "anchorX": 16,
+    "anchorY": 19
+   }
+  },
+  "c": {
+   "26": {
+    "frameWidth": 35,
+    "frameHeight": 30,
+    "anchorX": 17,
+    "anchorY": 16
+   },
+   "27": {
+    "frameWidth": 32,
+    "frameHeight": 31,
+    "anchorX": 16,
+    "anchorY": 17
+   },
+   "28": {
+    "frameWidth": 35,
+    "frameHeight": 33,
+    "anchorX": 17,
+    "anchorY": 19
+   },
+   "29": {
+    "frameWidth": 32,
+    "frameHeight": 34,
+    "anchorX": 16,
+    "anchorY": 19
+   },
+   "30": {
+    "frameWidth": 35,
+    "frameHeight": 35,
+    "anchorX": 17,
+    "anchorY": 20
+   },
+   "31": {
+    "frameWidth": 33,
+    "frameHeight": 33,
+    "anchorX": 16,
+    "anchorY": 19
+   },
+   "37": {
+    "frameWidth": 32,
+    "frameHeight": 31,
+    "anchorX": 16,
+    "anchorY": 17
+   },
+   "38": {
+    "frameWidth": 35,
+    "frameHeight": 30,
+    "anchorX": 17,
+    "anchorY": 16
+   },
+   "39": {
+    "frameWidth": 35,
+    "frameHeight": 35,
+    "anchorX": 17,
+    "anchorY": 20
+   },
+   "40": {
+    "frameWidth": 33,
+    "frameHeight": 33,
+    "anchorX": 16,
+    "anchorY": 19
+   }
+  }
+ }
+}
