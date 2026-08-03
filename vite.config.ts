@@ -37,6 +37,8 @@ function developmentLogPlugin(): Plugin {
 export default defineConfig({
   plugins: [react(), developmentLogPlugin()],
   server: {
+    // 同じ LAN の端末からも開けるようにする
+    host: true,
     watch: {
       usePolling: true,
       interval: 100,

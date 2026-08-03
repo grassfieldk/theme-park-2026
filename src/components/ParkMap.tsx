@@ -45,10 +45,14 @@ type Props = {
   onShopSale: (amount: number) => void
   onGuestCountChange: (count: number) => void
   onBuildMessage: (message: string) => void
+  /** 絵の読み込みと園の組み立てが終わり、遊べる状態になったとき */
+  onReady: () => void
   /** アトラクション・ショップの撤去前に確認を出す。返事は resolveRemoval で返す */
   onRemoveConfirm: (name: string) => void
   /** メニューや確認が開いている間は、マップへのクリックを受け付けない */
   mapBlocked: boolean
+  /** タッチ操作の配置。マップを触ってもカーソルは動かさず、画面上の十字ボタンで動かす */
+  touchLayout: boolean
   /** セーブデータから再開するときの園の中身。新規開始なら null */
   initialPark: ParkSnapshot | null
   /** 開始時点の経過日数。季節や滞在日数の基準になる */
@@ -63,6 +67,8 @@ export type ParkMapHandle = {
   snapshot: () => ParkSnapshot | null
   /** 撤去の確認に対する返事 */
   resolveRemoval: (confirmed: boolean) => void
+  /** 日付を飛ばす(開発サーバのデバッグ用)。飛ばした間の計算は行わない */
+  setElapsedDays: (days: number) => void
 }
 
 type Attraction = (typeof attractions)[number]
@@ -127,8 +133,10 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
   onShopSale,
   onGuestCountChange,
   onBuildMessage,
+  onReady,
   onRemoveConfirm,
   mapBlocked,
+  touchLayout,
   initialPark,
   initialElapsedDays,
 }: Props, ref) {
@@ -152,8 +160,10 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
   const shopSaleHandler = useRef(onShopSale)
   const guestCountHandler = useRef(onGuestCountChange)
   const buildMessageHandler = useRef(onBuildMessage)
+  const readyHandler = useRef(onReady)
   const removeConfirmHandler = useRef(onRemoveConfirm)
   const initialMapBlocked = useRef(mapBlocked)
+  const initialTouchLayout = useRef(touchLayout)
   attractionPlacedHandler.current = onAttractionPlaced
   attractionCancelledHandler.current = onAttractionPlacementCancelled
   attractionAccessPlacedHandler.current = onAttractionAccessPlaced
@@ -167,6 +177,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
   shopSaleHandler.current = onShopSale
   guestCountHandler.current = onGuestCountChange
   buildMessageHandler.current = onBuildMessage
+  readyHandler.current = onReady
   removeConfirmHandler.current = onRemoveConfirm
 
   useImperativeHandle(ref, () => ({
@@ -181,6 +192,9 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
     },
     resolveRemoval(confirmed) {
       phaserGame.current?.scene.getScene('park')?.events.emit('resolve-removal', confirmed)
+    },
+    setElapsedDays(days) {
+      phaserGame.current?.scene.getScene('park')?.events.emit('set-elapsed-days', days)
     },
   }), [])
 
@@ -361,6 +375,8 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         let removeHeld = false
         // メニューや確認が開いている間はマップへのクリックを無視する
         let mapInteractive = !initialMapBlocked.current
+        // 画面上の十字ボタンでカーソルを動かす配置(狭い画面)
+        let touchLayout = initialTouchLayout.current
 
         // ---- 季節 ----
         // 地形の色は国ごとの季節表で決まる。対象アセットは [通常|秋|冬] の 3 コマで、
@@ -374,6 +390,8 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         }
         let seasonIndex = seasonAt(initialDays.current)
         let seasonVariant = seasons.variantBySeason[seasonIndex]
+        // 日付を飛ばしたときに立てる。次にゲームが進むときに季節を見直す
+        let seasonDirty = false
         const seasonFrame = <T extends Phaser.GameObjects.Image>(image: T): T => {
           if (seasonalKeys.has(image.texture.key)) image.setFrame(seasonVariant)
           return image
@@ -672,6 +690,14 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             placed.animRemaining = idle.durations[0]
             placed.image.setTexture(attractionFrameKey(form.id, idle.from)).setPosition(position.x, position.y)
           })
+        }
+        // 今の日付から季節を見直し、変わっていれば絵を差し替える
+        const refreshSeason = () => {
+          const season = seasonAt(elapsedDays)
+          if (season === seasonIndex) return
+          seasonIndex = season
+          seasonVariant = seasons.variantBySeason[season]
+          applySeason()
         }
 
         const roadFrameByMask = [16, 2, 4, 0, 3, 10, 11, 7, 5, 13, 12, 9, 1, 6, 8, 15]
@@ -1555,8 +1581,12 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         const focus = point(gateCenter, gateRow + 1)
         const cameraTopLeft = point(left, cameraTopRow)
         const cameraBottomRight = point(right, cameraBottomRow)
+        // 狭い画面では等倍で始める。拡大したままだと数マスしか見えない
+        const initialZoom = camera.width < game.park.narrowViewportWidth
+          ? game.park.minDisplayScale
+          : game.park.displayScale
         camera
-          .setZoom(game.park.displayScale)
+          .setZoom(initialZoom)
           .setBounds(
             cameraTopLeft.x,
             cameraTopLeft.y,
@@ -2456,23 +2486,64 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
 
         // マウスの役割: 左=決定・設置、中ドラッグ=カメラ移動、右=メニュー開閉とキャンセル(App 側で処理)、ホイール=ズーム
         this.input.mouse?.disableContextMenu()
-        let middlePanPreviousX = 0
-        let middlePanPreviousY = 0
-        let middlePanning = false
+        // 2 本指でのズーム。指の間隔が決まった割合まで変わるたびに 1 段ずつ動かす
+        this.input.addPointer(1)
+        let pinchDistance = 0
+        const updatePinch = () => {
+          const first = this.input.pointer1
+          const second = this.input.pointer2
+          if (!first?.isDown || !second?.isDown) {
+            pinchDistance = 0
+            return false
+          }
+          const distance = Phaser.Math.Distance.Between(first.x, first.y, second.x, second.y)
+          if (pinchDistance === 0) {
+            pinchDistance = distance
+            return true
+          }
+          const ratio = distance / pinchDistance
+          if (ratio >= game.park.pinchZoomRatio) {
+            changeZoom(game.park.zoomStep)
+            pinchDistance = distance
+          }
+          else if (ratio <= 1 / game.park.pinchZoomRatio) {
+            changeZoom(-game.park.zoomStep)
+            pinchDistance = distance
+          }
+          return true
+        }
+        // 中ドラッグと、タッチ操作でのなぞりはどちらもカメラ移動
+        let dragPanning = false
+        let dragPreviousX = 0
+        let dragPreviousY = 0
+        // 向きを選んでいる最中は、なぞる操作が向きの指定に使われる
+        const choosingDirection = () => Boolean(
+          (activeShop && shopStep === 'direction')
+          || (activeFacility && facilityStep === 'direction')
+          || (pendingStairs && stairsStep === 'direction'),
+        )
         this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-          if (pointer.button !== 1) return
-          middlePanning = true
-          middlePanPreviousX = pointer.x
-          middlePanPreviousY = pointer.y
+          const swipePan = touchLayout && pointer.button === 0 && !choosingDirection()
+          if (pointer.button !== 1 && !swipePan) return
+          dragPanning = true
+          dragPreviousX = pointer.x
+          dragPreviousY = pointer.y
         })
         this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
-          if (middlePanning && pointer.buttons & 4) {
-            // 中ドラッグでカメラ移動。マップを掴んで引っ張る方向感覚
-            camera.scrollX -= (pointer.x - middlePanPreviousX) / camera.zoom
-            camera.scrollY -= (pointer.y - middlePanPreviousY) / camera.zoom
-            middlePanPreviousX = pointer.x
-            middlePanPreviousY = pointer.y
+          if (updatePinch()) {
+            dragPanning = false
+            return
+          }
+          if (dragPanning && pointer.isDown) {
+            // マップを掴んで引っ張る方向感覚。カーソルも画面上の同じ場所に留める
+            const beforeX = camera.scrollX
+            const beforeY = camera.scrollY
+            camera.scrollX -= (pointer.x - dragPreviousX) / camera.zoom
+            camera.scrollY -= (pointer.y - dragPreviousY) / camera.zoom
+            dragPreviousX = pointer.x
+            dragPreviousY = pointer.y
             clampCameraToMap()
+            moveCursorWithCamera(camera.scrollX - beforeX, camera.scrollY - beforeY)
             return
           }
           if (!mapInteractive) return
@@ -2491,16 +2562,17 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             setStairsDirection(stairsDirectionAtPointer(world.x, world.y))
             return
           }
+          // タッチ操作ではマップを触ってもカーソルは動かさない
+          if (touchLayout) return
           const moved = selectTileAtPointer(pointer)
           if (!moved || !pointer.isDown) return
           // 左ドラッグはボタンの押しっぱなしと同じ扱い
           if (pointer.button === 0 && isGroundBuild()) placeAtCursor()
         })
         this.input.on('pointerup', (pointer: Phaser.Input.Pointer) => {
-          if (pointer.button === 1) {
-            middlePanning = false
-            return
-          }
+          pinchDistance = 0
+          dragPanning = false
+          if (pointer.button === 1) return
           if (pointer.button !== 0 || !mapInteractive) return
           if (activeShop && shopStep === 'direction') {
             const world = pointer.positionToCamera(camera) as Phaser.Math.Vector2
@@ -2517,7 +2589,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             setStairsDirection(stairsDirectionAtPointer(world.x, world.y))
             finishStairsDirection()
           }
-          else if (selectTileAtPointer(pointer)) placeAtCursor()
+          else if (!touchLayout && selectTileAtPointer(pointer)) placeAtCursor()
         })
         this.input.on('wheel', (
           _pointer: Phaser.Input.Pointer,
@@ -2624,6 +2696,13 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         })
         this.events.on('seconds-per-day', (value: number) => { daysPerMs = gameDaysPerMs(value) })
         this.events.on('resolve-removal', resolveRemoval)
+        this.events.on('touch-layout', (value: boolean) => { touchLayout = value })
+        // 日付を飛ばす(開発サーバでのみ使う)。来園者や経営はさかのぼって計算しない。
+        // 地形の描き直しはゲームの描画の流れの中でしか効かないので、次のフレームに回す
+        this.events.on('set-elapsed-days', (value: number) => {
+          elapsedDays = value
+          seasonDirty = true
+        })
         this.events.on('map-blocked', (blocked: boolean) => {
           mapInteractive = !blocked
           if (blocked) {
@@ -4105,15 +4184,15 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         let busTimerDays = 0
         let reportedGuestCount = -1
         this.simulate = (deltaMs: number) => {
+          // 日付を飛ばした直後は、時間が止まっていても季節を見直す
+          if (seasonDirty) {
+            seasonDirty = false
+            refreshSeason()
+          }
           const days = deltaMs * daysPerMs
           if (days <= 0) return
           elapsedDays += days
-          const season = seasonAt(elapsedDays)
-          if (season !== seasonIndex) {
-            seasonIndex = season
-            seasonVariant = seasons.variantBySeason[season]
-            applySeason()
-          }
+          refreshSeason()
           // 前のバスが去ってから次の間隔で、右手からバスが入ってくる
           if (!bus) {
             busTimerDays += days
@@ -4172,6 +4251,8 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             guestCountHandler.current(guests.length)
           }
         }
+        // ここまでで絵の読み込みと園の組み立てが終わり、遊べる状態になる
+        readyHandler.current()
       }
     }
 
@@ -4227,6 +4308,11 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
     initialMapBlocked.current = mapBlocked
     phaserGame.current?.scene.getScene('park')?.events.emit('map-blocked', mapBlocked)
   }, [mapBlocked])
+
+  useEffect(() => {
+    initialTouchLayout.current = touchLayout
+    phaserGame.current?.scene.getScene('park')?.events.emit('touch-layout', touchLayout)
+  }, [touchLayout])
 
   return <div className="park-map" ref={host} aria-label={`${country.name} のパークマップ`} />
 })

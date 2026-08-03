@@ -8,6 +8,8 @@ type Props = {
   onAction: (action: MenuAction) => void
   /** 右スティックによるカメラ移動。倒している間、毎フレーム移動量(画面ピクセル)を渡す */
   onCameraPan?: (deltaX: number, deltaY: number) => void
+  /** 決定と取り消しを入れ替える(操作設定) */
+  swapConfirm?: boolean
 }
 
 // スティックの遊び。これ未満の傾きは無視し、超えた分だけを 0〜1 に均して使う
@@ -18,18 +20,22 @@ const stickValue = (value: number) => {
   return Math.sign(value) * (magnitude - stickDeadzone) / (1 - stickDeadzone)
 }
 
-const buttonActions: Array<[number, MenuAction, boolean, MenuAction?]> = [
+// 下ボタン(0)と右ボタン(1)の役割は操作設定で入れ替わる
+const buttonActionsFor = (swapConfirm: boolean): Array<[number, MenuAction, boolean, MenuAction?]> => [
   [6, 'zoomOut', false], [7, 'zoomIn', false],
   [4, 'speedDown', false], [5, 'speedUp', false], [11, 'pause', false],
-  [2, 'remove', false, 'removeRelease'], [3, 'menu', false],
-  [0, 'confirm', false, 'confirmRelease'], [9, 'start', false], [1, 'cancel', false],
+  [2, 'remove', false, 'removeRelease'], [3, 'menu', false], [9, 'start', false],
+  swapConfirm ? [0, 'cancel', false] : [0, 'confirm', false, 'confirmRelease'],
+  swapConfirm ? [1, 'confirm', false, 'confirmRelease'] : [1, 'cancel', false],
 ]
 
-export function GamepadController({ onAction, onCameraPan }: Props) {
+export function GamepadController({ onAction, onCameraPan, swapConfirm = false }: Props) {
   const actionHandler = useRef(onAction)
   const cameraPanHandler = useRef(onCameraPan)
+  const buttonActions = useRef(buttonActionsFor(swapConfirm))
   actionHandler.current = onAction
   cameraPanHandler.current = onCameraPan
+  buttonActions.current = buttonActionsFor(swapConfirm)
 
   useEffect(() => {
     const active = new Map<string, number>()
@@ -105,7 +111,7 @@ export function GamepadController({ onAction, onCameraPan }: Props) {
       previousNow = now
       const gamepad = navigator.getGamepads().find(Boolean)
       if (gamepad) {
-        buttonActions.forEach(([index, action, repeat, releaseAction]) => {
+        buttonActions.current.forEach(([index, action, repeat, releaseAction]) => {
           const key = `button-${index}`
           gamepad.buttons[index]?.pressed ? press(key, action, repeat, now) : release(key, releaseAction)
         })

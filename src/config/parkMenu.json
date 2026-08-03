@@ -7,7 +7,14 @@
     { "id": "staff", "label": "スタッフ雇用", "description": "パークではたらくスタッフを雇えます。", "icon": 4, "enabled": false },
     { "id": "management", "label": "経営", "description": "パークの経営に関する仕事ができます。", "icon": 5, "enabled": false },
     { "id": "data", "label": "各種データ表示", "description": "パークのくわしい情報を見られます。", "icon": 6, "enabled": false },
-    { "id": "system", "label": "システム", "description": "ゲームのセーブや設定ができます。", "icon": 72, "enabled": false }
+    { "id": "system", "label": "システム", "description": "ゲームのセーブや設定ができます。", "icon": 72, "enabled": true }
+  ],
+  "system": [
+    { "id": "save", "label": "セーブ", "description": "今のパークを記録します。", "icon": 72, "enabled": false },
+    { "id": "load", "label": "ロード", "description": "記録したパークを読み込みます。", "icon": 72, "enabled": false },
+    { "id": "advice", "label": "アドバイス", "description": "パークの改善案を聞けます。", "icon": 72, "enabled": false },
+    { "id": "bgm", "label": "BGM", "description": "流れる曲を選べます。", "icon": 72, "enabled": false },
+    { "id": "controls", "label": "操作設定", "description": "ボタンの絵柄と決定ボタンを変えられます。", "icon": 72, "enabled": true }
   ],
   "roads": [
     { "id": "path", "label": "歩道設置", "description": "お客さんが歩くための歩道を作れます。", "icon": 7, "enabled": true },

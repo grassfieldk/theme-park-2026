@@ -6,13 +6,18 @@
 
 * { box-sizing: border-box; scrollbar-width: thin; }
 :root { scrollbar-color: rgb(132 170 180 / 45%) rgb(8 17 26 / 90%); }
-body { margin: 0; min-width: 760px; }
-button { font: inherit; }
+/* touch-action: ダブルタップでの拡大を止める(マップだけは canvas 側で none にして Phaser が受け取る)
+   user-select: 長押しでの文字選択と iOS の吹き出しメニューを止める */
+body { margin: 0; overscroll-behavior: none; touch-action: manipulation; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+button { font: inherit; -webkit-tap-highlight-color: transparent; }
 
-.app-shell { display: grid; min-height: 100vh; place-items: center; overflow: hidden; }
+/* 画面の縁(ノッチ・ホームバー)を避ける余白 */
+:root { --safe-top: env(safe-area-inset-top, 0px); --safe-right: env(safe-area-inset-right, 0px); --safe-bottom: env(safe-area-inset-bottom, 0px); --safe-left: env(safe-area-inset-left, 0px); }
+
+.app-shell { display: grid; min-height: 100vh; min-height: 100dvh; place-items: center; overflow: hidden; }
 .phaser-backdrop { position: fixed; inset: 0; pointer-events: none; }
 .phaser-backdrop canvas { display: block; }
-.title-screen { z-index: 1; width: min(520px, calc(100vw - 64px)); text-align: center; }
+.title-screen { z-index: 1; width: min(520px, calc(100vw - 32px)); text-align: center; }
 .logo-subtitle { margin: 0; color: #ffe36e; font-size: 13px; font-weight: bold; letter-spacing: .18em; }
 h1 { margin: 8px 0 12px; font-size: 30px; }
 .primary-button, .secondary-button, .country-button { color: inherit; cursor: pointer; transition: background-color .12s ease, border-color .12s ease; }
@@ -21,34 +26,145 @@ h1 { margin: 8px 0 12px; font-size: 30px; }
 .primary-button:disabled { border-color: rgb(132 170 180 / 35%); background: rgb(20 40 58 / 70%); color: #8b9aa0; cursor: default; }
 .mode-select { display: flex; flex-direction: column; align-items: center; gap: 8px; margin-top: 24px; }
 .mode-select .primary-button { min-width: 200px; margin-top: 0; }
-.country-screen { z-index: 1; width: min(560px, calc(100vw - 64px)); }
+.country-screen { z-index: 1; width: min(560px, calc(100vw - 32px)); }
 .country-screen .logo-subtitle { margin-bottom: 16px; }
 .country-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1px; border: 1px solid rgb(132 170 180 / 45%); border-radius: 3px; background: rgb(132 170 180 / 18%); overflow: hidden; }
 .country-button { display: flex; align-items: baseline; justify-content: space-between; min-height: 44px; border: 0; background: rgb(12 26 40 / 88%); padding: 8px 10px; text-align: left; }
 .country-button small { color: #a9b8ba; }
 .country-button:hover, .country-button:focus-visible, .country-button.selected { background: rgb(64 118 158 / 75%); }
-.screen-control-bar { position: fixed; right: 0; bottom: 0; left: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; height: 48px; border-top: 1px solid rgb(232 209 117 / 45%); background: rgb(10 21 32 / 92%); backdrop-filter: blur(6px); padding: 0 16px; color: #d2dbd2; font-size: 13px; }
+.screen-control-bar { position: fixed; right: 0; bottom: 0; left: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 8px; height: calc(48px + var(--safe-bottom)); border-top: 1px solid rgb(232 209 117 / 45%); background: rgb(10 21 32 / 92%); backdrop-filter: blur(6px); padding: 0 calc(16px + var(--safe-right)) var(--safe-bottom) calc(16px + var(--safe-left)); color: #d2dbd2; font-size: 13px; }
 .screen-control-bar .secondary-button { padding: 8px 28px; }
 .secondary-button { border: 1px solid rgb(132 170 180 / 55%); border-radius: 3px; background: rgb(20 40 58 / 90%); padding: 7px 16px; }
 .secondary-button:hover, .secondary-button:focus-visible { border-color: rgb(232 209 117 / 70%); background: rgb(64 118 158 / 75%); }
-.park-screen { position: fixed; z-index: 1; inset: 0; background: #15232e; --status-bar-height: 32px; }
-.park-map, .map-loading { min-height: 0; width: 100%; height: calc(100% - var(--status-bar-height)); }
-.park-map canvas { display: block; }
+/* 上がマップと重ね表示、下がメッセージバーとボタンの帯 */
+.park-screen { position: fixed; z-index: 1; inset: 0; display: grid; grid-template-rows: minmax(0, 1fr) auto; background: #15232e; --status-bar-height: 32px; --pad-size: 116px; --face-button-size: 44px; }
+.park-view { position: relative; min-height: 0; }
+.park-map, .map-loading { min-height: 0; width: 100%; height: 100%; }
+.park-map canvas { display: block; touch-action: none; }
 .map-loading { display: grid; place-items: center; color: #d2dbd2; }
-.park-status-overlay { position: absolute; top: 12px; right: 12px; display: flex; gap: 20px; border: 1px solid rgb(132 170 180 / 45%); border-radius: 3px; background: rgb(12 26 40 / 88%); backdrop-filter: blur(6px); padding: 8px 12px; color: #fff; font-size: 14px; }
-.park-mode-label { position: absolute; top: 12px; left: 12px; border: 1px solid rgb(232 209 117 / 45%); border-radius: 3px; background: rgb(12 26 40 / 88%); backdrop-filter: blur(6px); padding: 8px 12px; color: #f2edd8; font-size: 14px; }
-.park-speed { display: flex; gap: 4px; }
-.park-speed-button { border: 1px solid rgb(132 170 180 / 45%); border-radius: 3px; background: transparent; padding: 0 8px; color: #b9c6cc; cursor: pointer; font-size: 12px; line-height: 20px; }
-.park-speed-button.selected { border-color: rgb(232 209 117 / 70%); background: rgb(64 118 158 / 75%); color: #fff; }
-.park-menu { position: absolute; bottom: 44px; left: 12px; display: flex; flex-direction: column; color: #fff; }
-.park-menu-items { display: flex; flex-direction: column; width: 224px; max-height: calc(100vh - 140px); border: 1px solid rgb(132 170 180 / 45%); border-radius: 3px; background: rgb(12 26 40 / 88%); backdrop-filter: blur(6px); box-shadow: 0 6px 18px rgb(0 0 0 / 35%); overflow: hidden auto; }
+/* 読み込み中と月替わりの暗転。長さはフレーム数から決まるので JS 側で指定する */
+.park-blackout { position: absolute; z-index: 4; inset: 0; display: grid; place-items: center; background: #0a1520; opacity: 0; pointer-events: none; transition-property: opacity; transition-timing-function: ease; }
+.park-blackout[data-visible] { opacity: 1; pointer-events: auto; }
+.park-loading { display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 0 16px; color: #e9e4cf; font-size: 14px; text-align: center; }
+.park-loading p { margin: 0; }
+.park-loading-spinner { width: 28px; height: 28px; border: 2px solid rgb(132 170 180 / 30%); border-top-color: #ffe36e; border-radius: 50%; animation: park-spin 900ms linear infinite; }
+@keyframes park-spin { to { transform: rotate(1turn); } }
+@media (prefers-reduced-motion: reduce) {
+  .park-blackout { transition: none; }
+  .park-loading-spinner { animation: none; }
+}
+/* 上の表示は左からモード名、右から状況。狭い画面では折り返して 2 段になる */
+.park-hud-top { position: absolute; top: calc(12px + var(--safe-top)); right: calc(12px + var(--safe-right)); left: calc(12px + var(--safe-left)); display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; pointer-events: none; }
+.park-hud-top > * { pointer-events: auto; }
+/* 数字は等幅にして、資金や来園者が変わるたびに横にずれないようにする */
+.park-status-overlay { display: flex; flex-wrap: wrap; gap: 4px 20px; border: 1px solid rgb(132 170 180 / 45%); border-radius: 3px; background: rgb(12 26 40 / 88%); backdrop-filter: blur(6px); padding: 8px 12px; color: #fff; font-size: 14px; font-variant-numeric: tabular-nums; }
+.park-mode-label { margin-right: auto; border: 1px solid rgb(232 209 117 / 45%); border-radius: 3px; background: rgb(12 26 40 / 88%); backdrop-filter: blur(6px); padding: 8px 12px; color: #f2edd8; font-size: 14px; }
+/* 時間操作は停止と速度をひとまとまりに見せる */
+.park-time-actions { display: flex; border: 1px solid rgb(132 170 180 / 55%); border-radius: 3px; overflow: hidden; }
+/* マップに重ねるときは十字や操作ボタンと同じ濃さにする */
+.park-time-float .park-time-actions { border-color: rgb(150 190 200 / 45%); box-shadow: 0 3px 12px rgb(0 0 0 / 40%); opacity: .5; transition: opacity .12s ease; }
+.park-time-float .park-time-actions:has(:active) { opacity: .9; }
+.park-time-float .park-icon { width: auto; height: 10px; }
+.park-time-actions .park-action-button { border: 0; border-radius: 0; }
+.park-time-actions .park-action-button + .park-action-button { border-left: 1px solid rgb(132 170 180 / 55%); }
+/* 表示が切り替わっても幅が動かないよう、いちばん長い内容に合わせて固定する */
+.park-action-button { display: inline-flex; width: 80px; align-items: center; justify-content: center; border: 1px solid rgb(132 170 180 / 55%); border-radius: 3px; background: rgb(20 40 58 / 90%); padding: 10px 12px; color: #f2edd8; cursor: pointer; font-size: 13px; line-height: 1; }
+.park-action-button.selected { border-color: rgb(232 209 117 / 70%); background: rgb(64 118 158 / 85%); color: #fff; }
+.park-time-actions .park-action-button { width: 38px; padding: 10px 4px; }
+.park-icon { display: block; }
+/* 上のバーに置くときは小さめに */
+.park-status-overlay .park-action-button { width: 44px; padding: 4px 10px; font-size: 12px; }
+/* 十字ボタンは円を斜めに四分割した形。普段は薄く、触っている間とメニュー操作中は濃く出す */
+.park-pad {
+  position: absolute; bottom: 8px; left: calc(8px + var(--safe-left)); width: var(--pad-size); height: var(--pad-size);
+  border: 1px solid rgb(150 190 200 / 45%); border-radius: 50%;
+  background: radial-gradient(circle at 50% 30%, rgb(38 64 90 / 92%), rgb(10 20 32 / 92%));
+  box-shadow: 0 3px 12px rgb(0 0 0 / 40%), inset 0 1px 0 rgb(255 255 255 / 14%);
+  opacity: .5; overflow: hidden; touch-action: none; transition: opacity .12s ease;
+}
+.park-pad:has([data-pressed]) { opacity: .9; }
+.park-pad[data-solid] { opacity: 1; }
+/* 四分割の溝。操作は通す */
+.park-pad::before {
+  content: ''; position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  background:
+    linear-gradient(45deg, transparent calc(50% - .5px), rgb(6 14 24 / 65%) calc(50% - .5px), rgb(6 14 24 / 65%) calc(50% + .5px), transparent calc(50% + .5px)),
+    linear-gradient(-45deg, transparent calc(50% - .5px), rgb(6 14 24 / 65%) calc(50% - .5px), rgb(6 14 24 / 65%) calc(50% + .5px), transparent calc(50% + .5px));
+}
+/* 中央の軸 */
+.park-pad::after {
+  content: ''; position: absolute; top: 50%; left: 50%; z-index: 2; width: 26%; height: 26%;
+  border: 1px solid rgb(150 190 200 / 40%); border-radius: 50%;
+  background: radial-gradient(circle at 50% 35%, rgb(30 52 74 / 96%), rgb(12 24 38 / 96%));
+  pointer-events: none; transform: translate(-50%, -50%);
+}
+/* 入力は円全体で受け取るので、扇そのものは見た目だけ */
+.park-pad-button { position: absolute; display: flex; inset: 0; border: 0; background: transparent; color: #cfe0e6; cursor: pointer; pointer-events: none; }
+.park-pad-button[data-pressed] { background: rgb(96 156 196 / 55%); color: #fff; }
+/* 矢印は扇のまんなかに置く */
+.park-pad-up { align-items: flex-start; justify-content: center; padding-top: 16px; clip-path: polygon(50% 50%, 0 0, 100% 0); }
+.park-pad-right { align-items: center; justify-content: flex-end; padding-right: 16px; clip-path: polygon(50% 50%, 100% 0, 100% 100%); }
+.park-pad-down { align-items: flex-end; justify-content: center; padding-bottom: 16px; clip-path: polygon(50% 50%, 100% 100%, 0 100%); }
+.park-pad-left { align-items: center; justify-content: flex-start; padding-left: 16px; clip-path: polygon(50% 50%, 0 100%, 0 0); }
+.park-pad-up .pad-arrow { transform: rotate(-90deg); }
+.park-pad-down .pad-arrow { transform: rotate(90deg); }
+.park-pad-left .pad-arrow { transform: rotate(180deg); }
+/* 操作ボタンは右下。パッドと同じひし形の並びで、割り当ても同じ */
+.park-face { position: absolute; right: calc(8px + var(--safe-right)); bottom: 8px; width: var(--pad-size); height: var(--pad-size); }
+.park-face-button {
+  position: absolute; display: flex; width: var(--face-button-size); height: var(--face-button-size); align-items: center; justify-content: center;
+  border: 1px solid rgb(150 190 200 / 45%); border-radius: 50%;
+  background: radial-gradient(circle at 50% 30%, rgb(38 64 90 / 92%), rgb(10 20 32 / 92%));
+  box-shadow: 0 3px 12px rgb(0 0 0 / 40%), inset 0 1px 0 rgb(255 255 255 / 14%);
+  cursor: pointer; opacity: .5; touch-action: none; transition: opacity .12s ease;
+}
+.park-face-button[data-pressed] { background: rgb(96 156 196 / 75%); opacity: .9; }
+.park-face[data-solid] .park-face-button { opacity: 1; }
+/* 四隅ではなく上下左右の端に置き、全体が十字ボタンと同じ大きさに収まるようにする */
+.park-face-up { top: 0; left: 50%; transform: translateX(-50%); }
+.park-face-right { top: 50%; right: 0; transform: translateY(-50%); }
+.park-face-down { bottom: 0; left: 50%; transform: translateX(-50%); }
+.park-face-left { top: 50%; left: 0; transform: translateY(-50%); }
+/* 絵柄ごとの色 */
+.park-face[data-style="playstation"] .park-face-up { color: #7fd6a0; }
+.park-face[data-style="playstation"] .park-face-right { color: #e88a92; }
+.park-face[data-style="playstation"] .park-face-down { color: #8fb6e8; }
+.park-face[data-style="playstation"] .park-face-left { color: #e7a0cd; }
+.park-face[data-style="xbox"] .park-face-up { color: #e6c65e; }
+.park-face[data-style="xbox"] .park-face-right { color: #e88a92; }
+.park-face[data-style="xbox"] .park-face-down { color: #7fd6a0; }
+.park-face[data-style="xbox"] .park-face-left { color: #8fb6e8; }
+/* 時間操作は十字と操作ボタンの間、下端をそろえて置く */
+.park-time-float { position: absolute; bottom: 8px; left: 50%; display: flex; flex-direction: column; align-items: center; gap: 4px; transform: translateX(-50%); }
+/* 開発サーバでだけ出るボタン。文字ぶんの幅にする */
+.park-action-button.park-debug-button { width: auto; border-style: dashed; padding: 6px 10px; font-size: 12px; }
+.park-time-float .park-debug-button { opacity: .5; }
+.park-time-float .park-debug-button:active { opacity: .9; }
+.park-menu { position: absolute; bottom: 12px; left: calc(12px + var(--safe-left)); display: flex; max-height: calc(100% - 24px); flex-direction: column; color: #fff; }
+.park-menu-items { display: flex; min-height: 0; flex-direction: column; width: min(224px, calc(100vw - 24px - var(--safe-left) - var(--safe-right))); border: 1px solid rgb(132 170 180 / 45%); border-radius: 3px; background: rgb(12 26 40 / 88%); backdrop-filter: blur(6px); box-shadow: 0 6px 18px rgb(0 0 0 / 35%); overflow: hidden auto; }
 .park-menu-item { display: flex; align-items: center; gap: 8px; border: 0; background: transparent; padding: 6px; color: #f2edd8; cursor: pointer; font-size: 13px; line-height: 1.25; text-align: left; }
 .park-menu-item + .park-menu-item { border-top: 1px solid rgb(132 170 180 / 18%); }
 .park-menu-icon { flex-shrink: 0; width: 32px; height: 32px; image-rendering: pixelated; }
 .park-menu-item[aria-disabled="true"] { color: #8b9aa0; }
 .park-menu-item[aria-disabled="true"] .park-menu-icon { filter: grayscale(1) brightness(.6); }
 .park-menu-item.selected { background: rgb(64 118 158 / 75%); color: #fff; }
-.park-status-bar { position: absolute; right: 0; bottom: 0; left: 0; display: flex; align-items: center; height: var(--status-bar-height); border-top: 1px solid rgb(232 209 117 / 45%); background: rgb(10 21 32 / 92%); backdrop-filter: blur(6px); padding: 0 14px; color: #e9e4cf; font-size: 12.5px; }
-.park-confirm { position: fixed; top: 50%; left: 50%; z-index: 5; border: 1px solid rgb(232 209 117 / 45%); border-radius: 3px; background: rgb(12 26 40 / 94%); backdrop-filter: blur(6px); box-shadow: 0 8px 24px rgb(0 0 0 / 45%); padding: 20px 24px; color: #f2edd8; font-size: 14px; text-align: center; transform: translate(-50%, -50%); }
-.park-confirm-buttons { display: flex; justify-content: center; gap: 8px; margin-top: 16px; }
+.park-bottom { display: flex; flex-direction: column; padding-bottom: var(--safe-bottom); background: rgb(10 21 32 / 92%); backdrop-filter: blur(6px); }
+.park-status-bar { display: flex; flex-shrink: 0; align-items: center; height: var(--status-bar-height); border-top: 1px solid rgb(232 209 117 / 45%); padding: 0 calc(14px + var(--safe-right)) 0 calc(14px + var(--safe-left)); color: #e9e4cf; font-size: 12.5px; }
+.park-confirm { position: fixed; top: 50%; left: 50%; z-index: 5; width: min(360px, calc(100vw - 32px)); border: 1px solid rgb(232 209 117 / 45%); border-radius: 3px; background: rgb(12 26 40 / 94%); backdrop-filter: blur(6px); box-shadow: 0 8px 24px rgb(0 0 0 / 45%); padding: 20px 24px; color: #f2edd8; font-size: 14px; text-align: center; transform: translate(-50%, -50%); }
+.park-confirm-buttons { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 16px; }
 .park-confirm-buttons .primary-button { margin-top: 0; padding: 8px 20px; }
+
+/* 狭い画面(スマートフォンなど) */
+@media (max-width: 640px) {
+  h1 { font-size: 24px; }
+  .primary-button { padding: 12px 24px; }
+  .country-button { flex-direction: column; align-items: flex-start; gap: 4px; }
+  /* 上端は日付・資金のバーで埋め、モード名はそのすぐ下に置く */
+  .park-hud-top { top: 0; right: 0; left: 0; flex-direction: column; align-items: flex-start; gap: 8px; }
+  .park-status-overlay { order: -1; align-self: stretch; justify-content: space-between; gap: 4px 12px; border-width: 0 0 1px; border-radius: 0; padding: calc(6px + var(--safe-top)) calc(8px + var(--safe-right)) 6px calc(8px + var(--safe-left)); font-size: 12px; }
+  .park-mode-label { margin: 0 0 0 calc(8px + var(--safe-left)); padding: 6px 10px; font-size: 12px; }
+  /* 下は十字と操作ボタンの場所なので、設置メニューはその上に置く */
+  .park-menu { right: calc(8px + var(--safe-right)); bottom: calc(var(--pad-size) + 16px); left: auto; max-height: calc(100% - var(--pad-size) - 24px); }
+  .park-menu-items { width: min(224px, calc(100vw - 16px - var(--safe-left) - var(--safe-right))); }
+  .park-menu-item { padding: 8px 6px; }
+}

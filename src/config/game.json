@@ -6,12 +6,15 @@
     "mapGrid": { "width": 80, "height": 80, "stepX": 22, "stepY": 16, "rowOffsetX": 8, "tileWidth": 32 },
     "displayScale": 2,
     "minDisplayScale": 1,
+    "narrowViewportWidth": 640,
     "zoomStep": 0.5,
+    "pinchZoomRatio": 1.25,
     "cursorCameraMarginTiles": 2,
     "cameraMarginTiles": { "top": 4, "bottom": 1, "side": 4 }
   },
   "input": { "initialRepeatDelayMs": 400, "repeatIntervalMs": 60, "cameraPanPixelsPerSecond": 480 },
   "time": { "defaultSpeedIndex": 1, "framesPerSecond": 60, "originalFramesPerSecond": 30 },
+  "loading": { "messageFrames": 120, "blackoutFadeFrames": 12, "blackoutHoldFrames": 60 },
   "guests": {
     "display": {
       "tileOffset": { "x": 0.45, "y": 0.6 },

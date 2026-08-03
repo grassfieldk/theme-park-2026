@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import countries from './config/countries.json'
 import attractions from './config/attractions.json'
 import shops from './config/shops.json'
@@ -11,14 +11,15 @@ import type { ParkMapHandle } from './components/ParkMap'
 import ParkMenu from './components/ParkMenu'
 import { logGameEvent } from './game/log'
 import { forCountry } from './game/availability'
-import { dateFromElapsed, formatDate, gameDaysPerMs } from './game/clock'
+import { dateFromElapsed, daysInMonth, formatDate, gameDaysPerMs } from './game/clock'
 import { readSave, writeSave, SAVE_VERSION, type ParkSnapshot, type SaveMode } from './game/save'
+import { buttonStyleLabels, readControls, writeControls, type ControlSettings } from './game/controls'
 
 const ParkMap = lazy(() => import('./components/ParkMap'))
 
 type Screen = 'title' | 'country' | 'park'
-type ParkMode = 'map' | 'mainMenu' | 'roadMenu' | 'pathBuild' | 'queueBuild' | 'stairsBuild' | 'attractionMenu' | 'attractionBuild' | 'attractionQueueBuild' | 'shopMenu' | 'shopBuild' | 'facilityMenu' | 'facilityBuild'
-const mainMenuModeById: Record<string, ParkMode> = { roads: 'roadMenu', attractions: 'attractionMenu', shops: 'shopMenu', facilities: 'facilityMenu' }
+type ParkMode = 'map' | 'mainMenu' | 'roadMenu' | 'pathBuild' | 'queueBuild' | 'stairsBuild' | 'attractionMenu' | 'attractionBuild' | 'attractionQueueBuild' | 'shopMenu' | 'shopBuild' | 'facilityMenu' | 'facilityBuild' | 'systemMenu' | 'controlsMenu'
+const mainMenuModeById: Record<string, ParkMode> = { roads: 'roadMenu', attractions: 'attractionMenu', shops: 'shopMenu', facilities: 'facilityMenu', system: 'systemMenu' }
 type AttractionBuildStep = 'body' | 'entrance' | 'exit'
 type ConfirmPrompt = { message: string, confirmLabel: string, onConfirm: () => void, onCancel?: () => void }
 const countryColumns = 2
@@ -32,6 +33,262 @@ function moveMenu(index: number, input: MenuAction, length: number, pageSize = 1
   return index
 }
 
+// スマートフォンなど狭い画面では、タッチで操作できる配置に切り替える
+const compactLayoutQuery = `(max-width: ${game.park.narrowViewportWidth}px)`
+function useCompactLayout() {
+  const [compact, setCompact] = useState(() => window.matchMedia(compactLayoutQuery).matches)
+  useEffect(() => {
+    const query = window.matchMedia(compactLayoutQuery)
+    const update = () => setCompact(query.matches)
+    query.addEventListener('change', update)
+    return () => query.removeEventListener('change', update)
+  }, [])
+  return compact
+}
+
+type HoldButtonProps = {
+  className: string
+  label: string
+  onPress: () => void
+  onRelease?: () => void
+  /** 押しっぱなしで繰り返すか。決定ボタンのように押した瞬間だけ効くものは false */
+  repeat?: boolean
+  children: ReactNode
+}
+
+// 画面上の押しボタン。押しっぱなしの繰り返しはパッドの十字キーと同じ間隔で送る
+function HoldButton({ className, label, onPress, onRelease, repeat = true, children }: HoldButtonProps) {
+  const press = useRef(onPress)
+  const release = useRef(onRelease)
+  press.current = onPress
+  release.current = onRelease
+  const held = useRef(false)
+  const timer = useRef(0)
+  const [pressed, setPressed] = useState(false)
+  const stop = useCallback(() => {
+    if (!held.current) return
+    held.current = false
+    setPressed(false)
+    window.clearTimeout(timer.current)
+    release.current?.()
+  }, [])
+  useEffect(() => () => window.clearTimeout(timer.current), [])
+  const start = (event: React.PointerEvent<HTMLButtonElement>) => {
+    event.preventDefault()
+    event.currentTarget.setPointerCapture(event.pointerId)
+    if (held.current) return
+    held.current = true
+    setPressed(true)
+    press.current()
+    if (!repeat) return
+    const again = (delay: number) => {
+      timer.current = window.setTimeout(() => {
+        press.current()
+        again(game.input.repeatIntervalMs)
+      }, delay)
+    }
+    again(game.input.initialRepeatDelayMs)
+  }
+  return (
+    <button
+      type="button"
+      className={className}
+      aria-label={label}
+      data-pressed={pressed ? 'true' : undefined}
+      onPointerDown={start}
+      onPointerUp={stop}
+      onPointerCancel={stop}
+    >
+      {children}
+    </button>
+  )
+}
+
+const iconSize = 8
+
+// 停止の目印。縦棒 2 本
+function PauseIcon() {
+  return (
+    <svg className="park-icon" viewBox={`0 0 ${iconSize} ${iconSize}`} width={iconSize} height={iconSize} aria-hidden="true" focusable="false">
+      <rect x="0" y="0" width="3" height={iconSize} fill="currentColor" />
+      <rect x="5" y="0" width="3" height={iconSize} fill="currentColor" />
+    </svg>
+  )
+}
+
+// 十字ボタンの矢印。向きは扇ごとに CSS で回す
+function ArrowIcon() {
+  return (
+    <svg className="park-icon pad-arrow" viewBox={`0 0 ${iconSize} ${iconSize}`} width="12" height="12" aria-hidden="true" focusable="false">
+      <path d={`M0 0L${iconSize} ${iconSize / 2}L0 ${iconSize}Z`} fill="currentColor" />
+    </svg>
+  )
+}
+
+// パッドの操作ボタンの印。PlayStation は記号、Xbox は文字で描く
+type FaceGlyph = 'triangle' | 'circle' | 'cross' | 'square' | 'Y' | 'B' | 'A' | 'X'
+const faceGlyphs: Record<ControlSettings['buttonStyle'], Record<'up' | 'right' | 'down' | 'left', FaceGlyph>> = {
+  playstation: { up: 'triangle', right: 'circle', down: 'cross', left: 'square' },
+  xbox: { up: 'Y', right: 'B', down: 'A', left: 'X' },
+}
+function FaceIcon({ glyph }: { glyph: FaceGlyph }) {
+  const line = { fill: 'none', stroke: 'currentColor', strokeWidth: 1.6 } as const
+  return (
+    <svg className="park-icon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">
+      {glyph === 'triangle' ? <path d="M8 2.8L14 13.2H2Z" {...line} strokeLinejoin="round" />
+        : glyph === 'circle' ? <circle cx="8" cy="8" r="5.2" {...line} />
+          : glyph === 'cross' ? <path d="M3.4 3.4L12.6 12.6M12.6 3.4L3.4 12.6" {...line} strokeLinecap="round" />
+            : glyph === 'square' ? <rect x="3" y="3" width="10" height="10" rx="1" {...line} />
+              : <text x="8" y="8" textAnchor="middle" dominantBaseline="central" fontSize="12" fontWeight="bold" fill="currentColor">{glyph}</text>}
+    </svg>
+  )
+}
+
+// 速度の目印。段が上がるごとに三角が 1 つ増え、そのぶん 1 つあたりを細くする
+// (1 つ = 基準の幅、2 つ = その 2/3、3 つ = その 1/2)。高さは変えない
+function SpeedIcon({ count }: { count: number }) {
+  const round = (value: number) => Math.round(value * 100) / 100
+  const height = iconSize
+  const narrowing = 2 / (count + 1)
+  const width = round(height * narrowing)
+  const step = round((height + 2) * narrowing)
+  const total = round(step * (count - 1) + width)
+  return (
+    <svg className="park-icon" viewBox={`0 0 ${total} ${height}`} width={total} height={height} aria-hidden="true" focusable="false">
+      {Array.from({ length: count }, (_, index) => {
+        const left = round(index * step)
+        return <path key={index} d={`M${left} 0L${round(left + width)} ${height / 2}L${left} ${height}Z`} fill="currentColor" />
+      })}
+    </svg>
+  )
+}
+
+// 待たせている間に順ぐりに出す文言。開園前の支度と月末の事務を風景として見せる
+const loadingMessages = [
+  'ゲートを開いています...',
+  '芝生を刈っています...',
+  '風船をふくらませています...',
+  'ポップコーンを補充しています...',
+  '安全バーを確認しています...',
+  'チケットを刷っています...',
+  'マスコットを起こしています...',
+  'ベンチのペンキを乾かしています...',
+  '園内放送のマイクを試しています...',
+]
+const monthChangeMessages = [
+  '月末の事務処理に追われています...',
+  '今月の売上を集計しています...',
+  '来月のシフトを組んでいます...',
+  '看板を掛け替えています...',
+  '花壇を植え替えています...',
+  'アトラクションを点検しています...',
+  'スタッフに給料を配っています...',
+  'カレンダーをめくっています...',
+]
+// 待ち時間はフレーム数で決める(game.json)。暗転はすばやく暗くして最低の長さだけ保つ
+const framesToMs = (frames: number) => frames * 1000 / game.time.framesPerSecond
+const loadingMessageMs = framesToMs(game.loading.messageFrames)
+const blackoutFadeMs = framesToMs(game.loading.blackoutFadeFrames)
+const blackoutHoldMs = framesToMs(game.loading.blackoutHoldFrames)
+
+function ParkLoading({ messages }: { messages: string[] }) {
+  const [index, setIndex] = useState(() => Math.floor(Math.random() * messages.length))
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setIndex((current) => (current + 1) % messages.length)
+    }, loadingMessageMs)
+    return () => window.clearInterval(timer)
+  }, [messages])
+  return (
+    <div className="park-loading" role="status">
+      <span className="park-loading-spinner" aria-hidden="true" />
+      <p>{messages[index % messages.length]}</p>
+    </div>
+  )
+}
+
+type Direction = Extract<MenuAction, 'up' | 'down' | 'left' | 'right'>
+const padSectors: Array<{ direction: Direction, className: string, label: string }> = [
+  { direction: 'up', className: 'park-pad-button park-pad-up', label: '上' },
+  { direction: 'right', className: 'park-pad-button park-pad-right', label: '右' },
+  { direction: 'down', className: 'park-pad-button park-pad-down', label: '下' },
+  { direction: 'left', className: 'park-pad-button park-pad-left', label: '左' },
+]
+
+// 画面上の十字ボタン。指の位置で向きが決まるので、押したまま指をずらすと向きが変わる
+function DirectionPad({ solid, onDirection }: { solid: boolean, onDirection: (direction: Direction) => void }) {
+  const fire = useRef(onDirection)
+  fire.current = onDirection
+  const [active, setActive] = useState<Direction | null>(null)
+  const held = useRef<Direction | null>(null)
+  const timer = useRef(0)
+
+  const stop = useCallback(() => {
+    held.current = null
+    setActive(null)
+    window.clearTimeout(timer.current)
+  }, [])
+  useEffect(() => () => window.clearTimeout(timer.current), [])
+
+  const begin = (direction: Direction) => {
+    held.current = direction
+    setActive(direction)
+    fire.current(direction)
+    window.clearTimeout(timer.current)
+    const again = (delay: number) => {
+      timer.current = window.setTimeout(() => {
+        if (!held.current) return
+        fire.current(held.current)
+        again(game.input.repeatIntervalMs)
+      }, delay)
+    }
+    again(game.input.initialRepeatDelayMs)
+  }
+
+  // 中心から見て縦横どちらに寄っているかで、斜めに四分割した扇のどれかを選ぶ
+  const directionAt = (event: React.PointerEvent<HTMLDivElement>): Direction => {
+    const bounds = event.currentTarget.getBoundingClientRect()
+    const offsetX = event.clientX - (bounds.left + bounds.width / 2)
+    const offsetY = event.clientY - (bounds.top + bounds.height / 2)
+    if (Math.abs(offsetX) >= Math.abs(offsetY)) return offsetX >= 0 ? 'right' : 'left'
+    return offsetY >= 0 ? 'down' : 'up'
+  }
+
+  return (
+    <div
+      className="park-pad"
+      data-solid={solid ? 'true' : undefined}
+      role="group"
+      aria-label="カーソル操作"
+      onPointerDown={(event) => {
+        event.preventDefault()
+        event.currentTarget.setPointerCapture(event.pointerId)
+        begin(directionAt(event))
+      }}
+      onPointerMove={(event) => {
+        if (!held.current) return
+        const direction = directionAt(event)
+        if (direction !== held.current) begin(direction)
+      }}
+      onPointerUp={stop}
+      onPointerCancel={stop}
+    >
+      {padSectors.map(({ direction, className, label }) => (
+        <button
+          key={direction}
+          type="button"
+          className={className}
+          aria-label={label}
+          data-pressed={active === direction ? 'true' : undefined}
+          onClick={() => fire.current(direction)}
+        >
+          <ArrowIcon />
+        </button>
+      ))}
+    </div>
+  )
+}
+
 function moveCountry(index: number, input: MenuAction) {
   const lastRowStart = countries.length - countryColumns
   if (input === 'left') return index % countryColumns === 0 ? index + countryColumns - 1 : index - 1
@@ -42,6 +299,7 @@ function moveCountry(index: number, input: MenuAction) {
 }
 
 export default function App() {
+  const compact = useCompactLayout()
   const [screen, setScreen] = useState<Screen>('title')
   const [selectedCountry, setSelectedCountry] = useState(0)
   const parkMap = useRef<ParkMapHandle>(null)
@@ -51,6 +309,9 @@ export default function App() {
   const [attractionMenuIndex, setAttractionMenuIndex] = useState(0)
   const [shopMenuIndex, setShopMenuIndex] = useState(0)
   const [facilityMenuIndex, setFacilityMenuIndex] = useState(0)
+  const [systemMenuIndex, setSystemMenuIndex] = useState(0)
+  const [controlsMenuIndex, setControlsMenuIndex] = useState(0)
+  const [controls, setControls] = useState(readControls)
   const [shopBuildStep, setShopBuildStep] = useState<'body' | 'direction'>('body')
   const [facilityBuildStep, setFacilityBuildStep] = useState<'body' | 'direction'>('body')
   const [stairsBuildStep, setStairsBuildStep] = useState<'body' | 'direction'>('body')
@@ -73,6 +334,10 @@ export default function App() {
   const [loadedPark, setLoadedPark] = useState<ParkSnapshot | null>(null)
   // 確認の問い合わせ。入っている間は確認だけを受け付ける
   const [confirmPrompt, setConfirmPrompt] = useState<ConfirmPrompt | null>(null)
+  // 絵の読み込みと園の組み立てが終わるまでは読み込み中の表示を出す
+  const [mapReady, setMapReady] = useState(false)
+  // 月が変わる間の暗転
+  const [monthChanging, setMonthChanging] = useState(false)
 
   const titleMenus = useMemo(() => ({
     menu: [
@@ -123,6 +388,25 @@ export default function App() {
     return () => cancelAnimationFrame(frame)
   }, [screen, secondsPerDay])
 
+  // 月が替わったら暗転させ、季節の絵の差し替えが済むまで見せない。
+  // 差し替えは月が替わった直後のフレームで終わるので、実際には最低の長さが待ち時間になる
+  const shownMonth = useRef<number | null>(null)
+  useEffect(() => {
+    if (screen !== 'park') {
+      shownMonth.current = null
+      return
+    }
+    if (shownMonth.current === clock.month) return
+    const first = shownMonth.current === null
+    shownMonth.current = clock.month
+    if (!first) setMonthChanging(true)
+  }, [screen, clock])
+  useEffect(() => {
+    if (!monthChanging) return
+    const timer = window.setTimeout(() => setMonthChanging(false), blackoutFadeMs + blackoutHoldMs)
+    return () => window.clearTimeout(timer)
+  }, [monthChanging])
+
   // セーブデータの続きから park 画面に入る
   const startLoadedGame = useCallback(() => {
     if (!savedGame) return
@@ -137,6 +421,7 @@ export default function App() {
     setAttractionMenuIndex(0)
     setShopMenuIndex(0)
     setFacilityMenuIndex(0)
+    setMapReady(false)
     setParkMode('map')
     setLoadedPark(savedGame.park)
     logGameEvent('game_loaded', { mode: savedGame.mode, country: savedGame.countryId })
@@ -208,6 +493,29 @@ export default function App() {
     })
   }, [])
 
+  // 操作設定を変えて残す。原作にはない独自の設定
+  const changeControls = useCallback((change: Partial<ControlSettings>) => {
+    setControls((current) => {
+      const next = { ...current, ...change }
+      writeControls(next)
+      return next
+    })
+  }, [])
+  const controlItems = useMemo(() => [
+    {
+      id: 'buttonStyle',
+      label: `ボタンの絵柄: ${buttonStyleLabels[controls.buttonStyle]}`,
+      description: '画面に出す操作ボタンの絵柄を選べます。',
+      enabled: true,
+    },
+    {
+      id: 'swapConfirm',
+      label: `決定ボタン: ${controls.swapConfirm ? '右' : '下'}`,
+      description: '決定と取り消しを入れ替えられます。',
+      enabled: true,
+    },
+  ], [controls])
+
   // メニュー項目を開く。キー操作の決定とクリックの両方から使う
   const openMenuItem = useCallback((mode: ParkMode, index: number) => {
     if (mode === 'mainMenu') {
@@ -236,7 +544,22 @@ export default function App() {
       setFacilityMenuIndex(index)
       setParkMode('facilityBuild')
     }
-  }, [])
+    else if (mode === 'systemMenu') {
+      if (!parkMenu.system[index].enabled) return
+      setSystemMenuIndex(index)
+      if (parkMenu.system[index].id === 'controls') {
+        setControlsMenuIndex(0)
+        setParkMode('controlsMenu')
+      }
+    }
+    else if (mode === 'controlsMenu') {
+      setControlsMenuIndex(index)
+      if (controlItems[index].id === 'buttonStyle') {
+        changeControls({ buttonStyle: controls.buttonStyle === 'playstation' ? 'xbox' : 'playstation' })
+      }
+      else changeControls({ swapConfirm: !controls.swapConfirm })
+    }
+  }, [controlItems, controls, changeControls])
 
   const action = useCallback((input: MenuAction) => {
     if (confirmPrompt) {
@@ -320,6 +643,18 @@ export default function App() {
         else setFacilityMenuIndex((current) => moveMenu(current, input, countryFacilities.length, menuPageSize))
         return
       }
+      if (parkMode === 'systemMenu') {
+        if (input === 'cancel') setParkMode('mainMenu')
+        else if (input === 'confirm') openMenuItem('systemMenu', systemMenuIndex)
+        else setSystemMenuIndex((current) => moveMenu(current, input, parkMenu.system.length, menuPageSize))
+        return
+      }
+      if (parkMode === 'controlsMenu') {
+        if (input === 'cancel') setParkMode('systemMenu')
+        else if (input === 'confirm') openMenuItem('controlsMenu', controlsMenuIndex)
+        else setControlsMenuIndex((current) => moveMenu(current, input, controlItems.length, menuPageSize))
+        return
+      }
       if (parkMode === 'facilityBuild' && input === 'cancel') {
         if (facilityBuildStep === 'direction') parkMap.current?.handleAction('cancel')
         else setParkMode('facilityMenu')
@@ -346,7 +681,7 @@ export default function App() {
     const nextCountry = moveCountry(selectedCountry, input)
     if (nextCountry === selectedCountry) return
     setSelectedCountry(nextCountry)
-  }, [screen, selectedCountry, parkMode, mainMenuIndex, roadMenuIndex, attractionMenuIndex, shopMenuIndex, facilityMenuIndex, menuPageSize, shopBuildStep, facilityBuildStep, stairsBuildStep, titleStep, titleIndex, confirmPrompt, answerConfirm, activateTitleItem, openMenuItem, startNewGame, countryAttractions, countryShops, countryFacilities])
+  }, [screen, selectedCountry, parkMode, mainMenuIndex, roadMenuIndex, attractionMenuIndex, shopMenuIndex, facilityMenuIndex, systemMenuIndex, controlsMenuIndex, controlItems, menuPageSize, shopBuildStep, facilityBuildStep, stairsBuildStep, titleStep, titleIndex, confirmPrompt, answerConfirm, activateTitleItem, openMenuItem, startNewGame, countryAttractions, countryShops, countryFacilities])
 
 
   useEffect(() => setBuildMessage(''), [parkMode])
@@ -372,11 +707,19 @@ export default function App() {
     })
   }, [screen, clock])
 
-  const menuItems = parkMode === 'mainMenu' || parkMode === 'roadMenu'
-    ? (parkMode === 'mainMenu' ? parkMenu.main : parkMenu.roads).map((item) => ({
+  const listMenus: Partial<Record<ParkMode, typeof parkMenu.main>> = {
+    mainMenu: parkMenu.main,
+    roadMenu: parkMenu.roads,
+    systemMenu: parkMenu.system,
+  }
+  const listMenu = listMenus[parkMode]
+  const menuItems = listMenu
+    ? listMenu.map((item) => ({
       ...item,
       iconSrc: `/assets/park/menu-icon-${item.icon}.png`,
     }))
+    : parkMode === 'controlsMenu'
+    ? controlItems
     : parkMode === 'attractionMenu'
       ? countryAttractions.map((attraction) => ({
         id: attraction.id,
@@ -403,7 +746,15 @@ export default function App() {
             enabled: true,
           }))
           : null
-  const menuSelectedIndex = parkMode === 'mainMenu' ? mainMenuIndex : parkMode === 'roadMenu' ? roadMenuIndex : parkMode === 'shopMenu' ? shopMenuIndex : parkMode === 'facilityMenu' ? facilityMenuIndex : attractionMenuIndex
+  const menuIndexByMode: Partial<Record<ParkMode, [number, (index: number) => void]>> = {
+    mainMenu: [mainMenuIndex, setMainMenuIndex],
+    roadMenu: [roadMenuIndex, setRoadMenuIndex],
+    shopMenu: [shopMenuIndex, setShopMenuIndex],
+    facilityMenu: [facilityMenuIndex, setFacilityMenuIndex],
+    systemMenu: [systemMenuIndex, setSystemMenuIndex],
+    controlsMenu: [controlsMenuIndex, setControlsMenuIndex],
+  }
+  const [menuSelectedIndex, selectMenuIndex] = menuIndexByMode[parkMode] ?? [attractionMenuIndex, setAttractionMenuIndex]
   const buildModeLabel = parkMode === 'pathBuild'
     ? '歩道設置中'
     : parkMode === 'stairsBuild'
@@ -425,6 +776,49 @@ export default function App() {
             : ''
   // 左上は今のモード、下部のバーは通知・アドバイスなどのメッセージと役割を分ける
   const statusBarText = menuItems ? menuItems[menuSelectedIndex]?.description ?? '' : buildMessage
+  // 時間操作は停止と速度変更の 2 つ。速度は押すたびに低速→標準→高速と回る
+  const cycleSpeed = () => {
+    setSpeedIndex((current) => paused ? current : (current + 1) % game.speeds.length)
+    setPaused(false)
+  }
+  // 開発サーバでだけ出すデバッグ操作。本番の書き出しにはこの分岐ごと残らない
+  const jumpToMonthEnd = () => {
+    const date = dateFromElapsed(elapsedDays.current)
+    const lastDay = daysInMonth(date.year, date.month)
+    // すでに月末なら翌月の月末へ送る
+    const nextMonth = date.month === 12 ? 1 : date.month + 1
+    const nextYear = date.month === 12 ? date.year + 1 : date.year
+    elapsedDays.current += date.day < lastDay ? lastDay - date.day : daysInMonth(nextYear, nextMonth)
+    setClock(dateFromElapsed(elapsedDays.current))
+    parkMap.current?.setElapsedDays(elapsedDays.current)
+  }
+  const debugControls = import.meta.env.DEV ? (
+    <button type="button" className="park-action-button park-debug-button" onClick={jumpToMonthEnd}>
+      月末
+    </button>
+  ) : null
+  const speedControls = (
+    <span className="park-time-actions">
+      <button
+        type="button"
+        className={timePaused ? 'park-action-button selected' : 'park-action-button'}
+        aria-label={paused ? '再開' : '停止'}
+        title={paused ? '再開' : '停止'}
+        onClick={() => setPaused((current) => !current)}
+      >
+        <PauseIcon />
+      </button>
+      <button
+        type="button"
+        className={timePaused ? 'park-action-button' : 'park-action-button selected'}
+        aria-label={`速度: ${game.speeds[speedIndex].label}`}
+        title={game.speeds[speedIndex].label}
+        onClick={cycleSpeed}
+      >
+        <SpeedIcon count={speedIndex + 1} />
+      </button>
+    </span>
+  )
   // メニューや確認を出している間は、マップへのクリックを届かせない
   const mapBlocked = menuItems !== null || confirmPrompt !== null
 
@@ -441,6 +835,7 @@ export default function App() {
     >
       <GamepadController
         onAction={action}
+        swapConfirm={controls.swapConfirm}
         onCameraPan={(deltaX, deltaY) => parkMap.current?.panCamera(deltaX, deltaY)}
       />
       {screen === 'title' ? (
@@ -480,7 +875,8 @@ export default function App() {
         </section>
       ) : (
         <section className="park-screen" aria-label="パーク画面">
-          <Suspense fallback={<div className="map-loading">マップを読み込み中...</div>}>
+          <div className="park-view">
+          <Suspense fallback={null}>
             <ParkMap
               ref={parkMap}
               country={selected}
@@ -509,6 +905,7 @@ export default function App() {
               onShopBuildStep={setShopBuildStep}
               onShopComplete={() => setParkMode('shopMenu')}
               onBuildMessage={setBuildMessage}
+              onReady={() => setMapReady(true)}
               secondsPerDay={secondsPerDay}
               onAdmissionPaid={(fee) => setCash((current) => current + fee)}
               onShopSale={(amount) => setCash((current) => current + amount)}
@@ -520,48 +917,101 @@ export default function App() {
                 onCancel: () => parkMap.current?.resolveRemoval(false),
               })}
               mapBlocked={mapBlocked}
+              touchLayout={compact}
               initialPark={loadedPark}
               initialElapsedDays={elapsedDays.current}
             />
           </Suspense>
-          {buildModeLabel ? <div className="park-mode-label">{buildModeLabel}</div> : null}
-          <div className="park-status-overlay">
-            <span>{formatDate(clock)}</span>
-            <span>資金: {cash.toLocaleString()}</span>
-            <span>来園者: {guestCount.toLocaleString()}</span>
-            <span className="park-speed">
-              <button
-                type="button"
-                className={timePaused ? 'park-speed-button selected' : 'park-speed-button'}
-                onClick={() => setPaused(true)}
-              >
-                停止
-              </button>
-              {game.speeds.map((speed, index) => (
-                <button
-                  key={speed.id}
-                  type="button"
-                  className={index === speedIndex && !timePaused ? 'park-speed-button selected' : 'park-speed-button'}
-                  onClick={() => {
-                    setSpeedIndex(index)
-                    setPaused(false)
-                  }}
-                >
-                  {speed.label}
-                </button>
-              ))}
-            </span>
+          <div className="park-hud-top">
+            {buildModeLabel ? <div className="park-mode-label">{buildModeLabel}</div> : null}
+            <div className="park-status-overlay">
+              <span>{formatDate(clock)}</span>
+              <span>資金: {cash.toLocaleString()}</span>
+              <span>来園者: {guestCount.toLocaleString()}</span>
+              {compact ? null : speedControls}
+              {compact ? null : debugControls}
+            </div>
           </div>
           {menuItems ? (
             <ParkMenu
               items={menuItems}
               selectedIndex={menuSelectedIndex}
               onPageSizeChange={setMenuPageSize}
-              onSelect={parkMode === 'mainMenu' ? setMainMenuIndex : parkMode === 'roadMenu' ? setRoadMenuIndex : parkMode === 'shopMenu' ? setShopMenuIndex : parkMode === 'facilityMenu' ? setFacilityMenuIndex : setAttractionMenuIndex}
+              onSelect={selectMenuIndex}
               onConfirm={(index) => openMenuItem(parkMode, index)}
             />
           ) : null}
-          <div className="park-status-bar">{statusBarText}</div>
+          {compact ? (
+            <>
+              {/* メニューを開いている間は操作の主役になるので、薄くせず出す */}
+              <DirectionPad solid={menuItems !== null} onDirection={action} />
+              {/* 時間操作は十字とアクションボタンの間。デバッグ操作はその上に積む */}
+              <div className="park-time-float">
+                {debugControls}
+                {speedControls}
+              </div>
+              {/* パッドと同じ配置・同じ割り当ての操作ボタン */}
+              <div
+                className="park-face"
+                data-style={controls.buttonStyle}
+                data-solid={menuItems ? 'true' : undefined}
+                role="group"
+                aria-label="操作ボタン"
+              >
+                <HoldButton className="park-face-button park-face-up" label="メニュー" repeat={false} onPress={() => action('menu')}>
+                  <FaceIcon glyph={faceGlyphs[controls.buttonStyle].up} />
+                </HoldButton>
+                <HoldButton
+                  className="park-face-button park-face-right"
+                  label={controls.swapConfirm ? '決定' : 'キャンセル'}
+                  repeat={false}
+                  onPress={() => action(controls.swapConfirm ? 'confirm' : 'cancel')}
+                  onRelease={controls.swapConfirm ? () => action('confirmRelease') : undefined}
+                >
+                  <FaceIcon glyph={faceGlyphs[controls.buttonStyle].right} />
+                </HoldButton>
+                <HoldButton
+                  className="park-face-button park-face-down"
+                  label={controls.swapConfirm ? 'キャンセル' : '決定'}
+                  repeat={false}
+                  onPress={() => action(controls.swapConfirm ? 'cancel' : 'confirm')}
+                  onRelease={controls.swapConfirm ? undefined : () => action('confirmRelease')}
+                >
+                  <FaceIcon glyph={faceGlyphs[controls.buttonStyle].down} />
+                </HoldButton>
+                <HoldButton
+                  className="park-face-button park-face-left"
+                  label="撤去"
+                  repeat={false}
+                  onPress={() => action('remove')}
+                  onRelease={() => action('removeRelease')}
+                >
+                  <FaceIcon glyph={faceGlyphs[controls.buttonStyle].left} />
+                </HoldButton>
+              </div>
+            </>
+          ) : null}
+          </div>
+          <div className="park-bottom">
+            <div className="park-status-bar">{statusBarText}</div>
+          </div>
+          {/* 最初の読み込みと月替わりの暗転。どちらも明けるときにフェードさせる */}
+          <div
+            className="park-blackout"
+            style={{ transitionDuration: `${blackoutFadeMs}ms` }}
+            data-visible={mapReady ? undefined : 'true'}
+            aria-hidden={mapReady}
+          >
+            <ParkLoading messages={loadingMessages} />
+          </div>
+          <div
+            className="park-blackout"
+            style={{ transitionDuration: `${blackoutFadeMs}ms` }}
+            data-visible={monthChanging ? 'true' : undefined}
+            aria-hidden={!monthChanging}
+          >
+            <ParkLoading messages={monthChangeMessages} />
+          </div>
         </section>
       )}
       {screen === 'country' || (screen === 'title' && titleStep === 'mode') ? (
