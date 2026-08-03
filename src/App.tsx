@@ -423,7 +423,8 @@ export default function App() {
               ? '向きを選んでください'
               : `${countryFacilities[facilityMenuIndex].name} 設置中`
             : ''
-  const statusBarText = menuItems ? menuItems[menuSelectedIndex]?.description ?? '' : buildMessage || buildModeLabel
+  // 左上は今のモード、下部のバーは通知・アドバイスなどのメッセージと役割を分ける
+  const statusBarText = menuItems ? menuItems[menuSelectedIndex]?.description ?? '' : buildMessage
   // メニューや確認を出している間は、マップへのクリックを届かせない
   const mapBlocked = menuItems !== null || confirmPrompt !== null
 
@@ -523,6 +524,7 @@ export default function App() {
               initialElapsedDays={elapsedDays.current}
             />
           </Suspense>
+          {buildModeLabel ? <div className="park-mode-label">{buildModeLabel}</div> : null}
           <div className="park-status-overlay">
             <span>{formatDate(clock)}</span>
             <span>資金: {cash.toLocaleString()}</span>

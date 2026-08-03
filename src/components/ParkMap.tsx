@@ -1530,13 +1530,21 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
               .setVisible(true).setAlpha(valid ? 1 : 0.55).setTint(valid ? 0xffffff : 0xff6048))
           }
         }
-        const placeCursor = (x: number, y: number) => {
+        // カメラ追従に使う、マスに丸める前のカーソル位置(画面座標)
+        const cursorTrack = { x: 0, y: 0 }
+        const setCursorTile = (x: number, y: number) => {
           // カーソルは敷地の x 範囲内、上は敷地の上端、下は園外を経てマップ下端手前まで
           cursorPosition.x = Phaser.Math.Clamp(x, left, right)
           cursorPosition.y = Phaser.Math.Clamp(y, top, gridHeight - 2)
           const position = point(cursorPosition.x, cursorPosition.y)
           cursor.setPosition(position.x, position.y)
           drawCursor()
+          return position
+        }
+        const placeCursor = (x: number, y: number) => {
+          const position = setCursorTile(x, y)
+          cursorTrack.x = position.x
+          cursorTrack.y = position.y
         }
         placeCursor(cursorPosition.x, cursorPosition.y)
 
@@ -2397,30 +2405,42 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             else placeAttractionAccess()
           }
         }
-        const selectTileAtPointer = (pointer: Phaser.Input.Pointer) => {
-          const world = pointer.positionToCamera(camera) as Phaser.Math.Vector2
-          // 高いマスは画面上で高さぶん上に描かれる。高い順に「その高さとして読んだときに
-          // 本当にその高さのマスか」を試し、最初に一致した面を選ぶ
+        // 高いマスは画面上で高さぶん上に描かれる。高い順に「その高さとして読んだときに
+        // 本当にその高さのマスか」を試し、最初に一致した面を選ぶ
+        const tileAtWorld = (worldX: number, worldY: number) => {
           const candidate = (lift: number) => {
-            const y = Math.floor((world.y - padding + lift) / stepY)
-            const localY = world.y - padding + lift - y * stepY
-            const x = Math.floor((world.x - padding - y * rowOffsetX - Math.floor(localY / 2)) / stepX)
+            const y = Math.floor((worldY - padding + lift) / stepY)
+            const localY = worldY - padding + lift - y * stepY
+            const x = Math.floor((worldX - padding - y * rowOffsetX - Math.floor(localY / 2)) / stepX)
             return { x, y }
           }
-          let picked = candidate(0)
           for (let lift = 3; lift >= 1; lift -= 1) {
             const tile = candidate(lift * terrain.heightStepPx)
-            if (heightAt(tile.x, tile.y) === lift) {
-              picked = tile
-              break
-            }
+            if (heightAt(tile.x, tile.y) === lift) return tile
           }
-          const { x, y } = picked
+          return candidate(0)
+        }
+        const selectTileAtPointer = (pointer: Phaser.Input.Pointer) => {
+          const world = pointer.positionToCamera(camera) as Phaser.Math.Vector2
+          const { x, y } = tileAtWorld(world.x, world.y)
           if (x < left || x > right || y < top || y >= gridHeight - 1) return false
           // 入口・出口を置いている間は敷地の縁から離れられない
           if (pendingAttraction && activeAttractionBuildStep !== 'body') snapAccessCursor(x, y)
           else placeCursor(x, y)
           return true
+        }
+        // カメラが動いたぶんカーソルをずらし、画面上の同じ場所にあるマスを選び直す。
+        // 入口・出口の設置中はカーソルが敷地の縁から離れられないので追従させない
+        const moveCursorWithCamera = (movedX: number, movedY: number) => {
+          if (pendingAttraction && activeAttractionBuildStep !== 'body') return
+          if (movedX === 0 && movedY === 0) return
+          cursorTrack.x += movedX
+          cursorTrack.y += movedY
+          const tile = tileAtWorld(cursorTrack.x, cursorTrack.y)
+          const position = setCursorTile(tile.x, tile.y)
+          // 端で止まったら、追従の位置もそこで止める
+          if (tile.x !== cursorPosition.x) cursorTrack.x = position.x
+          if (tile.y !== cursorPosition.y) cursorTrack.y = position.y
         }
         clampCameraToMap()
         this.scale.on('resize', clampCameraToMap)
@@ -2505,11 +2525,25 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           _deltaX: number,
           deltaY: number,
         ) => changeZoom(deltaY > 0 ? -game.park.zoomStep : game.park.zoomStep))
-        // 右スティックのカメラ移動。ズームに依らず画面上の速さが一定になるよう zoom で割る
+        // 右スティックのカメラ移動。ズームに依らず画面上の速さが一定になるよう zoom で割る。
+        // カメラの位置はドット単位に丸められるので、1 ドット未満のぶんは次のフレームへ持ち越す
+        let panLeftoverX = 0
+        let panLeftoverY = 0
         this.events.on('camera-pan', (deltaX: number, deltaY: number) => {
-          camera.scrollX += deltaX / camera.zoom
-          camera.scrollY += deltaY / camera.zoom
+          const moveX = deltaX / camera.zoom + panLeftoverX
+          const moveY = deltaY / camera.zoom + panLeftoverY
+          const stepPixelsX = Math.trunc(moveX)
+          const stepPixelsY = Math.trunc(moveY)
+          panLeftoverX = moveX - stepPixelsX
+          panLeftoverY = moveY - stepPixelsY
+          const beforeX = camera.scrollX
+          const beforeY = camera.scrollY
+          camera.scrollX += stepPixelsX
+          camera.scrollY += stepPixelsY
           clampCameraToMap()
+          // カメラが動いたぶんだけカーソルも動かし、画面上の同じ場所に留める。
+          // そうしないと、次にカーソルを動かしたときカメラが元の位置へ戻ってしまう
+          moveCursorWithCamera(camera.scrollX - beforeX, camera.scrollY - beforeY)
         })
         this.events.on('pan', (direction: MenuAction) => {
           if (direction === 'left' || direction === 'right' || direction === 'up' || direction === 'down') {
@@ -2802,7 +2836,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           return dy > 0 ? 0 : 1
         }
 
-        // 待ち行列は看板マスを空け、左右の列が 1 マス目から 0.5 マス間隔で外へ広がる。
+        // 待ち行列は看板マスを空け、左右の列が 1 マス目から 1 マス間隔で外へ広がる。
         // マップの端に達したらそれ以上は広がらず端に溜まる。
         // 側は客ごとに固定し、前が抜けても同じ側の中で前へ詰めるだけにする
         // (通し番号で左右を決めると、詰まるたびに全員が反対側へ歩き直してしまう)
@@ -2826,7 +2860,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             if (other === guest) break
             if (other.queueSide === guest.queueSide) rank += 1
           }
-          const x = busStop.x + guest.queueSide * (rank * 0.5 + 1)
+          const x = busStop.x + guest.queueSide * (rank + 1)
           return { x: Math.min(right, Math.max(left, x)), y: busStop.y }
         }
 
@@ -2859,6 +2893,10 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           const front = placed.frame <= 1 ? tileX === anchor.x : tileY === anchor.y
           const bias = front ? 2 : 1
           return placed.frame === 1 ? depth - 3 + bias : depth + bias
+        }
+        // 立ち止まっている客は歩きの先頭コマ(直立)で止める
+        const standStill = (guest: Guest) => {
+          guest.walked = Math.floor(guest.walked)
         }
         const drawGuest = (guest: Guest, x: number, y: number, tileX: number, tileY: number, lift = heightAt(tileX, tileY)) => {
           // 着席中は専用ポーズ(シート 5 行目、列 = 方向)で固定。それ以外は歩行 4 コマ送り
@@ -3587,6 +3625,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           }
           // 前が詰まっているので動かない。立ち止まっている間は列の道順のほうを向く
           guest.facing = queueFacingAt(placed, guest.fromX, guest.fromY) ?? guest.facing
+          standStill(guest)
         }
         // ---- 設備の利用 ----
         // 立ち止まったマスが設備の正面なら条件を確認して利用マスへ 1 マス進む。
@@ -3921,6 +3960,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           }
           guest.queueX = target.x
           guest.queueY = target.y
+          standStill(guest)
           if (guest.phase === 'toBus') return true
           if (guest.phase === 'toSign') {
             // 看板の中心に着いたら下を向き、そのまま 1 マス進んでバスに乗る
