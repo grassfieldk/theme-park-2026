@@ -42,6 +42,7 @@
   "shopUse": { "initialPrice": 100, "serviceDays": 0.3, "tasteLevel": 0, "useFatigueRelief": 100, "candidateCount": 5 },
   "facilityUse": { "serviceDays": 0.2 },
   "attractionUse": { "initialPrice": 100, "rideTimeSetting": 5, "rideDaysPerStep": 0.4, "loadTimeoutDays": 0.4, "joinChance": 0.5, "rideFatigueRelief": 100 },
+  "facilityMenu": { "versionUpCost": 10000, "maxVersion": 9, "maxPrice": 9999, "priceStep": 10, "maxTasteLevel": 4, "maxSetting": 9, "maxWinRate": 100 },
   "evaluation": {
     "scoreRange": 1023,
     "ratingRange": 1023,

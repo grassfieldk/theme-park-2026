@@ -54,10 +54,12 @@ h1 { margin: 8px 0 12px; font-size: 30px; }
   .park-loading-spinner { animation: none; }
 }
 /* 上の表示は左からモード名、右から状況。狭い画面では折り返して 2 段になる */
-.park-hud-top { position: absolute; top: calc(12px + var(--safe-top)); right: calc(12px + var(--safe-right)); left: calc(12px + var(--safe-left)); display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; pointer-events: none; }
+/* align-items: 既定の stretch だと、背の高いボタンに合わせて文字の枠まで伸び、
+   文字が上に寄って見えるので中央で揃える */
+.park-hud-top { position: absolute; top: calc(12px + var(--safe-top)); right: calc(12px + var(--safe-right)); left: calc(12px + var(--safe-left)); display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; pointer-events: none; }
 .park-hud-top > * { pointer-events: auto; }
 /* 数字は等幅にして、資金や来園者が変わるたびに横にずれないようにする */
-.park-status-overlay { display: flex; flex-wrap: wrap; gap: 4px 20px; border: 1px solid rgb(132 170 180 / 45%); border-radius: 3px; background: rgb(12 26 40 / 88%); backdrop-filter: blur(6px); padding: 8px 12px; color: #fff; font-size: 14px; font-variant-numeric: tabular-nums; }
+.park-status-overlay { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 20px; border: 1px solid rgb(132 170 180 / 45%); border-radius: 3px; background: rgb(12 26 40 / 88%); backdrop-filter: blur(6px); padding: 8px 12px; color: #fff; font-size: 14px; font-variant-numeric: tabular-nums; }
 .park-mode-label { margin-right: auto; border: 1px solid rgb(232 209 117 / 45%); border-radius: 3px; background: rgb(12 26 40 / 88%); backdrop-filter: blur(6px); padding: 8px 12px; color: #f2edd8; font-size: 14px; }
 /* 時間操作は停止と速度をひとまとまりに見せる */
 .park-time-actions { display: flex; border: 1px solid rgb(132 170 180 / 55%); border-radius: 3px; overflow: hidden; }
@@ -148,6 +150,18 @@ h1 { margin: 8px 0 12px; font-size: 30px; }
 .park-menu-item[aria-disabled="true"] { color: #8b9aa0; }
 .park-menu-item[aria-disabled="true"] .park-menu-icon { filter: grayscale(1) brightness(.6); }
 .park-menu-item.selected { background: rgb(64 118 158 / 75%); color: #fff; }
+.park-menu-value { display: flex; align-items: center; gap: 1px; margin-left: auto; padding-left: 8px; color: #fff; font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* 左右の三角だけ値から離す。桁の間や桁の上下の三角は詰めたままにする */
+.park-menu-value > .park-caret { margin: 0 3px; }
+.park-menu-value.toggle-on { color: #8fdc8f; }
+.park-menu-value.toggle-off { color: #e58f8f; }
+.park-menu-number { line-height: 1; }
+.park-menu-digit { display: flex; flex-direction: column; align-items: center; gap: 1px; }
+.park-caret { flex-shrink: 0; color: #e8d175; }
+.park-status-panel { position: absolute; right: calc(12px + var(--safe-right)); bottom: 12px; display: flex; max-height: calc(100% - 24px); flex-direction: column; gap: 8px; width: min(280px, calc(100vw - 24px - var(--safe-left) - var(--safe-right))); border: 1px solid rgb(132 170 180 / 45%); border-radius: 3px; background: rgb(12 26 40 / 88%); backdrop-filter: blur(6px); padding: 12px; box-shadow: 0 6px 18px rgb(0 0 0 / 35%); overflow: hidden auto; }
+.park-status-row { display: flex; align-items: center; gap: 8px; color: #f2edd8; font-size: 12px; line-height: 1.25; }
+.park-status-icon { flex-shrink: 0; width: 16px; height: 16px; image-rendering: pixelated; }
+.park-status-value { margin-left: auto; padding-left: 8px; color: #fff; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .park-bottom { display: flex; flex-direction: column; padding-bottom: var(--safe-bottom); background: rgb(10 21 32 / 92%); backdrop-filter: blur(6px); }
 .park-status-bar { display: flex; flex-shrink: 0; align-items: center; height: var(--status-bar-height); border-top: 1px solid rgb(232 209 117 / 45%); padding: 0 calc(14px + var(--safe-right)) 0 calc(14px + var(--safe-left)); color: #e9e4cf; font-size: 12.5px; }
 .park-confirm { position: fixed; top: 50%; left: 50%; z-index: 5; width: min(360px, calc(100vw - 32px)); border: 1px solid rgb(232 209 117 / 45%); border-radius: 3px; background: rgb(12 26 40 / 94%); backdrop-filter: blur(6px); box-shadow: 0 8px 24px rgb(0 0 0 / 45%); padding: 20px 24px; color: #f2edd8; font-size: 14px; text-align: center; transform: translate(-50%, -50%); }
@@ -160,11 +174,14 @@ h1 { margin: 8px 0 12px; font-size: 30px; }
   .primary-button { padding: 12px 24px; }
   .country-button { flex-direction: column; align-items: flex-start; gap: 4px; }
   /* 上端は日付・資金のバーで埋め、モード名はそのすぐ下に置く */
-  .park-hud-top { top: 0; right: 0; left: 0; flex-direction: column; align-items: flex-start; gap: 8px; }
-  .park-status-overlay { order: -1; align-self: stretch; justify-content: space-between; gap: 4px 12px; border-width: 0 0 1px; border-radius: 0; padding: calc(6px + var(--safe-top)) calc(8px + var(--safe-right)) 6px calc(8px + var(--safe-left)); font-size: 12px; }
-  .park-mode-label { margin: 0 0 0 calc(8px + var(--safe-left)); padding: 6px 10px; font-size: 12px; }
+  /* 上端から、日付のバー・モード名・施設ステータスの順に全幅で積む */
+  .park-hud-top { top: 0; right: 0; left: 0; flex-direction: column; align-items: stretch; gap: 0; }
+  .park-status-overlay { order: -1; justify-content: space-between; gap: 4px 12px; border-width: 0 0 1px; border-radius: 0; padding: calc(6px + var(--safe-top)) calc(8px + var(--safe-right)) 6px calc(8px + var(--safe-left)); font-size: 12px; }
+  .park-mode-label { margin: 0; border-width: 0 0 1px; border-radius: 0; padding: 6px calc(8px + var(--safe-right)) 6px calc(8px + var(--safe-left)); font-size: 12px; }
   /* 下は十字と操作ボタンの場所なので、設置メニューはその上に置く */
   .park-menu { right: calc(8px + var(--safe-right)); bottom: calc(var(--pad-size) + 16px); left: auto; max-height: calc(100% - var(--pad-size) - 24px); }
   .park-menu-items { width: min(224px, calc(100vw - 16px - var(--safe-left) - var(--safe-right))); }
   .park-menu-item { padding: 8px 6px; }
+  /* ステータスはモード名の下にそのまま続ける。枠は上部のバーと地続きにする */
+  .park-status-panel { position: static; width: auto; max-height: none; border-width: 0 0 1px; border-radius: 0; padding: 8px calc(8px + var(--safe-right)) 8px calc(8px + var(--safe-left)); }
 }

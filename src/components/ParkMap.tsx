@@ -49,6 +49,10 @@ type Props = {
   onReady: () => void
   /** アトラクション・ショップの撤去前に確認を出す。返事は resolveRemoval で返す */
   onRemoveConfirm: (name: string) => void
+  /** 設置済みの施設の設定メニューを開く・閉じる・中身を差し替える */
+  onFacilitySettings: (settings: FacilitySettings | null) => void
+  /** 性能ＵＰなど、設定メニューでの支払い */
+  onSpend: (cost: number) => void
   /** メニューや確認が開いている間は、マップへのクリックを受け付けない */
   mapBlocked: boolean
   /** タッチ操作の配置。マップを触ってもカーソルは動かさず、画面上の十字ボタンで動かす */
@@ -59,8 +63,48 @@ type Props = {
   initialElapsedDays: number
 }
 
+/**
+ * 設置済みの施設に対して開く設定メニューの 1 項目。
+ * toggle は決定でその場で切り替わり、step と digits は決定してから調整する。
+ * confirm は決定すると確認を出す。
+ */
+export type FacilitySettingKind = 'toggle' | 'step' | 'digits' | 'confirm'
+export type FacilitySettingItem = {
+  id: string
+  label: string
+  description: string
+  /** メニューアイコンの番号(原作の表による) */
+  icon: number
+  kind: FacilitySettingKind
+  enabled: boolean
+  /** toggle と confirm の表示文字 */
+  text?: string
+  /** toggle が入っている状態か。文字の色を変えるのに使う */
+  on?: boolean
+  /** 数値の項目の現在値と範囲。digits は桁数ぶん 0 を詰めて見せる */
+  value?: number
+  min?: number
+  max?: number
+  digits?: number
+}
+/** 設定項目に出てこない、見るだけの数値 */
+export type FacilityStatusItem = { icon: number, label: string, value: string }
+export type FacilitySettings = {
+  title: string
+  /** 性能で上がるバージョン。見出しに出す */
+  version: number
+  items: FacilitySettingItem[]
+  status: FacilityStatusItem[]
+}
+
 export type ParkMapHandle = {
   handleAction: (action: MenuAction) => void
+  /** 数値の設定を書き換える */
+  setFacilitySetting: (itemId: string, value: number) => void
+  /** 切り替えの設定を反転する、または性能を上げる */
+  activateFacilitySetting: (itemId: string) => void
+  /** 施設の設定メニューを閉じる */
+  closeFacilitySettings: () => void
   /** カメラを画面ピクセル単位で動かす(右スティック) */
   panCamera: (deltaX: number, deltaY: number) => void
   /** 現在の園の中身を書き出す。まだ読み込みが終わっていなければ null */
@@ -89,7 +133,7 @@ type PlacedAttraction = {
   height: number
   cost: number
   attraction: Attraction
-  // 定員(人数)と運転時間の設定値。どちらも運転設定メニューで変えられる想定の初期値。
+  // 定員(人数)と運転時間の設定値。どちらも運転設定メニューで変えられる。
   // 乗車中の客は Guest 型がシーン内で定義されるため rideStates 側で持つ
   capacity: number
   rideTimeSetting: number
@@ -97,6 +141,13 @@ type PlacedAttraction = {
   speedSetting: number
   price: number
   rating: number
+  // 性能ＵＰで上がるバージョン(0〜9)。上がるほど定員の上限が増える
+  version: number
+  // 休止中は受け入れを止める
+  suspended: boolean
+  // ステータスに出す利用者数。月が替わるときに今月ぶんを先月へ送る
+  usedThisMonth: number
+  usedLastMonth: number
   // 表示中のコマと、そのコマの残り表示フレーム数
   animFrame: number
   animRemaining: number
@@ -135,6 +186,8 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
   onBuildMessage,
   onReady,
   onRemoveConfirm,
+  onFacilitySettings,
+  onSpend,
   mapBlocked,
   touchLayout,
   initialPark,
@@ -162,6 +215,8 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
   const buildMessageHandler = useRef(onBuildMessage)
   const readyHandler = useRef(onReady)
   const removeConfirmHandler = useRef(onRemoveConfirm)
+  const facilitySettingsHandler = useRef(onFacilitySettings)
+  const spendHandler = useRef(onSpend)
   const initialMapBlocked = useRef(mapBlocked)
   const initialTouchLayout = useRef(touchLayout)
   attractionPlacedHandler.current = onAttractionPlaced
@@ -179,10 +234,21 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
   buildMessageHandler.current = onBuildMessage
   readyHandler.current = onReady
   removeConfirmHandler.current = onRemoveConfirm
+  facilitySettingsHandler.current = onFacilitySettings
+  spendHandler.current = onSpend
 
   useImperativeHandle(ref, () => ({
     handleAction(action) {
       phaserGame.current?.scene.getScene('park')?.events.emit('pan', action)
+    },
+    setFacilitySetting(itemId, value) {
+      phaserGame.current?.scene.getScene('park')?.events.emit('set-facility-setting', itemId, value)
+    },
+    activateFacilitySetting(itemId) {
+      phaserGame.current?.scene.getScene('park')?.events.emit('activate-facility-setting', itemId)
+    },
+    closeFacilitySettings() {
+      phaserGame.current?.scene.getScene('park')?.events.emit('close-facility-settings')
     },
     panCamera(deltaX, deltaY) {
       phaserGame.current?.scene.getScene('park')?.events.emit('camera-pan', deltaX, deltaY)
@@ -354,13 +420,21 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         type PendingShop = { x: number, y: number, cost: number, image: Phaser.GameObjects.Image }
         let pendingShop: PendingShop | null = null
         // 設置済みのショップ。向きが決まった時点で記録する
-        // price と tasteLevel は運営設定の初期値。rating は利用した客が付ける評価(-1023〜1023)
+        // price と tasteLevel は運営設定。rating は利用した客が付ける評価(-1023〜1023)
         type PlacedShop = {
           shop: Shop, x: number, y: number, direction: number,
           price: number, tasteLevel: number, rating: number,
+          // ゲームショップの賞品価格と勝率(%)、性能ＵＰで上がるバージョン(0〜9)
+          prizePrice: number, winRate: number, version: number,
+          // ステータスに出す利用者数。月が替わるときに今月ぶんを先月へ送る
+          usedThisMonth: number, usedLastMonth: number,
           image: Phaser.GameObjects.Image,
         }
         const placedShops: PlacedShop[] = []
+        // ゲームショップのうち賞品があるものだけ、賞品価格と勝率の初期値を持つ
+        const shopPrize = (shop: Shop) => ('prize' in shop ? shop.prize : null)
+        // 飲食ショップの味付けの呼び名(店ごとに違う)。味付けのない店は null
+        const shopTasteName = (shop: Shop) => ('tasteName' in shop ? shop.tasteName : null)
         let activeFacility = facilityBuild
         let facilityDirection = 0
         let facilityStep: 'body' | 'direction' = 'body'
@@ -698,6 +772,23 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           seasonIndex = season
           seasonVariant = seasons.variantBySeason[season]
           applySeason()
+        }
+        // 利用者数の集計。月が替わったら今月ぶんを先月へ送り、今月を数え直す
+        const monthAt = (days: number) => {
+          const date = new Date(startDateMs + Math.floor(days) * 86_400_000)
+          return date.getUTCFullYear() * 12 + date.getUTCMonth()
+        }
+        let monthIndex = monthAt(initialDays.current)
+        const refreshMonth = () => {
+          const month = monthAt(elapsedDays)
+          if (month === monthIndex) return
+          monthIndex = month
+          const roll = (placed: { usedThisMonth: number, usedLastMonth: number }) => {
+            placed.usedLastMonth = placed.usedThisMonth
+            placed.usedThisMonth = 0
+          }
+          placedAttractions.forEach(roll)
+          placedShops.forEach(roll)
         }
 
         const roadFrameByMask = [16, 2, 4, 0, 3, 10, 11, 7, 5, 13, 12, 9, 1, 6, 8, 15]
@@ -1953,6 +2044,10 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             speedSetting: attraction.speedSetting,
             price: attractionUseConfig.initialPrice,
             rating: 0,
+            version: 0,
+            suspended: false,
+            usedThisMonth: 0,
+            usedLastMonth: 0,
             image,
             baseImages,
           }
@@ -2069,9 +2164,12 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         }
         // 向きが確定したショップを記録し、前の道を敷く
         const completeShop = (shop: Shop, x: number, y: number, direction: number, image: Phaser.GameObjects.Image) => {
+          const prize = shopPrize(shop)
           placedShops.push({
             shop, x, y, direction, image,
             price: game.shopUse.initialPrice, tasteLevel: game.shopUse.tasteLevel, rating: 0,
+            prizePrice: prize?.prizePrice ?? 0, winRate: prize?.winRate ?? 0, version: 0,
+            usedThisMonth: 0, usedLastMonth: 0,
           })
           layShopWalkway(shop, x, y, direction)
           rebuildShopEntranceSpots()
@@ -2334,6 +2432,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         const removeAttraction = (placed: PlacedAttraction) => {
           const index = placedAttractions.indexOf(placed)
           if (index >= 0) placedAttractions.splice(index, 1)
+          if (settingsAttraction === placed) closeFacilitySettings()
           // 乗車中の客は支払いなしで降ろし、並んでいた客は列を離れさせる
           releaseRiders(placed, false)
           guests.forEach((guest) => {
@@ -2354,6 +2453,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         const removeShop = (placed: PlacedShop) => {
           const index = placedShops.indexOf(placed)
           if (index >= 0) placedShops.splice(index, 1)
+          if (settingsShop === placed) closeFacilitySettings()
           const { shop, x, y } = placed
           rebuildShopEntranceSpots()
           const entrance = shopEntranceTile(shop, x, y, placed.direction)
@@ -2395,6 +2495,275 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           })
           drawCursor()
         }
+
+        // ---- 設置済みの施設の設定メニュー ----
+        // カーソルを合わせて決定すると開く。原作の運転設定・運営設定にあたるもので、
+        // 項目とステータスの並びは施設の種類ごとに変わる
+        const settingsConfig = game.facilityMenu
+        const clampSetting = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
+        let settingsAttraction: PlacedAttraction | null = null
+        let settingsShop: PlacedShop | null = null
+        // バージョンが上がると定員(ショップは接客数)が増える。0 と 9 のときの値の間を等間隔に割り振る
+        const byVersion = (base: number, top: number, version: number) => (
+          base + Math.round((top - base) * version / settingsConfig.maxVersion)
+        )
+        const capacityLimitOf = (placed: PlacedAttraction) => (
+          byVersion(placed.attraction.capacity, placed.attraction.capacityMax, placed.version)
+        )
+        const serviceCountOf = (placed: PlacedShop) => (
+          byVersion(placed.shop.serviceCount, placed.shop.serviceCountMax, placed.version)
+        )
+        const versionItem = (version: number): FacilitySettingItem => ({
+          id: 'versionUp',
+          label: '性能',
+          icon: 41,
+          kind: 'confirm',
+          text: `Lv.${version}`,
+          description: `性能を上げられます。費用は ${settingsConfig.versionUpCost.toLocaleString()} です。`,
+          enabled: version < settingsConfig.maxVersion,
+        })
+        // 金額の項目。桁ごとに変えるので、桁数は上限の桁数に合わせる
+        const priceItem = (
+          id: string, label: string, icon: number, description: string, value: number,
+        ): FacilitySettingItem => ({
+          id,
+          label,
+          icon,
+          kind: 'digits',
+          value,
+          min: 0,
+          max: settingsConfig.maxPrice,
+          digits: String(settingsConfig.maxPrice).length,
+          description,
+          enabled: true,
+        })
+        const attractionSettingItems = (placed: PlacedAttraction): FacilitySettingItem[] => {
+          const items: FacilitySettingItem[] = [
+            {
+              id: 'suspend',
+              label: '運転休止',
+              icon: 74,
+              kind: 'toggle',
+              text: placed.suspended ? '休 止' : '運 転',
+              on: !placed.suspended,
+              description: 'アトラクションの運転や休止の設定ができます。',
+              enabled: true,
+            },
+            {
+              id: 'capacity',
+              label: '定員数',
+              icon: 36,
+              kind: 'step',
+              value: placed.capacity,
+              min: 1,
+              max: capacityLimitOf(placed),
+              description: `アトラクションに乗れるお客さんの数を設定できます。(最大 ${capacityLimitOf(placed)})`,
+              enabled: true,
+            },
+          ]
+          // 展望系・見せ物系・船の乗り物系は速度を設定できない
+          if (placed.attraction.speedAdjustable) {
+            items.push({
+              id: 'speed',
+              label: 'スピード',
+              icon: 29,
+              kind: 'step',
+              value: placed.speedSetting,
+              min: 0,
+              max: settingsConfig.maxSetting,
+              description: 'アトラクションのスピードを設定できます。',
+              enabled: true,
+            })
+          }
+          items.push(
+            {
+              id: 'rideTime',
+              label: '稼働時間',
+              icon: 37,
+              kind: 'step',
+              value: placed.rideTimeSetting,
+              min: 0,
+              max: settingsConfig.maxSetting,
+              description: 'お客さんがアトラクションに乗っている時間を設定できます。',
+              enabled: true,
+            },
+            priceItem('price', '乗車額', 40, 'アトラクションの乗車額を設定できます。', placed.price),
+            versionItem(placed.version),
+          )
+          return items
+        }
+        const shopSettingItems = (placed: PlacedShop): FacilitySettingItem[] => {
+          const { shop } = placed
+          const isGame = shop.category === 'game'
+          const items: FacilitySettingItem[] = [priceItem(
+            'price',
+            isGame ? 'ゲーム料金' : '販売価格',
+            43,
+            isGame ? 'ゲームの料金を設定できます。' : 'ショップで売る商品の販売価格を設定できます。',
+            placed.price,
+          )]
+          const tasteName = shopTasteName(shop)
+          if (tasteName) {
+            items.push({
+              id: 'taste',
+              label: tasteName,
+              icon: 44,
+              kind: 'step',
+              value: placed.tasteLevel,
+              min: 0,
+              max: settingsConfig.maxTasteLevel,
+              description: `${shop.name}の${tasteName}を設定できます。`,
+              enabled: true,
+            })
+          }
+          // 賞品のあるゲームショップだけ賞品価格と勝率を持つ
+          if (shopPrize(shop)) {
+            items.push(
+              priceItem('prizePrice', '賞品価格', 45, 'ゲームの賞品価格を設定できます。', placed.prizePrice),
+              {
+                id: 'winRate',
+                label: '勝率',
+                icon: 46,
+                kind: 'step',
+                value: placed.winRate,
+                min: 0,
+                max: settingsConfig.maxWinRate,
+                description: 'ゲームの勝率を設定できます。高いとお客さんは喜びますがお金がかかります。',
+                enabled: true,
+              },
+            )
+          }
+          items.push(versionItem(placed.version))
+          return items
+        }
+        // ステータス枠の中身。並びは原作のステータス表示に合わせる。
+        // 耐久度・耐久性・撤去費用・在庫はまだ扱っていないので出さない
+        const usedText = (placed: { usedLastMonth: number, usedThisMonth: number }) => (
+          `${placed.usedLastMonth} / ${placed.usedThisMonth}`
+        )
+        const attractionStatus = (placed: PlacedAttraction): FacilityStatusItem[] => {
+          const status: FacilityStatusItem[] = [
+            { icon: 35, label: '運転状態', value: placed.suspended ? '休 止' : '運 転' },
+            { icon: 40, label: '乗車額', value: placed.price.toLocaleString() },
+            { icon: 36, label: '定員数 / 最大', value: `${placed.capacity} / ${capacityLimitOf(placed)}` },
+            { icon: 52, label: '興奮度', value: `${placed.attraction.excitement}` },
+            { icon: 53, label: '経費', value: placed.attraction.maintenanceCost.toLocaleString() },
+          ]
+          if (placed.attraction.speedAdjustable) {
+            status.push({ icon: 29, label: 'スピード', value: `${placed.speedSetting}` })
+          }
+          status.push(
+            { icon: 55, label: '利用者数 先月 / 今月', value: usedText(placed) },
+            { icon: 37, label: '稼働時間', value: `${placed.rideTimeSetting}` },
+          )
+          return status
+        }
+        const shopStatus = (placed: PlacedShop): FacilityStatusItem[] => {
+          const { shop } = placed
+          const isGame = shop.category === 'game'
+          const prize = shopPrize(shop)
+          const status: FacilityStatusItem[] = [{
+            icon: 43,
+            label: isGame ? 'ゲーム料金 / 賞品価格' : '販売価格 / 仕入価格',
+            value: isGame
+              ? `${placed.price.toLocaleString()} / ${prize ? placed.prizePrice.toLocaleString() : '-'}`
+              : `${placed.price.toLocaleString()} / ${shop.stockPrice.toLocaleString()}`,
+          }]
+          status.push({ icon: 36, label: '接客数', value: `${serviceCountOf(placed)}` })
+          if (!isGame) status.push({ icon: 57, label: '販売品目', value: shop.product })
+          status.push({ icon: 53, label: '経費', value: shop.maintenanceCost.toLocaleString() })
+          if (prize) status.push({ icon: 46, label: '勝率', value: `${placed.winRate} ％` })
+          const addiction = 'addiction' in shop ? shop.addiction : undefined
+          if (addiction) status.push({ icon: 58, label: 'ハマリ度', value: addiction })
+          status.push({ icon: 55, label: '利用者数 先月 / 今月', value: usedText(placed) })
+          const tasteName = shopTasteName(shop)
+          if (tasteName) status.push({ icon: 44, label: tasteName, value: `${placed.tasteLevel}` })
+          return status
+        }
+        const facilitySettingsModel = (): FacilitySettings | null => {
+          if (settingsAttraction) {
+            // 秋冬で姿が変わるアトラクションは、今の季節の名前で見せる
+            const base = attractions.find((entry) => entry.id === settingsAttraction!.id)
+            return {
+              title: base ? attractionForm(base).name : '',
+              version: settingsAttraction.version,
+              items: attractionSettingItems(settingsAttraction),
+              status: attractionStatus(settingsAttraction),
+            }
+          }
+          if (settingsShop) {
+            return {
+              title: settingsShop.shop.name,
+              version: settingsShop.version,
+              items: shopSettingItems(settingsShop),
+              status: shopStatus(settingsShop),
+            }
+          }
+          return null
+        }
+        const pushFacilitySettings = () => facilitySettingsHandler.current(facilitySettingsModel())
+        const closeFacilitySettings = () => {
+          if (!settingsAttraction && !settingsShop) return
+          settingsAttraction = null
+          settingsShop = null
+          pushFacilitySettings()
+        }
+        // カーソルの下に設置済みの施設があれば設定メニューを開く
+        const openFacilitySettings = () => {
+          const { x, y } = cursorPosition
+          const attraction = attractionCoveringTile(x, y)
+          const shop = attraction ? null : shopCoveringTile(x, y)
+          if (!attraction && !shop) return false
+          settingsAttraction = attraction
+          settingsShop = shop
+          pushFacilitySettings()
+          return true
+        }
+        // 数値の項目を書き換える。範囲は項目ごとの下限・上限で押さえる
+        const setFacilitySetting = (itemId: string, value: number) => {
+          const attraction = settingsAttraction
+          const shop = settingsShop
+          const price = (input: number) => clampSetting(input, 0, settingsConfig.maxPrice)
+          if (attraction) {
+            if (itemId === 'capacity') attraction.capacity = clampSetting(value, 1, capacityLimitOf(attraction))
+            if (itemId === 'speed') attraction.speedSetting = clampSetting(value, 0, settingsConfig.maxSetting)
+            if (itemId === 'rideTime') attraction.rideTimeSetting = clampSetting(value, 0, settingsConfig.maxSetting)
+            if (itemId === 'price') attraction.price = price(value)
+          }
+          else if (shop) {
+            if (itemId === 'price') shop.price = price(value)
+            if (itemId === 'taste') shop.tasteLevel = clampSetting(value, 0, settingsConfig.maxTasteLevel)
+            if (itemId === 'prizePrice') shop.prizePrice = price(value)
+            if (itemId === 'winRate') shop.winRate = clampSetting(value, 0, settingsConfig.maxWinRate)
+          }
+          else return
+          pushFacilitySettings()
+        }
+        // 切り替えの項目(運転休止)と、確認を経て効く項目(性能)
+        const activateFacilitySetting = (itemId: string) => {
+          const attraction = settingsAttraction
+          const shop = settingsShop
+          if (!attraction && !shop) return
+          if (itemId === 'suspend') {
+            if (!attraction) return
+            attraction.suspended = !attraction.suspended
+            pushFacilitySettings()
+            return
+          }
+          if (itemId !== 'versionUp') return
+          const version = attraction?.version ?? shop!.version
+          if (version >= settingsConfig.maxVersion) return
+          if (currentCash < settingsConfig.versionUpCost) {
+            buildMessageHandler.current('資金が足りないので性能を上げられません。')
+            return
+          }
+          spendHandler.current(settingsConfig.versionUpCost)
+          if (attraction) attraction.version += 1
+          else shop!.version += 1
+          pushFacilitySettings()
+        }
+
+
         // 確認待ちの撤去対象。返事が来るまで保持する
         let pendingRemoval: (() => void) | null = null
         const removeAtCursor = () => {
@@ -2444,6 +2813,8 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             if (activeAttractionBuildStep === 'body') placeAttraction()
             else placeAttractionAccess()
           }
+          // 何も置いていないときは、カーソルの下の施設の設定メニューを開く
+          else openFacilitySettings()
         }
         // 高いマスは画面上で高さぶん上に描かれる。高い順に「その高さとして読んだときに
         // 本当にその高さのマスか」を試し、最初に一致した面を選ぶ
@@ -2706,6 +3077,9 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         })
         this.events.on('seconds-per-day', (value: number) => { daysPerMs = gameDaysPerMs(value) })
         this.events.on('resolve-removal', resolveRemoval)
+        this.events.on('set-facility-setting', setFacilitySetting)
+        this.events.on('activate-facility-setting', activateFacilitySetting)
+        this.events.on('close-facility-settings', closeFacilitySettings)
         this.events.on('touch-layout', (value: boolean) => { touchLayout = value })
         // 日付を飛ばす(開発サーバでのみ使う)。来園者や経営はさかのぼって計算しない。
         // 地形の描き直しはゲームの描画の流れの中でしか効かないので、次のフレームに回す
@@ -2747,8 +3121,32 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
               },
               entranceQueueKey: placed.entranceQueueKey,
               entranceFrame: placed.entranceFrame,
+              settings: {
+                suspended: placed.suspended,
+                capacity: placed.capacity,
+                speed: placed.speedSetting,
+                rideTime: placed.rideTimeSetting,
+                price: placed.price,
+                version: placed.version,
+                usedThisMonth: placed.usedThisMonth,
+                usedLastMonth: placed.usedLastMonth,
+              },
             })),
-          shops: placedShops.map(({ shop, x, y, direction }) => ({ id: shop.id, x, y, direction })),
+          shops: placedShops.map((placed) => ({
+            id: placed.shop.id,
+            x: placed.x,
+            y: placed.y,
+            direction: placed.direction,
+            settings: {
+              price: placed.price,
+              tasteLevel: placed.tasteLevel,
+              prizePrice: placed.prizePrice,
+              winRate: placed.winRate,
+              version: placed.version,
+              usedThisMonth: placed.usedThisMonth,
+              usedLastMonth: placed.usedLastMonth,
+            },
+          })),
           facilities: [...placedFacilities].map(([key, placed]) => ({
             id: placed.facility.id,
             ...parseKey(key),
@@ -2790,11 +3188,30 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             }
             placed.entranceQueueKey = saved.entranceQueueKey
             placed.entranceFrame = saved.entranceFrame
+            if (saved.settings) {
+              placed.suspended = saved.settings.suspended
+              placed.capacity = saved.settings.capacity
+              placed.speedSetting = saved.settings.speed
+              placed.rideTimeSetting = saved.settings.rideTime
+              placed.price = saved.settings.price
+              placed.version = saved.settings.version
+              placed.usedThisMonth = saved.settings.usedThisMonth ?? 0
+              placed.usedLastMonth = saved.settings.usedLastMonth ?? 0
+            }
           })
-          snapshot.shops.forEach(({ id, x, y, direction }) => {
+          snapshot.shops.forEach(({ id, x, y, direction, settings }) => {
             const shop = shops.find((entry) => entry.id === id)
             if (!shop) return
             completeShop(shop, x, y, direction, addShopBody(shop, x, y, direction))
+            const placed = placedShops[placedShops.length - 1]
+            if (!settings) return
+            placed.price = settings.price
+            placed.tasteLevel = settings.tasteLevel
+            placed.prizePrice = settings.prizePrice
+            placed.winRate = settings.winRate
+            placed.version = settings.version
+            placed.usedThisMonth = settings.usedThisMonth ?? 0
+            placed.usedLastMonth = settings.usedLastMonth ?? 0
           })
           roads.forEach((key) => {
             const { x, y } = parseKey(key)
@@ -3096,6 +3513,18 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         const stayConfig = guestConfig.stay
         const shopUseConfig = game.shopUse
         const shopUseEffectOf = (shop: Shop) => ('useEffect' in shop ? shop.useEffect : null)
+        // 味付けを濃くすると商品の効き方が変わる。設定の 1 段目を基準に、
+        // 段階に比例して効くもの・薄いほど効くもの・段階によらないものがある(design/15)
+        const shopEffectAt = (shop: Shop, level: number, field: 'hunger' | 'thirst') => {
+          const effect = shopUseEffectOf(shop)
+          if (!effect) return 0
+          const base = effect[field]
+          const scale = ('useEffectScale' in shop ? shop.useEffectScale : null)?.[field] ?? 'fixed'
+          if (scale === 'level') return base * (level + 1)
+          const steps = game.facilityMenu.maxTasteLevel + 1
+          if (scale === 'inverse') return Math.trunc(base * (steps - level) / steps)
+          return base
+        }
         const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
         const changeMood = (guest: Guest, delta: number) => {
           guest.mood = clamp(guest.mood + delta, moodConfig.min, moodConfig.max)
@@ -3568,6 +3997,8 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
               attraction.exit && queueDistanceMap(attraction).has(key)
             ))
             if (!placed || guest.ridden.has(placed.id)) continue
+            // 休止中のアトラクションには並ばない
+            if (placed.suspended) continue
             if (placed.price * guestConfig.types[guest.type].people > guest.money) continue
             if (Math.random() >= attractionUseConfig.joinChance) continue
             occupiedQueueTiles.add(key)
@@ -3612,6 +4043,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
               const payment = placed.price * guestConfig.types[guest.type].people
               guest.money -= payment
               shopSaleHandler.current(payment)
+              placed.usedThisMonth += guestConfig.types[guest.type].people
               guest.ridden.add(placed.id)
               // 評価は列で待った長さも見るので、待機値を戻す前に出す
               evaluateRide(guest, placed)
@@ -3691,7 +4123,8 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             // 入口の前。受け入れ中で定員に空きがあればここで乗り込む。
             // 稼働中は入口が閉まっているので次の受け入れまで待つ
             const state = rideStates.get(placed)
-            const boardable = (!state || state.phase === 'loading')
+            const boardable = !placed.suspended
+              && (!state || state.phase === 'loading')
               && (state?.people ?? 0) + guestConfig.types[guest.type].people <= placed.capacity
             if (boardable) {
               guest.facing = directionOf(entrance.x - guest.fromX, entrance.y - guest.fromY)
@@ -3846,11 +4279,17 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           const payment = placed.price * people
           guest.money -= payment
           shopSaleHandler.current(payment)
-          const effect = shopUseEffectOf(placed.shop)
-          if (effect) {
-            guest.hunger = Math.min(needsConfig.valueMax, Math.max(0, guest.hunger + effect.hunger))
-            guest.thirst = Math.min(needsConfig.valueMax, Math.max(0, guest.thirst + effect.thirst))
+          placed.usedThisMonth += people
+          // ゲームショップは勝率のぶんだけ賞品を渡し、その額が支出になる
+          if (placed.prizePrice > 0) {
+            let prizes = 0
+            for (let index = 0; index < people; index += 1) {
+              if (Math.random() * 100 < placed.winRate) prizes += 1
+            }
+            if (prizes > 0) shopSaleHandler.current(-placed.prizePrice * prizes)
           }
+          guest.hunger = clamp(guest.hunger + shopEffectAt(placed.shop, placed.tasteLevel, 'hunger'), 0, needsConfig.valueMax)
+          guest.thirst = clamp(guest.thirst + shopEffectAt(placed.shop, placed.tasteLevel, 'thirst'), 0, needsConfig.valueMax)
           if (placed.shop.category === 'food') guest.fullFood = true
           else guest.fullDrink = true
           guest.satiety = needsConfig.satietyMax
@@ -4197,15 +4636,17 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         let busTimerDays = 0
         let reportedGuestCount = -1
         this.simulate = (deltaMs: number) => {
-          // 日付を飛ばした直後は、時間が止まっていても季節を見直す
+          // 日付を飛ばした直後は、時間が止まっていても季節と月を見直す
           if (seasonDirty) {
             seasonDirty = false
             refreshSeason()
+            refreshMonth()
           }
           const days = deltaMs * daysPerMs
           if (days <= 0) return
           elapsedDays += days
           refreshSeason()
+          refreshMonth()
           // 前のバスが去ってから次の間隔で、右手からバスが入ってくる
           if (!bus) {
             busTimerDays += days

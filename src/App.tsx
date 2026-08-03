@@ -7,7 +7,7 @@ import game from './config/game.json'
 import parkMenu from './config/parkMenu.json'
 import seasons from './config/seasons.json'
 import { GamepadController, type MenuAction } from './components/GamepadController'
-import type { ParkMapHandle } from './components/ParkMap'
+import type { FacilitySettingItem, FacilitySettings, ParkMapHandle } from './components/ParkMap'
 import ParkMenu from './components/ParkMenu'
 import { logGameEvent } from './game/log'
 import { forCountry } from './game/availability'
@@ -18,7 +18,7 @@ import { buttonStyleLabels, readControls, writeControls, type ControlSettings } 
 const ParkMap = lazy(() => import('./components/ParkMap'))
 
 type Screen = 'title' | 'country' | 'park'
-type ParkMode = 'map' | 'mainMenu' | 'roadMenu' | 'pathBuild' | 'queueBuild' | 'stairsBuild' | 'attractionMenu' | 'attractionBuild' | 'attractionQueueBuild' | 'shopMenu' | 'shopBuild' | 'facilityMenu' | 'facilityBuild' | 'systemMenu' | 'controlsMenu'
+type ParkMode = 'map' | 'mainMenu' | 'roadMenu' | 'pathBuild' | 'queueBuild' | 'stairsBuild' | 'attractionMenu' | 'attractionBuild' | 'attractionQueueBuild' | 'shopMenu' | 'shopBuild' | 'facilityMenu' | 'facilityBuild' | 'systemMenu' | 'controlsMenu' | 'facilitySettings'
 const mainMenuModeById: Record<string, ParkMode> = { roads: 'roadMenu', attractions: 'attractionMenu', shops: 'shopMenu', facilities: 'facilityMenu', system: 'systemMenu' }
 type AttractionBuildStep = 'body' | 'entrance' | 'exit'
 type ConfirmPrompt = { message: string, confirmLabel: string, onConfirm: () => void, onCancel?: () => void }
@@ -122,6 +122,75 @@ function ArrowIcon() {
     <svg className="park-icon pad-arrow" viewBox={`0 0 ${iconSize} ${iconSize}`} width="12" height="12" aria-hidden="true" focusable="false">
       <path d={`M0 0L${iconSize} ${iconSize / 2}L0 ${iconSize}Z`} fill="currentColor" />
     </svg>
+  )
+}
+
+// 設定を調整している間に値のまわりへ出す三角。向きごとに頂点の位置を変える
+/** 調整中の項目。決まるまでは書き戻さず、この値だけを動かす */
+type SettingEdit = { id: string, digit: number, value: number }
+
+const caretPaths = {
+  left: 'M6 0L0 3L6 6Z',
+  right: 'M0 0L6 3L0 6Z',
+  up: 'M3 0L6 6H0Z',
+  down: 'M0 0H6L3 6Z',
+}
+// 場所は常に取り、出さないときは見えなくするだけ。三角の有無で数字がずれないようにする
+function Caret({ direction, hidden }: { direction: keyof typeof caretPaths, hidden?: boolean }) {
+  return (
+    <svg
+      className="park-caret"
+      style={hidden ? { visibility: 'hidden' } : undefined}
+      viewBox="0 0 6 6"
+      width="6"
+      height="6"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <path d={caretPaths[direction]} fill="currentColor" />
+    </svg>
+  )
+}
+
+// メニューの右端に出す値。調整中は動かせる向きに三角を添え、決まる前の値を見せる
+function SettingValue({ item, edit }: { item: FacilitySettingItem, edit: SettingEdit | null }) {
+  const editing = edit !== null
+  const digit = edit?.digit ?? null
+  if (item.kind === 'toggle' || item.kind === 'confirm') {
+    const tone = item.kind === 'toggle' ? (item.on ? ' toggle-on' : ' toggle-off') : ''
+    return (
+      <span className={`park-menu-value${tone}`}>
+        <Caret direction="left" hidden />
+        <span className="park-menu-number">{item.text}</span>
+        <Caret direction="right" hidden />
+      </span>
+    )
+  }
+  const value = edit ? edit.value : item.value ?? 0
+  if (item.kind === 'step') {
+    return (
+      <span className="park-menu-value">
+        <Caret direction="left" hidden={!editing} />
+        <span className="park-menu-number">{value}</span>
+        <Caret direction="right" hidden={!editing} />
+      </span>
+    )
+  }
+  // 桁ごとに変える項目。上下の三角は今の桁にだけ出す。
+  // 桁数は固定なので、位取りのカンマは入れない
+  const text = String(value).padStart(item.digits ?? 1, '0')
+  return (
+    <span className="park-menu-value">
+      <Caret direction="left" hidden={!editing} />
+      {[...text].map((character, index) => (
+        <span className="park-menu-digit" key={index}>
+          <Caret direction="up" hidden={index !== digit} />
+          <span className="park-menu-number">{character}</span>
+          <Caret direction="down" hidden={index !== digit} />
+        </span>
+      ))}
+      <Caret direction="right" hidden={!editing} />
+    </span>
   )
 }
 
@@ -311,6 +380,10 @@ export default function App() {
   const [facilityMenuIndex, setFacilityMenuIndex] = useState(0)
   const [systemMenuIndex, setSystemMenuIndex] = useState(0)
   const [controlsMenuIndex, setControlsMenuIndex] = useState(0)
+  // 設置済みの施設に合わせて開く設定メニュー。中身はマップ側が組み立てる
+  const [facilitySettings, setFacilitySettings] = useState<FacilitySettings | null>(null)
+  const [facilitySettingsIndex, setFacilitySettingsIndex] = useState(0)
+  const [editingSetting, setEditingSetting] = useState<SettingEdit | null>(null)
   const [controls, setControls] = useState(readControls)
   const [shopBuildStep, setShopBuildStep] = useState<'body' | 'direction'>('body')
   const [facilityBuildStep, setFacilityBuildStep] = useState<'body' | 'direction'>('body')
@@ -516,6 +589,23 @@ export default function App() {
     },
   ], [controls])
 
+  // 施設の設定項目を決定したとき。切り替えはその場で、数値は調整に入り、性能は確認を出す
+  const startSettingItem = useCallback((item: FacilitySettingItem) => {
+    if (item.kind === 'toggle') {
+      parkMap.current?.activateFacilitySetting(item.id)
+      return
+    }
+    if (item.kind === 'confirm') {
+      setConfirmPrompt({
+        message: `${game.facilityMenu.versionUpCost.toLocaleString()} かかります。性能を上げますか？`,
+        confirmLabel: '上げる',
+        onConfirm: () => parkMap.current?.activateFacilitySetting(item.id),
+      })
+      return
+    }
+    setEditingSetting({ id: item.id, digit: 0, value: item.value ?? 0 })
+  }, [])
+
   // メニュー項目を開く。キー操作の決定とクリックの両方から使う
   const openMenuItem = useCallback((mode: ParkMode, index: number) => {
     if (mode === 'mainMenu') {
@@ -552,6 +642,11 @@ export default function App() {
         setParkMode('controlsMenu')
       }
     }
+    else if (mode === 'facilitySettings') {
+      setFacilitySettingsIndex(index)
+      const item = facilitySettings?.items[index]
+      if (item?.enabled) startSettingItem(item)
+    }
     else if (mode === 'controlsMenu') {
       setControlsMenuIndex(index)
       if (controlItems[index].id === 'buttonStyle') {
@@ -559,7 +654,7 @@ export default function App() {
       }
       else changeControls({ swapConfirm: !controls.swapConfirm })
     }
-  }, [controlItems, controls, changeControls])
+  }, [controlItems, controls, changeControls, facilitySettings, startSettingItem])
 
   const action = useCallback((input: MenuAction) => {
     if (confirmPrompt) {
@@ -649,6 +744,60 @@ export default function App() {
         else setSystemMenuIndex((current) => moveMenu(current, input, parkMenu.system.length, menuPageSize))
         return
       }
+      // 施設の設定。上下で項目を選び、決定でその項目の調整に入る
+      if (parkMode === 'facilitySettings') {
+        const items = facilitySettings?.items ?? []
+        // 調整中は、その項目だけを相手にする。決めるまでは施設に書き戻さない
+        if (editingSetting) {
+          const edit = editingSetting
+          const item = items.find((entry) => entry.id === edit.id)
+          if (!item || input === 'cancel') {
+            setEditingSetting(null)
+            return
+          }
+          if (input === 'confirm') {
+            parkMap.current?.setFacilitySetting(edit.id, edit.value)
+            setEditingSetting(null)
+            return
+          }
+          if (item.kind === 'step') {
+            const min = item.min ?? 0
+            const max = item.max ?? 0
+            // 左右で 1 ずつ、上下でいっぺんに最大・最低へ
+            const next = input === 'left' ? edit.value - 1
+              : input === 'right' ? edit.value + 1
+              : input === 'up' ? max
+              : input === 'down' ? min
+              : edit.value
+            setEditingSetting({ ...edit, value: Math.min(max, Math.max(min, next)) })
+            return
+          }
+          const digits = item.digits ?? 1
+          if (input === 'left' || input === 'right') {
+            const step = input === 'left' ? digits - 1 : 1
+            setEditingSetting({ ...edit, digit: (edit.digit + step) % digits })
+            return
+          }
+          if (input !== 'up' && input !== 'down') return
+          // 選んでいる桁だけを 0〜9 で回す。繰り上がりで隣の桁は動かさない
+          const place = 10 ** (digits - 1 - edit.digit)
+          const current = Math.floor(edit.value / place) % 10
+          const next = (current + (input === 'up' ? 1 : 9)) % 10
+          setEditingSetting({ ...edit, value: edit.value + (next - current) * place })
+          return
+        }
+        const item = items[facilitySettingsIndex]
+        if (input === 'cancel') parkMap.current?.closeFacilitySettings()
+        else if (input === 'up' || input === 'down') {
+          setBuildMessage('')
+          setFacilitySettingsIndex((current) => moveMenu(current, input, items.length))
+        }
+        else if (input === 'confirm' && item?.enabled) {
+          setBuildMessage('')
+          startSettingItem(item)
+        }
+        return
+      }
       if (parkMode === 'controlsMenu') {
         if (input === 'cancel') setParkMode('systemMenu')
         else if (input === 'confirm') openMenuItem('controlsMenu', controlsMenuIndex)
@@ -662,7 +811,8 @@ export default function App() {
       }
       const mapAction = input === 'left' || input === 'right' || input === 'up' || input === 'down'
         || input === 'zoomIn' || input === 'zoomOut'
-        || ((parkMode === 'pathBuild' || parkMode === 'queueBuild' || parkMode === 'stairsBuild' || parkMode === 'attractionQueueBuild' || parkMode === 'attractionBuild' || parkMode === 'shopBuild' || parkMode === 'facilityBuild') && (input === 'confirm' || input === 'confirmRelease'))
+        // 何のモードでもないときの決定は、カーソルの下の施設の設定メニューを開く
+        || ((parkMode === 'map' || parkMode === 'pathBuild' || parkMode === 'queueBuild' || parkMode === 'stairsBuild' || parkMode === 'attractionQueueBuild' || parkMode === 'attractionBuild' || parkMode === 'shopBuild' || parkMode === 'facilityBuild') && (input === 'confirm' || input === 'confirmRelease'))
         // 撤去はどのモードでも使える。何を消せるかはマップ側で判断する
         || input === 'remove' || input === 'removeRelease'
       if (mapAction) parkMap.current?.handleAction(input)
@@ -681,10 +831,18 @@ export default function App() {
     const nextCountry = moveCountry(selectedCountry, input)
     if (nextCountry === selectedCountry) return
     setSelectedCountry(nextCountry)
-  }, [screen, selectedCountry, parkMode, mainMenuIndex, roadMenuIndex, attractionMenuIndex, shopMenuIndex, facilityMenuIndex, systemMenuIndex, controlsMenuIndex, controlItems, menuPageSize, shopBuildStep, facilityBuildStep, stairsBuildStep, titleStep, titleIndex, confirmPrompt, answerConfirm, activateTitleItem, openMenuItem, startNewGame, countryAttractions, countryShops, countryFacilities])
+  }, [screen, selectedCountry, parkMode, mainMenuIndex, roadMenuIndex, attractionMenuIndex, shopMenuIndex, facilityMenuIndex, systemMenuIndex, controlsMenuIndex, controlItems, menuPageSize, shopBuildStep, facilityBuildStep, stairsBuildStep, titleStep, titleIndex, confirmPrompt, answerConfirm, activateTitleItem, openMenuItem, startNewGame, countryAttractions, countryShops, countryFacilities, facilitySettings, facilitySettingsIndex, editingSetting, startSettingItem])
 
 
   useEffect(() => setBuildMessage(''), [parkMode])
+
+  // 設定メニューを閉じたら選択位置を先頭に戻し、次に開いたときの起点にする
+  const settingsOpen = facilitySettings !== null
+  useEffect(() => {
+    if (settingsOpen) return
+    setFacilitySettingsIndex(0)
+    setEditingSetting(null)
+  }, [settingsOpen])
 
   // オートセーブ。日付が変わったときだけ書き込む(clock は日が変わったときにしか更新されない)
   const autoSaveState = useRef({ mode, cash, speedIndex, countryId: selected.id })
@@ -720,6 +878,12 @@ export default function App() {
     }))
     : parkMode === 'controlsMenu'
     ? controlItems
+    : parkMode === 'facilitySettings'
+    ? (facilitySettings?.items ?? []).map((item) => ({
+      ...item,
+      iconSrc: `/assets/park/menu-icon-${item.icon}.png`,
+      value: <SettingValue item={item} edit={editingSetting?.id === item.id ? editingSetting : null} />,
+    }))
     : parkMode === 'attractionMenu'
       ? countryAttractions.map((attraction) => ({
         id: attraction.id,
@@ -753,9 +917,12 @@ export default function App() {
     facilityMenu: [facilityMenuIndex, setFacilityMenuIndex],
     systemMenu: [systemMenuIndex, setSystemMenuIndex],
     controlsMenu: [controlsMenuIndex, setControlsMenuIndex],
+    facilitySettings: [facilitySettingsIndex, setFacilitySettingsIndex],
   }
   const [menuSelectedIndex, selectMenuIndex] = menuIndexByMode[parkMode] ?? [attractionMenuIndex, setAttractionMenuIndex]
-  const buildModeLabel = parkMode === 'pathBuild'
+  const buildModeLabel = parkMode === 'facilitySettings' && facilitySettings
+    ? `${facilitySettings.title} Lv.${facilitySettings.version}`
+    : parkMode === 'pathBuild'
     ? '歩道設置中'
     : parkMode === 'stairsBuild'
       ? stairsBuildStep === 'direction' ? '向きを選んでください' : '階段設置中'
@@ -774,8 +941,11 @@ export default function App() {
               ? '向きを選んでください'
               : `${countryFacilities[facilityMenuIndex].name} 設置中`
             : ''
-  // 左上は今のモード、下部のバーは通知・アドバイスなどのメッセージと役割を分ける
-  const statusBarText = menuItems ? menuItems[menuSelectedIndex]?.description ?? '' : buildMessage
+  // 左上は今のモード、下部のバーは通知・アドバイスなどのメッセージと役割を分ける。
+  // 設定メニューでは資金不足などの知らせを項目の説明より先に出す
+  const statusBarText = parkMode === 'facilitySettings' && buildMessage
+    ? buildMessage
+    : menuItems ? menuItems[menuSelectedIndex]?.description ?? '' : buildMessage
   // 時間操作は停止と速度変更の 2 つ。速度は押すたびに低速→標準→高速と回る
   const cycleSpeed = () => {
     setSpeedIndex((current) => paused ? current : (current + 1) % game.speeds.length)
@@ -821,6 +991,18 @@ export default function App() {
   )
   // メニューや確認を出している間は、マップへのクリックを届かせない
   const mapBlocked = menuItems !== null || confirmPrompt !== null
+  // 設定に出てこないぶんの数値。広い画面ではメニューの反対側、狭い画面では上部のバーの下に置く
+  const statusPanel = parkMode === 'facilitySettings' && facilitySettings ? (
+    <div className="park-status-panel" aria-label={`${facilitySettings.title} のようす`}>
+      {facilitySettings.status.map((entry) => (
+        <div className="park-status-row" key={entry.label}>
+          <img className="park-status-icon" src={`/assets/park/menu-icon-${entry.icon}.png`} alt="" />
+          <span>{entry.label}</span>
+          <span className="park-status-value">{entry.value}</span>
+        </div>
+      ))}
+    </div>
+  ) : null
 
   return (
     <main
@@ -910,6 +1092,13 @@ export default function App() {
               onAdmissionPaid={(fee) => setCash((current) => current + fee)}
               onShopSale={(amount) => setCash((current) => current + amount)}
               onGuestCountChange={setGuestCount}
+              onFacilitySettings={(settings) => {
+                setFacilitySettings(settings)
+                setParkMode((current) => (
+                  settings ? 'facilitySettings' : current === 'facilitySettings' ? 'map' : current
+                ))
+              }}
+              onSpend={(cost) => setCash((current) => current - cost)}
               onRemoveConfirm={(name) => setConfirmPrompt({
                 message: `${name} を撤去しますか？`,
                 confirmLabel: '撤去する',
@@ -924,6 +1113,8 @@ export default function App() {
           </Suspense>
           <div className="park-hud-top">
             {buildModeLabel ? <div className="park-mode-label">{buildModeLabel}</div> : null}
+            {/* 狭い画面では、モード名の下に続けてステータスを並べる */}
+            {compact ? statusPanel : null}
             <div className="park-status-overlay">
               <span>{formatDate(clock)}</span>
               <span>資金: {cash.toLocaleString()}</span>
@@ -941,6 +1132,7 @@ export default function App() {
               onConfirm={(index) => openMenuItem(parkMode, index)}
             />
           ) : null}
+          {compact ? null : statusPanel}
           {compact ? (
             <>
               {/* メニューを開いている間は操作の主役になるので、薄くせず出す */}

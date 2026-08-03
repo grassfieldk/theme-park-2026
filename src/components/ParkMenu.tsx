@@ -1,10 +1,12 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 
 type Item = {
   id: string
   label: string
   description: string
   iconSrc?: string
+  /** 設定メニューの現在値。行の右端に出す */
+  value?: ReactNode
   enabled: boolean
 }
 
@@ -58,6 +60,7 @@ export default function ParkMenu({ items, selectedIndex, onSelect, onConfirm, on
               <img className="park-menu-icon" src={item.iconSrc} alt="" />
             ) : null}
             <span>{item.label}</span>
+            {item.value}
           </button>
         ))}
       </div>

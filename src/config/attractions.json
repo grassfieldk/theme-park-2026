@@ -48,7 +48,9 @@
    ]
   },
   "excitement": 7,
-  "speedSetting": 5
+  "speedSetting": 5,
+  "capacityMax": 8,
+  "speedAdjustable": true
  },
  {
   "id": "g-shock",
@@ -150,7 +152,9 @@
    ]
   },
   "excitement": 8,
-  "speedSetting": 5
+  "speedSetting": 5,
+  "capacityMax": 8,
+  "speedAdjustable": true
  },
  {
   "id": "space-dive",
@@ -258,7 +262,9 @@
    ]
   },
   "excitement": 8,
-  "speedSetting": 5
+  "speedSetting": 5,
+  "capacityMax": 8,
+  "speedAdjustable": true
  },
  {
   "id": "dome-zero",
@@ -297,7 +303,9 @@
    ]
   },
   "excitement": 9,
-  "speedSetting": 5
+  "speedSetting": 5,
+  "capacityMax": 10,
+  "speedAdjustable": true
  },
  {
   "id": "pirate-ship",
@@ -504,7 +512,9 @@
    ]
   },
   "excitement": 6,
-  "speedSetting": 5
+  "speedSetting": 5,
+  "capacityMax": 8,
+  "speedAdjustable": true
  },
  {
   "id": "space-shuttle",
@@ -629,7 +639,9 @@
    ]
   },
   "excitement": 7,
-  "speedSetting": 5
+  "speedSetting": 5,
+  "capacityMax": 9,
+  "speedAdjustable": true
  },
  {
   "id": "magic-carpet",
@@ -832,7 +844,9 @@
    ]
   },
   "excitement": 8,
-  "speedSetting": 5
+  "speedSetting": 5,
+  "capacityMax": 8,
+  "speedAdjustable": true
  },
  {
   "id": "hammer-swing",
@@ -962,7 +976,9 @@
    ]
   },
   "excitement": 9,
-  "speedSetting": 5
+  "speedSetting": 5,
+  "capacityMax": 10,
+  "speedAdjustable": true
  },
  {
   "id": "coffee-cup",
@@ -1115,7 +1131,9 @@
    ]
   },
   "excitement": 5,
-  "speedSetting": 5
+  "speedSetting": 5,
+  "capacityMax": 9,
+  "speedAdjustable": true
  },
  {
   "id": "merry-go-round",
@@ -1181,7 +1199,9 @@
    ]
   },
   "excitement": 2,
-  "speedSetting": 5
+  "speedSetting": 5,
+  "capacityMax": 8,
+  "speedAdjustable": true
  },
  {
   "id": "joy-plane",
@@ -1275,7 +1295,9 @@
    ]
   },
   "excitement": 7,
-  "speedSetting": 5
+  "speedSetting": 5,
+  "capacityMax": 8,
+  "speedAdjustable": true
  },
  {
   "id": "parasol-chair",
@@ -1429,7 +1451,9 @@
    ]
   },
   "excitement": 7,
-  "speedSetting": 5
+  "speedSetting": 5,
+  "capacityMax": 8,
+  "speedAdjustable": true
  },
  {
   "id": "super-spinner",
@@ -1458,7 +1482,9 @@
    ]
   },
   "excitement": 7,
-  "speedSetting": 5
+  "speedSetting": 5,
+  "capacityMax": 9,
+  "speedAdjustable": true
  },
  {
   "id": "wild-roll",
@@ -1524,7 +1550,9 @@
    ]
   },
   "excitement": 8,
-  "speedSetting": 5
+  "speedSetting": 5,
+  "capacityMax": 9,
+  "speedAdjustable": true
  },
  {
   "id": "dish-spin",
@@ -1689,7 +1717,9 @@
    ]
   },
   "excitement": 8,
-  "speedSetting": 5
+  "speedSetting": 5,
+  "capacityMax": 9,
+  "speedAdjustable": true
  },
  {
   "id": "ferris-wheel",
@@ -1720,7 +1750,9 @@
    ]
   },
   "excitement": 3,
-  "speedSetting": 5
+  "speedSetting": 5,
+  "capacityMax": 8,
+  "speedAdjustable": true
  },
  {
   "id": "sky-tower",
@@ -1752,7 +1784,9 @@
    ]
   },
   "excitement": 2,
-  "speedSetting": 2
+  "speedSetting": 2,
+  "capacityMax": 10,
+  "speedAdjustable": false
  },
  {
   "id": "great-wheel",
@@ -1783,7 +1817,9 @@
    ]
   },
   "excitement": 0,
-  "speedSetting": 5
+  "speedSetting": 5,
+  "capacityMax": 10,
+  "speedAdjustable": true
  },
  {
   "id": "albatross",
@@ -1827,7 +1863,9 @@
    ]
   },
   "excitement": 1,
-  "speedSetting": 1
+  "speedSetting": 1,
+  "capacityMax": 9,
+  "speedAdjustable": false
  },
  {
   "id": "virtual-flight",
@@ -1859,7 +1897,9 @@
    ]
   },
   "excitement": 8,
-  "speedSetting": 5
+  "speedSetting": 5,
+  "capacityMax": 7,
+  "speedAdjustable": true
  },
  {
   "id": "jigoku-meguri",
@@ -1902,7 +1942,9 @@
    ]
   },
   "excitement": 7,
-  "speedSetting": 7
+  "speedSetting": 7,
+  "capacityMax": 8,
+  "speedAdjustable": false
  },
  {
   "id": "haunted-mansion",
@@ -1951,7 +1993,9 @@
    ]
   },
   "excitement": 8,
-  "speedSetting": 8
+  "speedSetting": 8,
+  "capacityMax": 9,
+  "speedAdjustable": false
  },
  {
   "id": "inferno",
@@ -1983,7 +2027,9 @@
    ]
   },
   "excitement": 8,
-  "speedSetting": 8
+  "speedSetting": 8,
+  "capacityMax": 9,
+  "speedAdjustable": false
  },
  {
   "id": "athletic",
@@ -2035,7 +2081,9 @@
    ]
   },
   "excitement": 3,
-  "speedSetting": 3
+  "speedSetting": 3,
+  "capacityMax": 9,
+  "speedAdjustable": false
  },
  {
   "id": "circus-show",
@@ -2119,7 +2167,9 @@
    ]
   },
   "excitement": 2,
-  "speedSetting": 2
+  "speedSetting": 2,
+  "capacityMax": 10,
+  "speedAdjustable": false
  },
  {
   "id": "virtual-wars",
@@ -2148,7 +2198,9 @@
    ]
   },
   "excitement": 9,
-  "speedSetting": 9
+  "speedSetting": 9,
+  "capacityMax": 9,
+  "speedAdjustable": false
  },
  {
   "id": "maze",
@@ -2192,7 +2244,9 @@
    ]
   },
   "excitement": 3,
-  "speedSetting": 3
+  "speedSetting": 3,
+  "capacityMax": 9,
+  "speedAdjustable": false
  },
  {
   "id": "ninja-house",
@@ -2221,7 +2275,9 @@
    ]
   },
   "excitement": 2,
-  "speedSetting": 2
+  "speedSetting": 2,
+  "capacityMax": 9,
+  "speedAdjustable": false
  },
  {
   "id": "marine-show",
@@ -2305,7 +2361,9 @@
    ]
   },
   "excitement": 2,
-  "speedSetting": 2
+  "speedSetting": 2,
+  "capacityMax": 10,
+  "speedAdjustable": false
  },
  {
   "id": "fantasy-castle",
@@ -2334,7 +2392,9 @@
    ]
   },
   "excitement": 0,
-  "speedSetting": 0
+  "speedSetting": 0,
+  "capacityMax": 10,
+  "speedAdjustable": false
  },
  {
   "id": "oedo-castle",
@@ -2363,7 +2423,9 @@
    ]
   },
   "excitement": 1,
-  "speedSetting": 1
+  "speedSetting": 1,
+  "capacityMax": 10,
+  "speedAdjustable": false
  },
  {
   "id": "pool-skate-rink",
@@ -2415,7 +2477,9 @@
    ]
   },
   "excitement": 1,
-  "speedSetting": 1
+  "speedSetting": 1,
+  "capacityMax": 11,
+  "speedAdjustable": false
  },
  {
   "id": "skate-rink-pool",
@@ -2466,7 +2530,9 @@
    ]
   },
   "excitement": 1,
-  "speedSetting": 1
+  "speedSetting": 1,
+  "capacityMax": 11,
+  "speedAdjustable": false
  },
  {
   "id": "boat-dock",
@@ -2516,7 +2582,9 @@
    ]
   },
   "excitement": 4,
-  "speedSetting": 4
+  "speedSetting": 4,
+  "capacityMax": 9,
+  "speedAdjustable": false
  },
  {
   "id": "mississippi-cruise",
@@ -2547,7 +2615,9 @@
    ]
   },
   "excitement": 2,
-  "speedSetting": 2
+  "speedSetting": 2,
+  "capacityMax": 10,
+  "speedAdjustable": false
  },
  {
   "id": "treasure-island",
@@ -2577,6 +2647,8 @@
    ]
   },
   "excitement": 3,
-  "speedSetting": 3
+  "speedSetting": 3,
+  "capacityMax": 10,
+  "speedAdjustable": false
  }
 ]

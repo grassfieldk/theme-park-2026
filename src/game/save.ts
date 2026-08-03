@@ -22,8 +22,34 @@ export type ParkSnapshot = {
     exit?: { x: number, y: number, frame: number }
     entranceQueueKey?: string
     entranceFrame?: number
+    /** 運転設定。古いデータには入っていないので、無ければ初期値で始める */
+    settings?: {
+      suspended: boolean
+      capacity: number
+      speed: number
+      rideTime: number
+      price: number
+      version: number
+      usedThisMonth: number
+      usedLastMonth: number
+    }
   }>
-  shops: Array<{ id: string, x: number, y: number, direction: number }>
+  shops: Array<{
+    id: string
+    x: number
+    y: number
+    direction: number
+    /** 運営設定。古いデータには入っていないので、無ければ初期値で始める */
+    settings?: {
+      price: number
+      tasteLevel: number
+      prizePrice: number
+      winRate: number
+      version: number
+      usedThisMonth: number
+      usedLastMonth: number
+    }
+  }>
   facilities: Array<{ id: string, x: number, y: number, frame: number }>
   buildings: string[]
 }
