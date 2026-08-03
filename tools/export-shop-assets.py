@@ -10,6 +10,11 @@ VRAM 領域を上書きする)。そのため向き d の画像は「向き d �
 `public/assets/park/shops/{id}-{向き}.png` に出力し、施設経済テーブル
 (`recovery/manifests/facility-economy.json`)の設置費・維持費と合わせて
 `src/config/shops.json` を生成する。ショップの面積はすべて 5 × 5。
+
+評価に使う値も D2MAIN.BIN から読んで書き戻す。仕入価格は 0x801f8f40(1 件 2 バイトの
+先頭バイト × 10)、味付けの系統は 0x801f8f83(種類で引く。255 は味付けなし)である。
+
+このツールが書くのは自分で作った項目だけで、shops.json の他の項目はそのまま残す。
 """
 
 from __future__ import annotations
@@ -110,6 +115,10 @@ MANIFEST = ROOT / "recovery" / "manifests" / "unpack-pak.json"
 ECONOMY = ROOT / "recovery" / "manifests" / "facility-economy.json"
 DESTINATION = ROOT / "public" / "assets" / "park" / "shops"
 CONFIG = ROOT / "src" / "config" / "shops.json"
+D2MAIN = ROOT / "recovery" / "disc" / "PRO" / "D2MAIN.BIN"
+D2MAIN_BASE = 0x801D06F8
+STOCK_PRICE_TABLE = 0x801F8F40
+TASTE_KIND_TABLE = 0x801F8F83
 SHOP_SIZE = 5
 SHOPS = {
     "wally-ice": 1,
@@ -136,6 +145,14 @@ SHOPS = {
 }
 
 
+def read_taste(facility_id: int) -> tuple[int, int | None]:
+    """仕入価格と味付けの系統を返す。味付けのない店の系統は None。"""
+    data = D2MAIN.read_bytes()
+    stock_price = data[STOCK_PRICE_TABLE - D2MAIN_BASE + (facility_id - 1) * 2] * 10
+    kind = data[TASTE_KIND_TABLE - D2MAIN_BASE + facility_id]
+    return stock_price, None if kind == 0xFF else kind
+
+
 def main() -> None:
     pak = PAK.read_bytes()
     resources = {
@@ -148,6 +165,7 @@ def main() -> None:
     }
     palette = _facility.load_facility_palette(pak, resources)
     DESTINATION.mkdir(parents=True, exist_ok=True)
+    existing = {entry["id"]: entry for entry in json.loads(CONFIG.read_text(encoding="utf-8"))}
 
     shops = []
     for shop_id, facility_id in SHOPS.items():
@@ -192,13 +210,17 @@ def main() -> None:
             image.save(DESTINATION / f"{shop_id}-{direction}.png")
             image_offsets.append({"x": anchor_x, "y": anchor_y})
         economy_entry = economy[facility_id]
+        stock_price, taste_kind = read_taste(facility_id)
         shops.append({
+            **existing.get(shop_id, {}),
             "id": shop_id,
             "name": economy_entry["name"],
             "width": SHOP_SIZE,
             "height": SHOP_SIZE,
             "constructionCost": economy_entry["constructionCost"],
             "maintenanceCost": economy_entry["maintenanceCost"],
+            "stockPrice": stock_price,
+            "tasteKind": taste_kind,
             "directions": direction_count,
             "imageOffsets": image_offsets,
             "assetBase": f"/assets/park/shops/{shop_id}",

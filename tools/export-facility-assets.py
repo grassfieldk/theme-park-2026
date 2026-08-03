@@ -16,6 +16,10 @@
 
 全コマを共通の大きさの画布に描き、attractions.json の imageOffset を
 その分だけずらして書き戻す。
+
+あわせて評価に使う値も D2MAIN.BIN から読んで書き戻す。種類ごとの 3 バイト表
+0x801fb260 の先頭が興奮度(0〜9)で、種類ごとの u16 表 0x801fb8b6 の bit3 が
+立っている種類は速度を設定できず、速度の初期値が興奮度になる(原作 FUN_801f4538)。
 """
 
 from __future__ import annotations
@@ -35,6 +39,11 @@ from unpack_sprites import decode_upload_images, psx_color  # noqa: E402
 
 PAK = ROOT / "recovery" / "disc" / "TEX" / "UNPACK.PAK"
 MANIFEST = ROOT / "recovery" / "manifests" / "unpack-pak.json"
+D2MAIN = ROOT / "recovery" / "disc" / "PRO" / "D2MAIN.BIN"
+D2MAIN_BASE = 0x801D06F8
+RATING_TABLE = 0x801FB260
+KIND_FLAGS = 0x801FB8B6
+DEFAULT_SPEED = 5
 DESTINATION = ROOT / "public" / "assets" / "park" / "attractions"
 CONFIG = ROOT / "src" / "config" / "attractions.json"
 FACILITIES = {
@@ -147,6 +156,15 @@ def read_groups(resource: bytes, section_count: int, sections: list[int], table_
     return groups
 
 
+def read_ratings(resource_id: int) -> tuple[int, int]:
+    """興奮度と、運転設定の速度の初期値を返す。リソース番号 36 が種類 14 に当たる。"""
+    data = D2MAIN.read_bytes()
+    kind = resource_id - 36 + 14
+    excitement = data[RATING_TABLE - D2MAIN_BASE + (kind - 1) * 3]
+    flags = struct.unpack_from("<H", data, KIND_FLAGS - D2MAIN_BASE + kind * 2)[0]
+    return excitement, excitement if flags & 8 else DEFAULT_SPEED
+
+
 def main() -> None:
     pak = PAK.read_bytes()
     resources = {
@@ -202,6 +220,7 @@ def main() -> None:
         catalog_entry.pop("asset", None)
         catalog_entry["assetBase"] = f"/assets/park/attractions/{facility_id}"
         catalog_entry["animation"] = {"frames": cursor, "groups": catalog_groups}
+        catalog_entry["excitement"], catalog_entry["speedSetting"] = read_ratings(resource_id)
         print(f'{facility_id}: {cursor} frames, groups={[g["count"] for g in catalog_groups]}')
 
     CONFIG.write_text(json.dumps(catalog, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")

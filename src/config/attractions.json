@@ -46,7 +46,9 @@
      ]
     }
    ]
-  }
+  },
+  "excitement": 7,
+  "speedSetting": 5
  },
  {
   "id": "g-shock",
@@ -146,7 +148,9 @@
      "frame": 2
     }
    ]
-  }
+  },
+  "excitement": 8,
+  "speedSetting": 5
  },
  {
   "id": "space-dive",
@@ -252,7 +256,9 @@
      "frame": 5
     }
    ]
-  }
+  },
+  "excitement": 8,
+  "speedSetting": 5
  },
  {
   "id": "dome-zero",
@@ -289,7 +295,9 @@
      ]
     }
    ]
-  }
+  },
+  "excitement": 9,
+  "speedSetting": 5
  },
  {
   "id": "pirate-ship",
@@ -494,7 +502,9 @@
      "frame": 5
     }
    ]
-  }
+  },
+  "excitement": 6,
+  "speedSetting": 5
  },
  {
   "id": "space-shuttle",
@@ -617,7 +627,9 @@
      "frame": 16
     }
    ]
-  }
+  },
+  "excitement": 7,
+  "speedSetting": 5
  },
  {
   "id": "magic-carpet",
@@ -818,7 +830,9 @@
      "frame": 5
     }
    ]
-  }
+  },
+  "excitement": 8,
+  "speedSetting": 5
  },
  {
   "id": "hammer-swing",
@@ -946,7 +960,9 @@
      "frame": 3
     }
    ]
-  }
+  },
+  "excitement": 9,
+  "speedSetting": 5
  },
  {
   "id": "coffee-cup",
@@ -1097,7 +1113,9 @@
      "frame": 17
     }
    ]
-  }
+  },
+  "excitement": 5,
+  "speedSetting": 5
  },
  {
   "id": "merry-go-round",
@@ -1161,7 +1179,9 @@
     null,
     null
    ]
-  }
+  },
+  "excitement": 2,
+  "speedSetting": 5
  },
  {
   "id": "joy-plane",
@@ -1253,7 +1273,9 @@
      "frame": 5
     }
    ]
-  }
+  },
+  "excitement": 7,
+  "speedSetting": 5
  },
  {
   "id": "parasol-chair",
@@ -1405,7 +1427,9 @@
      "frame": 1
     }
    ]
-  }
+  },
+  "excitement": 7,
+  "speedSetting": 5
  },
  {
   "id": "super-spinner",
@@ -1432,7 +1456,9 @@
      ]
     }
    ]
-  }
+  },
+  "excitement": 7,
+  "speedSetting": 5
  },
  {
   "id": "wild-roll",
@@ -1496,7 +1522,9 @@
     null,
     null
    ]
-  }
+  },
+  "excitement": 8,
+  "speedSetting": 5
  },
  {
   "id": "dish-spin",
@@ -1659,7 +1687,9 @@
      "frame": 5
     }
    ]
-  }
+  },
+  "excitement": 8,
+  "speedSetting": 5
  },
  {
   "id": "ferris-wheel",
@@ -1688,7 +1718,9 @@
      ]
     }
    ]
-  }
+  },
+  "excitement": 3,
+  "speedSetting": 5
  },
  {
   "id": "sky-tower",
@@ -1718,7 +1750,9 @@
      ]
     }
    ]
-  }
+  },
+  "excitement": 2,
+  "speedSetting": 2
  },
  {
   "id": "great-wheel",
@@ -1747,7 +1781,9 @@
      ]
     }
    ]
-  }
+  },
+  "excitement": 0,
+  "speedSetting": 5
  },
  {
   "id": "albatross",
@@ -1789,7 +1825,9 @@
      ]
     }
    ]
-  }
+  },
+  "excitement": 1,
+  "speedSetting": 1
  },
  {
   "id": "virtual-flight",
@@ -1819,7 +1857,9 @@
      ]
     }
    ]
-  }
+  },
+  "excitement": 8,
+  "speedSetting": 5
  },
  {
   "id": "jigoku-meguri",
@@ -1860,7 +1900,9 @@
      ]
     }
    ]
-  }
+  },
+  "excitement": 7,
+  "speedSetting": 7
  },
  {
   "id": "haunted-mansion",
@@ -1907,7 +1949,9 @@
      ]
     }
    ]
-  }
+  },
+  "excitement": 8,
+  "speedSetting": 8
  },
  {
   "id": "inferno",
@@ -1937,7 +1981,9 @@
      ]
     }
    ]
-  }
+  },
+  "excitement": 8,
+  "speedSetting": 8
  },
  {
   "id": "athletic",
@@ -1987,7 +2033,9 @@
      ]
     }
    ]
-  }
+  },
+  "excitement": 3,
+  "speedSetting": 3
  },
  {
   "id": "circus-show",
@@ -2069,7 +2117,9 @@
      "frame": 17
     }
    ]
-  }
+  },
+  "excitement": 2,
+  "speedSetting": 2
  },
  {
   "id": "virtual-wars",
@@ -2096,7 +2146,9 @@
      ]
     }
    ]
-  }
+  },
+  "excitement": 9,
+  "speedSetting": 9
  },
  {
   "id": "maze",
@@ -2138,7 +2190,9 @@
      ]
     }
    ]
-  }
+  },
+  "excitement": 3,
+  "speedSetting": 3
  },
  {
   "id": "ninja-house",
@@ -2165,7 +2219,9 @@
      ]
     }
    ]
-  }
+  },
+  "excitement": 2,
+  "speedSetting": 2
  },
  {
   "id": "marine-show",
@@ -2247,7 +2303,9 @@
      "frame": 17
     }
    ]
-  }
+  },
+  "excitement": 2,
+  "speedSetting": 2
  },
  {
   "id": "fantasy-castle",
@@ -2274,7 +2332,9 @@
      ]
     }
    ]
-  }
+  },
+  "excitement": 0,
+  "speedSetting": 0
  },
  {
   "id": "oedo-castle",
@@ -2301,7 +2361,9 @@
      ]
     }
    ]
-  }
+  },
+  "excitement": 1,
+  "speedSetting": 1
  },
  {
   "id": "pool-skate-rink",
@@ -2351,7 +2413,9 @@
      ]
     }
    ]
-  }
+  },
+  "excitement": 1,
+  "speedSetting": 1
  },
  {
   "id": "skate-rink-pool",
@@ -2400,7 +2464,9 @@
      ]
     }
    ]
-  }
+  },
+  "excitement": 1,
+  "speedSetting": 1
  },
  {
   "id": "boat-dock",
@@ -2448,7 +2514,9 @@
      ]
     }
    ]
-  }
+  },
+  "excitement": 4,
+  "speedSetting": 4
  },
  {
   "id": "mississippi-cruise",
@@ -2477,7 +2545,9 @@
      ]
     }
    ]
-  }
+  },
+  "excitement": 2,
+  "speedSetting": 2
  },
  {
   "id": "treasure-island",
@@ -2505,6 +2575,8 @@
      ]
     }
    ]
-  }
+  },
+  "excitement": 3,
+  "speedSetting": 3
  }
 ]

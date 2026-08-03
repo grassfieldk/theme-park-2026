@@ -10,6 +10,7 @@ import busSprites from '../config/busSprites.json'
 import guestSprites from '../config/guestSprites.json'
 import riderSprites from '../config/riderSprites.json'
 import pointers from '../config/pointers.json'
+import reactions from '../config/reactions.json'
 import seasons from '../config/seasons.json'
 import terrain from '../config/terrain.json'
 import terrainObjects from '../config/terrainObjects.json'
@@ -86,6 +87,10 @@ type PlacedAttraction = {
   // 乗車中の客は Guest 型がシーン内で定義されるため rideStates 側で持つ
   capacity: number
   rideTimeSetting: number
+  // 運転設定の速度と乗車額、乗った客が付ける評価(-1023〜1023)
+  speedSetting: number
+  price: number
+  rating: number
   // 表示中のコマと、そのコマの残り表示フレーム数
   animFrame: number
   animRemaining: number
@@ -212,6 +217,9 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
     // 演算は画面の更新間隔と切り離し、この刻み幅で必要な回数だけ進める。
     // どの環境でも 1 回あたりの進む量が同じになり、毎秒の回数も一定になる
     const stepMs = 1000 / game.time.framesPerSecond
+    // 原作の内部フレームは 30fps で、ゲーム速度を変えても刻みは変わらない
+    // (変わるのは 1 日あたりのフレーム数)。フレーム数で決まっている長さは実時間で送る
+    const originalFramesPerStep = game.time.originalFramesPerSecond * stepMs / 1000
     // 画面を離れていた後などに一気に取り戻そうとして固まらないよう、1 回の更新で進める上限を設ける
     const maxStepsPerFrame = 15
 
@@ -272,6 +280,10 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             frameHeight: size.frameHeight,
           })
         })
+        // 来園者の頭の上に出る反応のアイコン
+        reactions.list.forEach(({ id }) => {
+          this.load.image(`reaction-${id}`, `${reactions.assetBase}-${id}.png`)
+        })
         // 季節で色が変わる地形パーツは [通常|秋|冬] の 3 コマのシート
         Object.entries(seasons.seasonalAssets).forEach(([name, size]) => {
           this.load.spritesheet(name, `/assets/park/${name}.png?v=8`, {
@@ -328,7 +340,12 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         type PendingShop = { x: number, y: number, cost: number, image: Phaser.GameObjects.Image }
         let pendingShop: PendingShop | null = null
         // 設置済みのショップ。向きが決まった時点で記録する
-        type PlacedShop = { shop: Shop, x: number, y: number, direction: number, image: Phaser.GameObjects.Image }
+        // price と tasteLevel は運営設定の初期値。rating は利用した客が付ける評価(-1023〜1023)
+        type PlacedShop = {
+          shop: Shop, x: number, y: number, direction: number,
+          price: number, tasteLevel: number, rating: number,
+          image: Phaser.GameObjects.Image,
+        }
         const placedShops: PlacedShop[] = []
         let activeFacility = facilityBuild
         let facilityDirection = 0
@@ -338,6 +355,8 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         let pendingStairs: { x: number, y: number, direction: { dx: number, dy: number, frame: number }, image: Phaser.GameObjects.Image } | null = null
         let currentCash = availableCash
         let daysPerMs = gameDaysPerMs(initialSecondsPerDay.current)
+        // 絵のコマ送りの基準にする、いちばん速い速度の 1 日の長さ
+        const fastestSecondsPerDay = Math.min(...game.speeds.map((speed) => speed.secondsPerDay))
         let confirmHeld = false
         let removeHeld = false
         // メニューや確認が開いている間はマップへのクリックを無視する
@@ -1879,10 +1898,13 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             cost: attraction.constructionCost,
             capacity: attraction.capacity,
             animFrame: idle.from,
-            animRemaining: idle.durations[0],
+            animRemaining: 0,
             riderPhase: 0,
             riderImages: [],
             rideTimeSetting: attractionUseConfig.rideTimeSetting,
+            speedSetting: attraction.speedSetting,
+            price: attractionUseConfig.initialPrice,
+            rating: 0,
             image,
             baseImages,
           }
@@ -1999,7 +2021,10 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         }
         // 向きが確定したショップを記録し、前の道を敷く
         const completeShop = (shop: Shop, x: number, y: number, direction: number, image: Phaser.GameObjects.Image) => {
-          placedShops.push({ shop, x, y, direction, image })
+          placedShops.push({
+            shop, x, y, direction, image,
+            price: game.shopUse.initialPrice, tasteLevel: game.shopUse.tasteLevel, rating: 0,
+          })
           layShopWalkway(shop, x, y, direction)
           rebuildShopEntranceSpots()
         }
@@ -2695,6 +2720,14 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           satiety: number
           // 疲労(0〜250)。歩いている間増え、ベンチとトイレで回復する
           fatigue: number
+          // 気分(-512〜511)。施設を利用した評価と欲求の限界で動き、尽きると帰宅する
+          mood: number
+          // 滞在値(0〜250)。1 日 5 増え、150 で帰宅の時刻になる
+          stayValue: number
+          // 今出ている反応の番号と、その残りフレーム。残りが visibleFrames を切ると絵は消える
+          reaction: number
+          reactionFrames: number
+          reactionImage: Phaser.GameObjects.Image
           // 持っているゴミの数(独自仕様)。屋台型ショップの利用で増え、ゴミバコに移す
           trash: number
           // トイレ欲求(0〜250)。飲食すると発生し、しきい値以上で正面のトイレを使う
@@ -2864,6 +2897,23 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           const leading = guest.progress < 0.5
           drawGuest(guest, x, y, leading ? guest.fromX : guest.toX, leading ? guest.fromY : guest.toY, lift)
         }
+        // 反応のアイコンは客の基準点から決まった位置に、客のすぐ手前へ描く。
+        // 姿が見えないとき(乗車中・店舗型の店内)は出さない
+        const placeReactionImage = (guest: Guest) => {
+          const reactionConfig = guestConfig.reaction
+          // 正面ゲートを出てバスへ向かう客には出さない
+          const leaving = guest.phase === 'queued' || guest.phase === 'toSign' || guest.phase === 'toBus'
+          const visible = !leaving && guest.image.visible && guest.reactionFrames >= reactionConfig.visibleFrames
+          guest.reactionImage.setVisible(visible)
+          if (!visible) return
+          guest.reactionImage
+            .setTexture(`reaction-${guest.reaction}`)
+            .setPosition(
+              guest.image.x + guest.bank.anchorX + reactionConfig.offset.x,
+              guest.image.y + guest.bank.anchorY + reactionConfig.offset.y,
+            )
+            .setDepth(guest.image.depth + 1)
+        }
 
         // 道路が撤去されるなどして完全に孤立した場合、歩ける道は無視して最寄りの道路のマスへ直線的に進む
         const strandedRoadStep = (guest: Guest) => {
@@ -2915,15 +2965,30 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         // 探し、250 で頭打ちになる。利用すると満腹値が 250 になり、更新ごとに 10 ずつ減って
         // 0 に戻るまで対応する欲求は増えない
         const needsConfig = guestConfig.needs
+        const moodConfig = guestConfig.mood
+        const stayConfig = guestConfig.stay
         const shopUseConfig = game.shopUse
         const shopUseEffectOf = (shop: Shop) => ('useEffect' in shop ? shop.useEffect : null)
+        const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
+        const changeMood = (guest: Guest, delta: number) => {
+          guest.mood = clamp(guest.mood + delta, moodConfig.min, moodConfig.max)
+        }
         const updateGuestNeeds = (guest: Guest, days: number) => {
-          if (guest.phase === 'shopping' || guest.phase === 'riding') return
+          // 施設を利用している間(向かっている途中を含む)は欲求も滞在値も進まない
+          if (guest.phase === 'shopping' || guest.phase === 'riding' || guest.phase === 'facility') return
+          guest.stayValue = Math.min(stayConfig.max, guest.stayValue + stayConfig.perDay * days)
           guest.needTick += days * needsConfig.updatesPerDay
           while (guest.needTick >= 1) {
             guest.needTick -= 1
-            if (!guest.fullFood) guest.hunger = Math.min(needsConfig.max, guest.hunger + 1)
-            if (!guest.fullDrink) guest.thirst = Math.min(needsConfig.max, guest.thirst + 1)
+            // 満たされない欲求が限界に達したままだと気分が下がっていく
+            if (!guest.fullFood) {
+              if (guest.hunger < needsConfig.max) guest.hunger += 1
+              else changeMood(guest, moodConfig.limitPenalty)
+            }
+            if (!guest.fullDrink) {
+              if (guest.thirst < needsConfig.max) guest.thirst += 1
+              else changeMood(guest, moodConfig.limitPenalty)
+            }
             if (guest.fullFood || guest.fullDrink) {
               guest.satiety = Math.max(0, guest.satiety - needsConfig.satietyDecayPerUpdate)
               if (guest.satiety === 0) {
@@ -2931,14 +2996,151 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
                 guest.fullDrink = false
               }
             }
-            // トイレ欲求は飲食後に発生し、限界に達すると我慢できずに消える
+            // トイレ欲求は飲食後に発生し、限界に達すると我慢できずに消えて気分が大きく下がる
             if (guest.toiletUrge > 0) {
-              guest.toiletUrge = guest.toiletUrge < needsConfig.max ? guest.toiletUrge + 1 : 0
+              if (guest.toiletUrge < needsConfig.max) guest.toiletUrge += 1
+              else {
+                guest.toiletUrge = 0
+                changeMood(guest, moodConfig.toiletPenalty)
+              }
             }
             if (guest.phase === 'walking') {
               guest.fatigue = Math.min(needsConfig.max, guest.fatigue + needsConfig.fatigueWalkPerUpdate)
             }
+            if (guest.fatigue >= needsConfig.max) changeMood(guest, moodConfig.limitPenalty)
           }
+          // 気分が尽きた客は滞在時間を待たずに帰る
+          if (guest.mood <= moodConfig.leave) guest.leaveAtDay = Math.min(guest.leaveAtDay, elapsedDays)
+        }
+
+        // ---- 反応(吹き出し) ----
+        // 原作仕様: 来園者は反応を 1 つだけ持ち、優先度の値が小さいほど強い。
+        // 同じか強い反応は即座に上書きし、弱い反応は今の反応の残りが尽きてからしか出ない。
+        // 出た反応は holdFrames 保たれ、残りが visibleFrames を切ると絵だけ消える
+        // (原作 FUN_800c8af8 / FUN_800c8b88 / FUN_800c8888)
+        const reactionPriority = reactions.list.map(({ priority }) => priority)
+        const reactionConfig = guestConfig.reaction
+        const showReaction = (guest: Guest, id: number) => {
+          if (reactionPriority[id] > reactionPriority[guest.reaction] && guest.reactionFrames > 0) return
+          if (guest.reaction === id) return
+          guest.reaction = id
+          guest.reactionFrames = reactionConfig.holdFrames
+        }
+        // 何も起きていないときに、今の状態から出る反応を選び直す。
+        // 上から順に試し、優先度の強いものが残る
+        const refreshStandingReaction = (guest: Guest, attractionKinds: number) => {
+          const wantsFood = guest.hunger >= needsConfig.seekThreshold
+          const wantsDrink = guest.thirst >= needsConfig.seekThreshold
+          if (wantsFood && wantsDrink) showReaction(guest, 0x00)
+          if (wantsFood) showReaction(guest, 0x01)
+          if (wantsDrink) showReaction(guest, 0x02)
+          if (guest.mood <= moodConfig.leave) showReaction(guest, 0x0b)
+          if (guest.ridden.size > 0) {
+            if (guest.ridden.size === attractionKinds) showReaction(guest, 0x0e)
+            else if (Math.floor((guest.ridden.size + 1) * 100 / (attractionKinds + 1) / 10) >= 7) {
+              showReaction(guest, 0x0d)
+            }
+          }
+          if (guest.stayValue >= stayConfig.limit) {
+            showReaction(guest, 0x0f)
+            if (guest.fatigue >= needsConfig.max) showReaction(guest, 0x06)
+            return
+          }
+          if (guest.toiletUrge > needsConfig.toiletComplaint && guest.fatigue >= needsConfig.fatigueComplaint) {
+            showReaction(guest, 0x07)
+            return
+          }
+          if (guest.fatigue >= needsConfig.max) {
+            showReaction(guest, 0x10)
+            return
+          }
+          // 気分がふつうの範囲なら何も出さない
+          if (guest.mood >= moodConfig.good) showReaction(guest, 0x1b)
+          else if (guest.mood < moodConfig.bad) showReaction(guest, 0x1d)
+        }
+
+        // ---- 施設の評価 ----
+        // 原作仕様: 利用のたびに点数を出し、点数から反応・気分・施設の評価が決まる。
+        // 点数は -1023〜1023 に収め、気分にその 1/10、施設の評価に 1/100 を足す
+        const evaluationConfig = game.evaluation
+        const applyScore = (guest: Guest, score: number, rate: (delta: number) => void) => {
+          changeMood(guest, Math.trunc(score / evaluationConfig.moodDivisor))
+          rate(Math.trunc(score / evaluationConfig.ratingDivisor))
+        }
+        // 点数が負なら値段への不満が出る(原作 FUN_800c9a28)
+        const showPriceComplaint = (guest: Guest, score: number) => {
+          if (score < evaluationConfig.ripoff) showReaction(guest, 0x16)
+          else if (score < 0) showReaction(guest, 0x15)
+        }
+        // 店を利用した客の評価(原作 FUN_800b37dc)。点数は販売価格と仕入価格の比、
+        // それに味付けの段階で決まる。味付けが適正から外れていると店の評価も下がる
+        const evaluateShopUse = (guest: Guest, placed: PlacedShop) => {
+          const { shop, tasteLevel: level } = placed
+          let score = shop.stockPrice > 0
+            ? (evaluationConfig.priceStandard - Math.floor(placed.price * 10 / shop.stockPrice)) * 100
+            : 0
+          let complaint = 0
+          const kind = shop.tasteKind
+          const middle = evaluationConfig.tasteMiddle
+          if (kind !== null && kind < 6) {
+            // 甘さ・ニク・メン・シーフード系は濃いほど良い
+            score += evaluationConfig.tastePerStep * (level - middle)
+            if (level === 0) complaint = evaluationConfig.complaintRating
+          }
+          else if (kind !== null && kind >= 11) {
+            // 氷・水分は多いほど中身が減るので方向が逆になる
+            score += evaluationConfig.tastePerStep * (middle - level)
+            if (level === 4) complaint = evaluationConfig.complaintRating
+          }
+          else if (kind !== null && kind >= 7) {
+            // シオ・タバスコ・辛さ・カフェインは中間が良く、濃すぎても薄すぎても下がる
+            score -= evaluationConfig.tasteMismatch * Math.abs(level - middle)
+            if (level === 0 || level === 4) complaint = evaluationConfig.complaintRating
+          }
+          if (complaint !== 0) {
+            showReaction(guest, shop.category === 'drink' ? 0x11 : 0x12)
+            placed.rating = clamp(placed.rating + complaint, -evaluationConfig.ratingRange, evaluationConfig.ratingRange)
+          }
+          score = clamp(score, -evaluationConfig.scoreRange, evaluationConfig.scoreRange)
+          if (score >= evaluationConfig.satisfied) showReaction(guest, 0x1e)
+          applyScore(guest, score, (delta) => {
+            placed.rating = clamp(placed.rating + delta, -evaluationConfig.ratingRange, evaluationConfig.ratingRange)
+          })
+          guest.fatigue = Math.max(0, guest.fatigue - shopUseConfig.useFatigueRelief)
+          showPriceComplaint(guest, score)
+        }
+        // 乗り終えた客の評価(原作 FUN_800b32c4)。興奮度に対する速度設定のずれ、運転時間、
+        // 乗車額、列で待った長さから点数を出す
+        const evaluateRide = (guest: Guest, placed: PlacedAttraction) => {
+          const excitement = placed.attraction.excitement
+          const fit = 10 - Math.abs(excitement - placed.speedSetting)
+          const score = clamp(
+            2 * fit * Math.abs(excitement * 10 - 45)
+            + (placed.rideTimeSetting - evaluationConfig.rideTimeBase) * evaluationConfig.rideTimePerStep
+            - Math.trunc(evaluationConfig.ridePriceWeight * placed.price / 10)
+            - Math.floor(guest.queueWait),
+            -evaluationConfig.scoreRange, evaluationConfig.scoreRange,
+          )
+          const rate = (delta: number) => {
+            placed.rating = clamp(placed.rating + delta, -evaluationConfig.ratingRange, evaluationConfig.ratingRange)
+          }
+          showPriceComplaint(guest, score)
+          if (score < 0) {
+            rate(score < evaluationConfig.ripoff ? evaluationConfig.ripoffRating : evaluationConfig.expensiveRating)
+          }
+          // 運転設定が興奮度に合っていないと不満が出る
+          if (excitement >= evaluationConfig.thrillExcitement && placed.speedSetting < evaluationConfig.settingLow) {
+            showReaction(guest, 0x18)
+          }
+          if (excitement < evaluationConfig.moodExcitement && placed.speedSetting >= evaluationConfig.settingHigh) {
+            showReaction(guest, 0x19)
+          }
+          if (placed.rideTimeSetting < evaluationConfig.settingLow) showReaction(guest, 0x1a)
+          if (score >= evaluationConfig.satisfied) showReaction(guest, 0x1f)
+          else if (score >= evaluationConfig.good) showReaction(guest, 0x1b)
+          else if (score >= evaluationConfig.fair) showReaction(guest, 0x1c)
+          else if (score >= 0) showReaction(guest, 0x1d)
+          applyScore(guest, score, rate)
         }
         // 客の現在地から歩ける各マスへ、1 つ手前のマスを幅優先で記録する。
         // 歩ける条件は徘徊時と同じで、ショップ前の道は含めない
@@ -2990,8 +3192,21 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             ? !guest.fullFood && guest.hunger >= needsConfig.seekThreshold
             : !guest.fullDrink && guest.thirst >= needsConfig.seekThreshold
         )
+        // 行き先の候補。原作は来園者区分ごとに 5 件までの候補表を持っていて、そこから
+        // 支払える店を絞る。候補表の作られ方は未確定なので、本作は同じ分類の店から
+        // 無作為に 5 件まで選ぶことで置き換えている
+        const pickShopCandidates = (guest: Guest, category: 'food' | 'drink') => {
+          const pool = placedShops.filter(({ shop }) => shop.category === category)
+          for (let index = pool.length - 1; index > 0; index -= 1) {
+            const swap = Math.floor(Math.random() * (index + 1))
+            const held = pool[index]
+            pool[index] = pool[swap]
+            pool[swap] = held
+          }
+          return pool.slice(0, shopUseConfig.candidateCount).filter(({ shop }) => canAffordShop(guest, shop))
+        }
         // 空腹・渇きがしきい値に達した客の行き先を選ぶ。原作と同じく食べ物を先に調べ、
-        // 営業中で支払額(価格 × 人数倍率)を払えるショップから無作為に 1 件選ぶ。
+        // 候補 5 件のうち支払額(価格 × 人数倍率)を払えるものから無作為に 1 件選ぶ。
         // キッズはビアホールを利用できない
         const chooseShopTarget = (guest: Guest): Array<{ x: number, y: number }> | null => {
           if (guest.fullFood || guest.fullDrink) return null
@@ -3001,9 +3216,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           if (wants.length === 0) return null
           let reach: Map<string, string | null> | null = null
           for (const category of wants) {
-            const candidates = placedShops.filter(({ shop }) => (
-              shop.category === category && canAffordShop(guest, shop)
-            ))
+            const candidates = pickShopCandidates(guest, category)
             if (candidates.length === 0) continue
             reach = reach ?? buildReachMap(guest.fromX, guest.fromY, walkableFor(guest, false))
             const options: Array<{ placed: PlacedShop, path: Array<{ x: number, y: number }> }> = []
@@ -3021,11 +3234,10 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           guest.seekCooldown = 1
           return null
         }
-        // 経路探索(マップ全体を探索して最短経路で向かわせる処理)を使うかどうか。
-        // 原作にはこの探索がなく、無効時の下と同じ「通りかかったら気づく」挙動だけだった。
-        // 将来、地図所持・リピーターなど条件付きで有効化する拡張を見込んで、処理自体は
-        // chooseShopTarget/buildReachMap/shopApproachPath に残したまま呼び出しだけ止める
-        const guestRouteSearchEnabled = false
+        // 原作は空腹・渇きがしきい値を超えると店を 1 件決めて、そこを目的地にして歩く
+        // (FUN_801ece50 が FUN_801ee838 で候補を選び、客の目的地タイルに設定する)。
+        // 本作は目的地までの道順を経路探索で出すので、原作より迷わずたどり着く
+        const guestRouteSearchEnabled = true
         // 徘徊中に店の前(入口の 1 マス外、shopEntranceSpots)を通りかかった客が、
         // 条件を満たせばその場で気づいて入店する(原作 FUN_801eddc4: 立ち止まるたびに
         // 隣接マスの目印を調べる処理に相当。ショップ前の道はその店の一部なので、
@@ -3036,7 +3248,24 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           if (!placed) return false
           const { shop } = placed
           if (shop.category !== 'food' && shop.category !== 'drink') return false
-          if (!wantsShopCategory(guest, shop.category) || !canAffordShop(guest, shop)) return false
+          // 利用できない理由はそれぞれ反応になる(原作は店の前で立ち止まるたびに調べる)
+          const full = shop.category === 'food' ? guest.fullFood : guest.fullDrink
+          if (full) {
+            showReaction(guest, shop.category === 'food' ? 0x08 : 0x09)
+            return false
+          }
+          const need = shop.category === 'food' ? guest.hunger : guest.thirst
+          if (guest.hunger < needsConfig.useThreshold && guest.thirst < needsConfig.useThreshold) {
+            showReaction(guest, 0x03)
+            return false
+          }
+          if (need < needsConfig.useThreshold) {
+            showReaction(guest, shop.category === 'food' ? 0x04 : 0x05)
+            return false
+          }
+          if (!wantsShopCategory(guest, shop.category)) return false
+          // 払えないときは反応を出さずに素通りする
+          if (!canAffordShop(guest, shop)) return false
           const walkway = shopWalkwayTiles(shop, placed.x, placed.y, placed.direction)
           guest.targetShop = placed
           guest.path = [walkway[walkway.length - 1]]
@@ -3070,20 +3299,27 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           placed.image.setTexture(attractionFrameKey(attractionForm(placed.attraction).id, frame))
           return true
         }
+        // コマを表示する内部フレーム数。原作はコマ表の値を高速なら 1/4、それ以外は 1/2 に
+        // するので、速度を落としても絵の速さが変わらない(原作 FUN_800abb1c)。
+        // 本作は高速のときの速さを基準にして、ゲーム速度に比例させる
+        const celFrames = (duration: number) => (duration >> 2) + 1
+        // 1 日あたりに送るコマ数。高速(1 日 fastestSecondsPerDay 秒)で
+        // 原作と同じ 30fps になるように決める
+        const animFramesPerDay = game.time.originalFramesPerSecond * fastestSecondsPerDay
         // 動き出すとき。停止中の絵を持つ種類は稼働中の絵の先頭へ切り替え、
         // 1 つしかない種類は止めた続きから送る(そうしないと乗車客との位相がずれる)
         const startRideAnimation = (placed: PlacedAttraction) => {
           const form = attractionForm(placed.attraction)
           if (form.animation.groups.length < 2) return
           const group = runGroupOf(form)
-          showAttractionFrame(placed, group.from, group.durations[0])
+          showAttractionFrame(placed, group.from, celFrames(group.durations[0]))
         }
         // 止まったら停止中の絵に戻す。グループが 1 つしかない種類は止めた位置のまま
         const stopRideAnimation = (placed: PlacedAttraction) => {
           const form = attractionForm(placed.attraction)
           if (form.animation.groups.length < 2) return
           const group = idleGroupOf(form)
-          showAttractionFrame(placed, group.from, group.durations[0])
+          showAttractionFrame(placed, group.from, celFrames(group.durations[0]))
         }
         // 稼働中のコマ送り。繰り返す絵は先頭へ戻り、繰り返さない絵は最後のコマで止まる。
         // 絵が変わったら true
@@ -3092,7 +3328,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           if (group.count <= 1) return false
           let index = placed.animFrame - group.from
           if (index < 0 || index >= group.count) index = 0
-          let remaining = placed.animRemaining - days * attractionUseConfig.animationFramesPerDay
+          let remaining = placed.animRemaining - days * animFramesPerDay
           while (remaining <= 0) {
             if (index + 1 < group.count) index += 1
             else if (group.loop) index = 0
@@ -3100,7 +3336,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
               remaining = 0
               break
             }
-            remaining += group.durations[index]
+            remaining += celFrames(group.durations[index])
           }
           return showAttractionFrame(placed, group.from + index, remaining)
         }
@@ -3205,7 +3441,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
               attraction.exit && queueDistanceMap(attraction).has(key)
             ))
             if (!placed || guest.ridden.has(placed.id)) continue
-            if (attractionUseConfig.initialPrice * guestConfig.types[guest.type].people > guest.money) continue
+            if (placed.price * guestConfig.types[guest.type].people > guest.money) continue
             if (Math.random() >= attractionUseConfig.joinChance) continue
             occupiedQueueTiles.add(key)
             guest.targetAttraction = placed
@@ -3225,6 +3461,8 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           guest.targetAttraction = null
           guest.phase = 'walking'
           if (!goHome) return
+          // 待ちくたびれると気分が下がり、待ちくたびれ具合は種類ごとの初期値に戻る
+          changeMood(guest, moodConfig.queueGiveUpPenalty)
           guest.queueWait = guestConfig.types[guest.type].queueWaitBase
           guest.leaveAtDay = elapsedDays
         }
@@ -3244,10 +3482,12 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           const facing = placed.exit?.frame ?? 0
           state.aboard.forEach((guest) => {
             if (charge) {
-              const payment = attractionUseConfig.initialPrice * guestConfig.types[guest.type].people
+              const payment = placed.price * guestConfig.types[guest.type].people
               guest.money -= payment
               shopSaleHandler.current(payment)
               guest.ridden.add(placed.id)
+              // 評価は列で待った長さも見るので、待機値を戻す前に出す
+              evaluateRide(guest, placed)
               guest.fatigue = Math.max(0, guest.fatigue - attractionUseConfig.rideFatigueRelief)
               // 乗り終えると待ちくたびれ具合が種類ごとの初期値に戻る
               guest.queueWait = guestConfig.types[guest.type].queueWaitBase
@@ -3475,7 +3715,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           guest.image.setVisible(true)
           if (!placed) return
           const people = guestConfig.types[guest.type].people
-          const payment = shopUseConfig.initialPrice * people
+          const payment = placed.price * people
           guest.money -= payment
           shopSaleHandler.current(payment)
           const effect = shopUseEffectOf(placed.shop)
@@ -3490,6 +3730,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           guest.toiletUrge = Math.min(needsConfig.max, guest.toiletUrge + 1)
           // 屋台型の商品はゴミが出る(独自仕様)
           if (placed.shop.serviceStyle === 'stall') guest.trash += 1
+          evaluateShopUse(guest, placed)
           // 所持金がなくなった来園者は帰宅する
           if (guest.money <= 0) guest.leaveAtDay = elapsedDays
           // 店とは反対を向き、入口マスへ 1 マス出てから徘徊に戻る。
@@ -3521,6 +3762,12 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             fullDrink: false,
             satiety: 0,
             fatigue: 0,
+            mood: 0,
+            stayValue: 0,
+            // 来園直後は「まあまあ」を持たせておく(残りフレーム 0 なので絵は出ない)
+            reaction: 0x1c,
+            reactionFrames: 0,
+            reactionImage: this.add.image(0, 0, `reaction-${0x1c}`).setOrigin(0).setVisible(false),
             trash: 0,
             toiletUrge: 0,
             facility: null,
@@ -3557,6 +3804,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         const removeGuest = (index: number) => {
           leaveQueue(guests[index])
           guests[index].image.destroy()
+          guests[index].reactionImage.destroy()
           guests.splice(index, 1)
         }
 
@@ -3715,15 +3963,17 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           const position = point(current.x + 1, busRow)
           const baseX = position.x + busConfig.anchor.x
           const baseY = position.y + busConfig.anchor.y
-          const column = Math.round(current.x + 1)
+          const leftEdge = Math.min(...busParts.map(({ part, slotX }) => slotX - busOffsets[part].x))
+          const rightEdge = Math.max(...busParts.map(({ part, slotX }, index) => slotX - busOffsets[part].x + current.images[index].width))
+          // 車体は何マスにもまたがるので、アトラクションと同じくいちばん手前(左)のマスで
+          // 重ね順を決める。基準の列で決めると、車体に隠れる位置の客が車体より前に出る
+          const column = Math.round(current.x + 1 + (busConfig.anchor.x + leftEdge) / stepX)
           const depth = renderDepthAt('facility', column, busRow)
           current.images.forEach((image, index) => {
             const { part, slotX } = busParts[index]
             image.setPosition(baseX + slotX - busOffsets[part].x, baseY - busOffsets[part].y).setDepth(depth)
           })
           // 乗車率のバーは車体の中央下に置く
-          const leftEdge = Math.min(...busParts.map(({ part, slotX }) => slotX - busOffsets[part].x))
-          const rightEdge = Math.max(...busParts.map(({ part, slotX }, index) => slotX - busOffsets[part].x + current.images[index].width))
           const bottomEdge = Math.max(...busParts.map(({ part }, index) => current.images[index].height - busOffsets[part].y))
           const gauge = busConfig.gauge
           const gaugeX = baseX + (leftEdge + rightEdge - gauge.width) / 2
@@ -3853,9 +4103,14 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             else releaseRiders(placed, true)
           })
 
+          // 「全部乗った」の判定に使う、園内にあるアトラクションの種類数
+          const attractionKinds = new Set(placedAttractions.map(({ id }) => id)).size
           for (let index = guests.length - 1; index >= 0; index -= 1) {
             const guest = guests[index]
             updateGuestNeeds(guest, days)
+            // 出ていた反応を出しきったら、今の状態から選び直す
+            guest.reactionFrames = Math.max(0, guest.reactionFrames - originalFramesPerStep)
+            if (guest.reactionFrames === 0) refreshStandingReaction(guest, attractionKinds)
             if (guest.seekCooldown > 0) guest.seekCooldown = Math.max(0, guest.seekCooldown - days)
             if (guest.phase === 'walking') updateWalkingGuest(guest, guest.tilesPerDay * days)
             else if (guest.phase === 'queueing') updateQueueingGuest(guest, guest.tilesPerDay * days, days)
@@ -3870,6 +4125,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
               continue
             }
             placeGuestImage(guest)
+            placeReactionImage(guest)
           }
           if (guests.length !== reportedGuestCount) {
             reportedGuestCount = guests.length

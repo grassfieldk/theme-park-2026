@@ -11,7 +11,7 @@
     "cameraMarginTiles": { "top": 4, "bottom": 1, "side": 4 }
   },
   "input": { "initialRepeatDelayMs": 400, "repeatIntervalMs": 60, "cameraPanPixelsPerSecond": 480 },
-  "time": { "defaultSpeedIndex": 1, "framesPerSecond": 60 },
+  "time": { "defaultSpeedIndex": 1, "framesPerSecond": 60, "originalFramesPerSecond": 30 },
   "guests": {
     "display": {
       "tileOffset": { "x": 0.45, "y": 0.6 },
@@ -25,7 +25,10 @@
     "admissionFee": 100,
     "stayDays": 30,
     "money": { "base": 600, "randomRange": 100 },
-    "needs": { "updatesPerDay": 15, "seekThreshold": 150, "max": 250, "valueMax": 255, "satietyMax": 250, "satietyDecayPerUpdate": 10, "toiletSeekThreshold": 100, "fatigueWalkPerUpdate": 3, "benchFatigueRelief": 100, "toiletFatigueRelief": 50 },
+    "needs": { "updatesPerDay": 15, "seekThreshold": 150, "useThreshold": 50, "max": 250, "valueMax": 255, "satietyMax": 250, "satietyDecayPerUpdate": 10, "toiletSeekThreshold": 100, "toiletComplaint": 200, "fatigueComplaint": 50, "fatigueWalkPerUpdate": 3, "benchFatigueRelief": 100, "toiletFatigueRelief": 50 },
+    "stay": { "perDay": 5, "limit": 150, "max": 250 },
+    "mood": { "max": 511, "min": -512, "good": 400, "bad": -400, "leave": -500, "limitPenalty": -1, "toiletPenalty": -100, "queueGiveUpPenalty": -50 },
+    "reaction": { "holdFrames": 30, "visibleFrames": 14, "offset": { "x": -11, "y": -40 } },
     "types": [
       { "id": "kids", "label": "キッズ", "people": 1, "banks": [0, 1], "tilesPerDay": 18 , "queueWaitBase": 60 },
       { "id": "young", "label": "ヤング", "people": 1, "banks": [2, 3], "tilesPerDay": 16 , "queueWaitBase": 40 },
@@ -33,9 +36,33 @@
       { "id": "family", "label": "ファミリー", "people": 3, "banks": [6, 7], "tilesPerDay": 12 , "queueWaitBase": 0 }
     ]
   },
-  "shopUse": { "initialPrice": 100, "serviceDays": 0.3 },
+  "shopUse": { "initialPrice": 100, "serviceDays": 0.3, "tasteLevel": 0, "useFatigueRelief": 100, "candidateCount": 5 },
   "facilityUse": { "serviceDays": 0.2 },
-  "attractionUse": { "initialPrice": 100, "rideTimeSetting": 5, "rideDaysPerStep": 0.4, "loadTimeoutDays": 0.4, "animationFramesPerDay": 150, "joinChance": 0.5, "rideFatigueRelief": 100 },
+  "attractionUse": { "initialPrice": 100, "rideTimeSetting": 5, "rideDaysPerStep": 0.4, "loadTimeoutDays": 0.4, "joinChance": 0.5, "rideFatigueRelief": 100 },
+  "evaluation": {
+    "scoreRange": 1023,
+    "ratingRange": 1023,
+    "satisfied": 600,
+    "good": 300,
+    "fair": 100,
+    "ripoff": -500,
+    "moodDivisor": 10,
+    "ratingDivisor": 100,
+    "priceStandard": 15,
+    "tastePerStep": 200,
+    "tasteMismatch": 100,
+    "tasteMiddle": 2,
+    "complaintRating": -100,
+    "ridePriceWeight": 15,
+    "rideTimePerStep": 100,
+    "rideTimeBase": 2,
+    "expensiveRating": -100,
+    "ripoffRating": -200,
+    "thrillExcitement": 8,
+    "moodExcitement": 2,
+    "settingLow": 2,
+    "settingHigh": 8
+  },
   "bus": {
     "intervalDays": 7,
     "capacity": 15,

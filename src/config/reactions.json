@@ -1,0 +1,176 @@
+{
+ "_note": [
+  "来園者の反応(吹き出し)。番号は原作の反応番号で、絵は",
+  "/assets/park/reactions/reaction-{番号}.png。",
+  "priority は値が小さいほど強く、同じか強い反応は即座に上書きする。",
+  "弱い反応は今の反応の残りフレームが尽きているときだけ上書きする。",
+  "表示の長さと位置は game.json の guests.reaction にある。"
+ ],
+ "assetBase": "/assets/park/reactions/reaction",
+ "size": {
+  "width": 24,
+  "height": 19
+ },
+ "list": [
+  {
+   "id": 0,
+   "priority": 24,
+   "label": "何か口にしたい"
+  },
+  {
+   "id": 1,
+   "priority": 25,
+   "label": "何か食べたい"
+  },
+  {
+   "id": 2,
+   "priority": 26,
+   "label": "何か飲みたい"
+  },
+  {
+   "id": 3,
+   "priority": 1,
+   "label": "何も口にしたくない"
+  },
+  {
+   "id": 4,
+   "priority": 2,
+   "label": "何も食べたくない"
+  },
+  {
+   "id": 5,
+   "priority": 3,
+   "label": "何も飲みたくない"
+  },
+  {
+   "id": 6,
+   "priority": 20,
+   "label": "出口はどこだろう？"
+  },
+  {
+   "id": 7,
+   "priority": 21,
+   "label": "トイレはどこだろう？"
+  },
+  {
+   "id": 8,
+   "priority": 4,
+   "label": "今食べているところ"
+  },
+  {
+   "id": 9,
+   "priority": 5,
+   "label": "今飲んでいるところ"
+  },
+  {
+   "id": 10,
+   "priority": 6,
+   "label": "それはもうもっている"
+  },
+  {
+   "id": 11,
+   "priority": 19,
+   "label": "そろそろ家に帰ろう"
+  },
+  {
+   "id": 12,
+   "priority": 7,
+   "label": "お金がほとんどなくなった"
+  },
+  {
+   "id": 13,
+   "priority": 29,
+   "label": "ほとんどの乗り物に乗った"
+  },
+  {
+   "id": 14,
+   "priority": 28,
+   "label": "ここにある乗り物には全部乗った"
+  },
+  {
+   "id": 15,
+   "priority": 22,
+   "label": "もう帰る"
+  },
+  {
+   "id": 16,
+   "priority": 23,
+   "label": "もう歩きたくない"
+  },
+  {
+   "id": 17,
+   "priority": 8,
+   "label": "飲み物がまずい"
+  },
+  {
+   "id": 18,
+   "priority": 9,
+   "label": "食べ物がまずい"
+  },
+  {
+   "id": 19,
+   "priority": 10,
+   "label": "ゲームの賞品が安い"
+  },
+  {
+   "id": 20,
+   "priority": 11,
+   "label": "ゲームに勝てるとは思えない"
+  },
+  {
+   "id": 21,
+   "priority": 13,
+   "label": "値段が高すぎる"
+  },
+  {
+   "id": 22,
+   "priority": 12,
+   "label": "ぼったくりだ"
+  },
+  {
+   "id": 23,
+   "priority": 27,
+   "label": "ずいぶん散らかっているな"
+  },
+  {
+   "id": 24,
+   "priority": 14,
+   "label": "スリルが足りない"
+  },
+  {
+   "id": 25,
+   "priority": 15,
+   "label": "ムードが足りない"
+  },
+  {
+   "id": 26,
+   "priority": 16,
+   "label": "時間が短すぎる"
+  },
+  {
+   "id": 27,
+   "priority": 30,
+   "label": "おもしろい！"
+  },
+  {
+   "id": 28,
+   "priority": 31,
+   "label": "まあまあ"
+  },
+  {
+   "id": 29,
+   "priority": 32,
+   "label": "つまらない"
+  },
+  {
+   "id": 30,
+   "priority": 17,
+   "label": "この店には満足だ！"
+  },
+  {
+   "id": 31,
+   "priority": 18,
+   "label": "この乗り物は最高だ！"
+  }
+ ]
+}
