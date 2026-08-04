@@ -97,6 +97,11 @@ GROUP_ASSETS = {
     "cliff-west-corner-1.png": (7, 1),
     "outside-cover-0.png": (16, 0),
     "outside-cover-1.png": (16, 1),
+    # 歩道の汚れ。`FUN_800c6594` が道路タイルの属性のビット 0x1000 / 0x2000 / 0x4000 を見て、
+    # グループ 15 のコマ 0 / 1 / 2 を道路の上に重ねる
+    "path-litter-drink.png": (15, 0),
+    "path-litter-food.png": (15, 1),
+    "path-vomit.png": (15, 2),
 }
 # 高さマップ: UNPACK.PAK リソース 392(0x188)+ 国番号
 HEIGHT_RESOURCE_BASE = 392
@@ -282,10 +287,16 @@ def main() -> None:
         entry = export_asset(data, vrams, descriptor_offset, f"queue-frame-{frame}.png")
         if entry:
             seasonal[entry[0]] = entry[1]
+    litter_offsets = []
     for name, (group, frame) in GROUP_ASSETS.items():
-        entry = export_asset(data, vrams, group_descriptor(data, group, frame), name)
+        descriptor_offset = group_descriptor(data, group, frame)
+        entry = export_asset(data, vrams, descriptor_offset, name)
         if entry:
             seasonal[entry[0]] = entry[1]
+        # 汚れは同じマスに 3 種類とも載るので、記述子の持つマス内のずらしがいる
+        if group == 15 and frame < 3:
+            _flags, offset_x, offset_y = struct.unpack_from("<Hhh", data, descriptor_offset)
+            litter_offsets.append({"x": -offset_x, "y": -offset_y})
 
     config = {
         "_note": [
@@ -311,6 +322,8 @@ def main() -> None:
         "heightStepPx": HEIGHT_STEP_PX,
         "heights": heights,
         "outside": read_outside(),
+        # 歩道の汚れ。並びは 飲み物ゴミ / 食べ物ゴミ / ゲロ で、マスの基準点からのずらし
+        "litterOffsets": litter_offsets,
     }
     TERRAIN_CONFIG.write_text(json.dumps(terrain, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     print(f"seasonal assets: {len(seasonal)}, height maps: {len(heights)}")

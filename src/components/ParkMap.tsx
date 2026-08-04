@@ -22,6 +22,8 @@ type Country = {
   id: string
   name: string
   map: { x: number, y: number, width: number, height: number }
+  // 歩道にゴミを捨てるまでに持ち歩けるゴミの数(独自仕様)
+  litterThreshold: number
 }
 
 type Props = {
@@ -401,6 +403,9 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             })
           })
         }
+        this.load.image('path-litter-drink', '/assets/park/path-litter-drink.png')
+        this.load.image('path-litter-food', '/assets/park/path-litter-food.png')
+        this.load.image('path-vomit', '/assets/park/path-vomit.png')
         this.load.image('outside-cover-0', '/assets/park/outside-cover-0.png')
         this.load.image('outside-cover-1', '/assets/park/outside-cover-1.png')
         this.load.image('border-top', '/assets/park/border-top.png')
@@ -528,6 +533,8 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         const layerRank = {
           terrain: 1,
           road: 2,
+          // 道路の上に重ねる汚れ。設備や来園者より奥
+          roadOverlay: 3,
           facility: 4,
           overlay: 6,
         } as const
@@ -800,6 +807,57 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           placedAttractions.forEach(roll)
           placedShops.forEach(roll)
         }
+
+        // ---- 歩道の汚れ ----
+        // 原作はタイルの属性のビットで持ち、道路の絵の上に重ねて描く(`FUN_800c6594`)。
+        // 3 種類は別々のビットなので、同じマスに重なって出る
+        const litterConfig = game.litter
+        // 歩道に捨てるまでに我慢して持ち歩けるゴミの数。治安・モラルのよい国ほど多い(独自仕様)
+        const litterThreshold = country.litterThreshold
+        // 3 種類は同じマスに重なるので、それぞれマス内の決まった位置に置く
+        const litterKinds = [
+          { bit: 1, texture: 'path-litter-drink' },
+          { bit: 2, texture: 'path-litter-food' },
+          { bit: 4, texture: 'path-vomit' },
+        ].map((kind, index) => ({ ...kind, offset: terrain.litterOffsets[index] }))
+        // 来園者が持ち歩くのは飲み物と食べ物のゴミだけ。ゲロは持ち歩かない
+        const trashKindCount = 2
+        const litterTiles = new Map<string, number>()
+        const litterImages = new Map<string, Phaser.GameObjects.Image[]>()
+        const drawLitter = (x: number, y: number) => {
+          const key = tileKey(x, y)
+          const mask = litterTiles.get(key) ?? 0
+          const existing = litterImages.get(key) ?? []
+          existing.forEach((image) => image.destroy())
+          if (mask === 0) {
+            litterImages.delete(key)
+            return
+          }
+          const position = point(x, y)
+          const images = litterKinds
+            .filter(({ bit }) => (mask & bit) !== 0)
+            .map(({ texture, offset }) => this.add
+              .image(position.x + offset.x, position.y + offset.y, texture)
+              .setOrigin(0)
+              .setDepth(renderDepthAt('roadOverlay', x, y)))
+          litterImages.set(key, images)
+        }
+        const addLitter = (x: number, y: number, bit: number) => {
+          const key = tileKey(x, y)
+          if (!roads.has(key)) return
+          const mask = litterTiles.get(key) ?? 0
+          if ((mask & bit) !== 0) return
+          litterTiles.set(key, mask | bit)
+          drawLitter(x, y)
+        }
+        const clearLitter = (x: number, y: number) => {
+          const key = tileKey(x, y)
+          if (!litterTiles.has(key)) return
+          litterTiles.delete(key)
+          drawLitter(x, y)
+        }
+        const isLittered = (x: number, y: number) => (litterTiles.get(tileKey(x, y)) ?? 0) !== 0
+        const trashTotal = (trash: number[]) => trash.reduce((total, count) => total + count, 0)
 
         const roadFrameByMask = [16, 2, 4, 0, 3, 10, 11, 7, 5, 13, 12, 9, 1, 6, 8, 15]
         // 傾斜上の整列歩道のコマ読み替え表(UNK_80117826)。行 = 縁のグループ 1〜3、列 = 基本コマ 0〜5
@@ -1191,7 +1249,9 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           [[-1, 1, 1], [-1, 0, 4], [0, 1, 8]],
           [[1, -1, 2], [0, -1, 4], [1, 0, 8]],
         ]
-        type PlacedFacility = { facility: Facility, frame: number, image: Phaser.GameObjects.Image, used: number }
+        // used = その設備自身の内容量(トイレの利用)、trash = 捨てられたゴミの数。
+        // ゴミバコは自身の内容量を持たず、ゴミの数だけを数える
+        type PlacedFacility = { facility: Facility, frame: number, image: Phaser.GameObjects.Image, used: number, trash: number }
         const placedFacilities = new Map<string, PlacedFacility>()
         const placedBuildings = new Set<string>()
         const facilityFootprint = (facility: Facility): Footprint => (
@@ -1331,7 +1391,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           const position = facilityImagePosition(facility, frame, x, y)
           const image = this.add.image(position.x, position.y, facilityTexture(facility, frame)).setOrigin(0)
             .setDepth(renderDepthAt('facility', origin.x, origin.y))
-          placedFacilities.set(tileKey(x, y), { facility, frame, image, used: 0 })
+          placedFacilities.set(tileKey(x, y), { facility, frame, image, used: 0, trash: 0 })
           rebuildFacilitySpots()
         }
         const placePond = (facility: Facility, x: number, y: number) => {
@@ -1396,7 +1456,11 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         const facilityUseOf = (facility: Facility) => ('use' in facility ? facility.use : null)
         const facilityCapacityOf = (facility: Facility) => {
           const use = facilityUseOf(facility)
-          return use && 'capacityUses' in use ? use.capacityUses ?? Infinity : Infinity
+          return use && 'capacity' in use ? use.capacity ?? Infinity : Infinity
+        }
+        const facilityTrashCapacityOf = (facility: Facility) => {
+          const use = facilityUseOf(facility)
+          return use && 'trashCapacity' in use ? use.trashCapacity ?? 0 : 0
         }
         const rebuildFacilitySpots = () => {
           facilitySpots.clear()
@@ -2350,6 +2414,8 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             redrawRoadTiles(stairs.x + stairs.dx, stairs.y + stairs.dy)
           }
           if (roads.delete(key)) {
+            // 歩道を撤去すると、その上に落ちているゴミも一緒に消える
+            clearLitter(cursorPosition.x, cursorPosition.y)
             redrawRoadTiles(cursorPosition.x, cursorPosition.y)
             redrawQueueTiles(cursorPosition.x, cursorPosition.y)
           }
@@ -2498,6 +2564,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           removed.forEach(([roadX, roadY]) => {
             roads.delete(tileKey(roadX, roadY))
             shopRoads.delete(tileKey(roadX, roadY))
+            clearLitter(roadX, roadY)
           })
           removed.forEach(([roadX, roadY]) => {
             redrawRoadTiles(roadX, roadY)
@@ -3112,6 +3179,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           roads: [...roads].filter((key) => !shopRoads.has(key)),
           stairs: [...stairsTiles.values()].map(({ x, y, dx, dy }) => ({ x, y, dx, dy })),
           queues: [...queueStates].map(([key, state]) => ({ key, state })),
+          litter: [...litterTiles].map(([key, mask]) => ({ key, mask })),
           attractions: placedAttractions
             // 入口・出口を置いている途中のものは完成扱いにしない
             .filter((placed) => placed !== pendingAttraction)
@@ -3176,6 +3244,11 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           snapshot.queues.forEach(({ key, state }) => {
             queueRoads.add(key)
             queueStates.set(key, state)
+          })
+          snapshot.litter?.forEach(({ key, mask }) => {
+            litterTiles.set(key, mask)
+            const { x, y } = parseKey(key)
+            drawLitter(x, y)
           })
           snapshot.facilities.forEach(({ id, x, y, frame }) => {
             const facility = facilities.find((entry) => entry.id === id)
@@ -3265,13 +3338,10 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           phase: GuestPhase
           // 所持金。施設利用と入場料で減り、なくなると帰宅する
           money: number
-          // 食べ物・飲み物を求める内部値(0〜250)。しきい値を超えると飲食ショップを探す
-          hunger: number
-          thirst: number
-          // 満腹状態。満たされている間は対応する欲求が増えず、値が尽きると解除される
-          fullFood: boolean
-          fullDrink: boolean
+          // 満腹度・水分(0〜250)。時間とともに減り、しきい値を下回ると飲食ショップを探す。
+          // 0 になったままだと気分が下がる
           satiety: number
+          hydration: number
           // 疲労(0〜250)。歩いている間増え、ベンチとトイレで回復する
           fatigue: number
           // 気分(-512〜511)。施設を利用した評価と欲求の限界で動き、尽きると帰宅する
@@ -3282,8 +3352,14 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           reaction: number
           reactionFrames: number
           reactionImage: Phaser.GameObjects.Image
-          // 持っているゴミの数(独自仕様)。屋台型ショップの利用で増え、ゴミバコに移す
-          trash: number
+          // 持っているゴミの数(独自仕様)。屋台型ショップの利用で増え、ゴミバコとトイレに移す。
+          // 種類ごとに数えるので、一部だけ移しても残りの種類が分かる。
+          // 並びは litterKinds と同じ(0 = 飲み物、1 = 食べ物)
+          trash: number[]
+          // 酔い(0〜250)。乗り物で増え、201 を超えると自分でも増え続け、249 で吐く
+          nausea: number
+          // 散らかりへの我慢(0〜250)。汚れたマスを歩くたびに減り、尽きると気分が下がる
+          litterPatience: number
           // トイレ欲求(0〜250)。飲食すると発生し、しきい値以上で正面のトイレを使う
           toiletUrge: number
           // 利用中の設備。enter(利用マスへ) → stay(利用) → exit(立ち位置へ戻る)
@@ -3530,17 +3606,18 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         }
 
         // ---- 飲食ショップの利用 ----
-        // 原作仕様: 欲求値は 1 日 15 回の更新で 1 ずつ増え、150 以上になると飲食ショップを
-        // 探し、250 で頭打ちになる。利用すると満腹値が 250 になり、更新ごとに 10 ずつ減って
-        // 0 に戻るまで対応する欲求は増えない
+        // 満腹度と水分は 1 日 15 回の更新で 1 ずつ減り、100 を下回ると飲食ショップを探す。
+        // 原作は逆に「空腹値」「渇き値」が増えていく作りで、それとは別に満腹値を持っていた
         const needsConfig = guestConfig.needs
+        // ショップの分類と、それが満たす内部値の対応
+        const needFieldOf = { food: 'satiety', drink: 'hydration' } as const
         const moodConfig = guestConfig.mood
         const stayConfig = guestConfig.stay
         const shopUseConfig = game.shopUse
         const shopUseEffectOf = (shop: Shop) => ('useEffect' in shop ? shop.useEffect : null)
         // 味付けを濃くすると商品の効き方が変わる。設定の 1 段目を基準に、
         // 段階に比例して効くもの・薄いほど効くもの・段階によらないものがある(design/15)
-        const shopEffectAt = (shop: Shop, level: number, field: 'hunger' | 'thirst') => {
+        const shopEffectAt = (shop: Shop, level: number, field: 'satiety' | 'hydration') => {
           const effect = shopUseEffectOf(shop)
           if (!effect) return 0
           const base = effect[field]
@@ -3561,21 +3638,33 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           guest.needTick += days * needsConfig.updatesPerDay
           while (guest.needTick >= 1) {
             guest.needTick -= 1
-            // 満たされない欲求が限界に達したままだと気分が下がっていく
-            if (!guest.fullFood) {
-              if (guest.hunger < needsConfig.max) guest.hunger += 1
-              else changeMood(guest, moodConfig.limitPenalty)
-            }
-            if (!guest.fullDrink) {
-              if (guest.thirst < needsConfig.max) guest.thirst += 1
-              else changeMood(guest, moodConfig.limitPenalty)
-            }
-            if (guest.fullFood || guest.fullDrink) {
-              guest.satiety = Math.max(0, guest.satiety - needsConfig.satietyDecayPerUpdate)
-              if (guest.satiety === 0) {
-                guest.fullFood = false
-                guest.fullDrink = false
+            // 満腹度と水分は常に減り、尽きたままだと気分が下がっていく
+            const needs = ['hydration', 'satiety'] as const
+            needs.forEach((field) => {
+              if (guest[field] <= 0) {
+                changeMood(guest, moodConfig.limitPenalty)
+                return
               }
+              guest[field] -= 1
+            })
+            // 満腹度か水分が一定を割ると、包み紙を持ち歩くのが面倒になってくる。
+            // 我慢できる数を超えていたら足元にまとめて捨てる(独自仕様)。
+            // 歩道は種類の有無しか持たないので、同じ種類を何個捨てても絵は 1 つになる
+            const belowDropThreshold = guest.satiety < litterConfig.dropThreshold
+              || guest.hydration < litterConfig.dropThreshold
+            if (belowDropThreshold && trashTotal(guest.trash) >= litterThreshold) {
+              guest.trash.forEach((count, kind) => {
+                if (count > 0) addLitter(guest.fromX, guest.fromY, litterKinds[kind].bit)
+              })
+              guest.trash.fill(0)
+            }
+            // 酔いは限界に近づくと自分でも上がっていき、限りまで来ると足元に吐く(原作 0x801ecf28)
+            if (guest.nausea >= litterConfig.nauseaRiseThreshold) {
+              guest.nausea = Math.min(litterConfig.nauseaMax, guest.nausea + litterConfig.nauseaRisePerUpdate)
+            }
+            if (guest.nausea >= litterConfig.vomitThreshold) {
+              guest.nausea = 0
+              addLitter(guest.fromX, guest.fromY, 4)
             }
             // トイレ欲求は飲食後に発生し、限界に達すると我慢できずに消えて気分が大きく下がる
             if (guest.toiletUrge > 0) {
@@ -3610,8 +3699,8 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         // 何も起きていないときに、今の状態から出る反応を選び直す。
         // 上から順に試し、優先度の強いものが残る
         const refreshStandingReaction = (guest: Guest, attractionKinds: number) => {
-          const wantsFood = guest.hunger >= needsConfig.seekThreshold
-          const wantsDrink = guest.thirst >= needsConfig.seekThreshold
+          const wantsFood = guest.satiety < needsConfig.seekThreshold
+          const wantsDrink = guest.hydration < needsConfig.seekThreshold
           if (wantsFood && wantsDrink) showReaction(guest, 0x00)
           if (wantsFood) showReaction(guest, 0x01)
           if (wantsDrink) showReaction(guest, 0x02)
@@ -3629,6 +3718,10 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           }
           if (guest.toiletUrge > needsConfig.toiletComplaint && guest.fatigue >= needsConfig.fatigueComplaint) {
             showReaction(guest, 0x07)
+            return
+          }
+          if (guest.litterPatience < litterConfig.complaintPatience) {
+            showReaction(guest, 0x17)
             return
           }
           if (guest.fatigue >= needsConfig.max) {
@@ -3767,11 +3860,9 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           if (shopUseConfig.initialPrice * guestConfig.types[guest.type].people > guest.money) return false
           return !(guestConfig.types[guest.type].id === 'kids' && 'kidsAllowed' in shop && shop.kidsAllowed === false)
         }
-        // その分類の商品を欲しがっているか(満腹でなく、欲求がしきい値以上)
+        // その分類の商品を欲しがっているか(満腹度・水分がしきい値を下回っている)
         const wantsShopCategory = (guest: Guest, category: 'food' | 'drink') => (
-          category === 'food'
-            ? !guest.fullFood && guest.hunger >= needsConfig.seekThreshold
-            : !guest.fullDrink && guest.thirst >= needsConfig.seekThreshold
+          guest[needFieldOf[category]] < needsConfig.seekThreshold
         )
         // 行き先の候補。原作は来園者区分ごとに 5 件までの候補表を持っていて、そこから
         // 支払える店を絞る。候補表の作られ方は未確定なので、本作は同じ分類の店から
@@ -3786,14 +3877,13 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           }
           return pool.slice(0, shopUseConfig.candidateCount).filter(({ shop }) => canAffordShop(guest, shop))
         }
-        // 空腹・渇きがしきい値に達した客の行き先を選ぶ。原作と同じく食べ物を先に調べ、
+        // 満腹度・水分がしきい値を下回った客の行き先を選ぶ。原作と同じく食べ物を先に調べ、
         // 候補 5 件のうち支払額(価格 × 人数倍率)を払えるものから無作為に 1 件選ぶ。
         // キッズはビアホールを利用できない
         const chooseShopTarget = (guest: Guest): Array<{ x: number, y: number }> | null => {
-          if (guest.fullFood || guest.fullDrink) return null
           const wants: Array<'food' | 'drink'> = []
-          if (guest.hunger >= needsConfig.seekThreshold) wants.push('food')
-          if (guest.thirst >= needsConfig.seekThreshold) wants.push('drink')
+          if (wantsShopCategory(guest, 'food')) wants.push('food')
+          if (wantsShopCategory(guest, 'drink')) wants.push('drink')
           if (wants.length === 0) return null
           let reach: Map<string, string | null> | null = null
           for (const category of wants) {
@@ -3830,17 +3920,12 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           const { shop } = placed
           if (shop.category !== 'food' && shop.category !== 'drink') return false
           // 利用できない理由はそれぞれ反応になる(原作は店の前で立ち止まるたびに調べる)
-          const full = shop.category === 'food' ? guest.fullFood : guest.fullDrink
-          if (full) {
-            showReaction(guest, shop.category === 'food' ? 0x08 : 0x09)
-            return false
-          }
-          const need = shop.category === 'food' ? guest.hunger : guest.thirst
-          if (guest.hunger < needsConfig.useThreshold && guest.thirst < needsConfig.useThreshold) {
+          const need = guest[needFieldOf[shop.category]]
+          if (guest.satiety > needsConfig.fullThreshold && guest.hydration > needsConfig.fullThreshold) {
             showReaction(guest, 0x03)
             return false
           }
-          if (need < needsConfig.useThreshold) {
+          if (need > needsConfig.fullThreshold) {
             showReaction(guest, shop.category === 'food' ? 0x04 : 0x05)
             return false
           }
@@ -4073,6 +4158,9 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
               // 評価は列で待った長さも見るので、待機値を戻す前に出す
               evaluateRide(guest, placed)
               guest.fatigue = Math.max(0, guest.fatigue - attractionUseConfig.rideFatigueRelief)
+              // 乗るたびに酔いがたまる。原作はアトラクションごとの酔いやすさを掛けるが、
+              // その表がまだ取れていないので速度設定だけで増やしている
+              guest.nausea = Math.min(litterConfig.nauseaMax, guest.nausea + placed.speedSetting)
               // 乗り終えると待ちくたびれ具合が種類ごとの初期値に戻る
               guest.queueWait = guestConfig.types[guest.type].queueWaitBase
               if (guest.money <= 0) guest.leaveAtDay = elapsedDays
@@ -4188,10 +4276,12 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           if (occupiedSpotTiles.has(tile)) return false
           if (!sameHeight(guest.fromX, guest.fromY, spot.tile.x, spot.tile.y)) return false
           if (spot.kind === 'trash') {
-            if (guest.trash <= 0) return false
-            if (placed.used >= facilityCapacityOf(placed.facility)) return false
+            // ゴミを持っていれば国によらず寄る。満杯のゴミバコは素通りする
+            if (trashTotal(guest.trash) <= 0) return false
+            if (placed.trash >= facilityTrashCapacityOf(placed.facility)) return false
           }
           else if (spot.kind === 'toilet') {
+            // トイレへ寄るのはトイレ欲求だけが理由で、ゴミのためには寄らない
             if (guest.toiletUrge < needsConfig.toiletSeekThreshold) return false
             if (placed.used >= facilityCapacityOf(placed.facility)) return false
           }
@@ -4205,6 +4295,17 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           guest.toY = spot.tile.y
           guest.facing = directionOf(spot.tile.x - guest.fromX, spot.tile.y - guest.fromY)
           return true
+        }
+        // 持っているゴミを設備へ移す。設備側は種類を持たず個数だけ数える。
+        // 空きが足りなければ入るぶんだけ移し、残りは来園者が持ったままになる(独自仕様)
+        const depositTrash = (guest: Guest, placed: PlacedFacility) => {
+          let room = facilityTrashCapacityOf(placed.facility) - placed.trash
+          for (let kind = 0; kind < guest.trash.length && room > 0; kind += 1) {
+            const moved = Math.min(room, guest.trash[kind])
+            guest.trash[kind] -= moved
+            placed.trash += moved
+            room -= moved
+          }
         }
         const releaseFacilityGuest = (guest: Guest) => {
           const info = guest.facility
@@ -4253,14 +4354,14 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           if (info.stage === 'stay') {
             info.timer -= days
             if (info.timer > 0) return
-            if (info.spot.kind === 'trash') {
-              // 持っているゴミをゴミバコの空きぶんだけ移す
-              const moved = Math.min(guest.trash, facilityCapacityOf(info.placed.facility) - info.placed.used)
-              info.placed.used += moved
-              guest.trash -= moved
-            }
+            if (info.spot.kind === 'trash') depositTrash(guest, info.placed)
             else if (info.spot.kind === 'toilet') {
-              info.placed.used += 1
+              // トイレは 1 回の利用で内容量が増える。ゴミはそれとは別枠で受け入れる
+              info.placed.used = Math.min(
+                facilityCapacityOf(info.placed.facility),
+                info.placed.used + facilityUseConfig.usePerVisit,
+              )
+              depositTrash(guest, info.placed)
               guest.toiletUrge = 0
               guest.fatigue = Math.max(0, guest.fatigue - needsConfig.toiletFatigueRelief)
               guest.image.setVisible(true)
@@ -4313,15 +4414,22 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             }
             if (prizes > 0) shopSaleHandler.current(-placed.prizePrice * prizes)
           }
-          guest.hunger = clamp(guest.hunger + shopEffectAt(placed.shop, placed.tasteLevel, 'hunger'), 0, needsConfig.valueMax)
-          guest.thirst = clamp(guest.thirst + shopEffectAt(placed.shop, placed.tasteLevel, 'thirst'), 0, needsConfig.valueMax)
-          if (placed.shop.category === 'food') guest.fullFood = true
-          else guest.fullDrink = true
-          guest.satiety = needsConfig.satietyMax
+          // 満たす側の内部値は、いったん探し始めるしきい値まで戻してから店ごとの値を足す。
+          // こうすると、我慢して 0 まで落ちていた客でも必ずしきい値より上まで戻るので、
+          // 食べた直後にまた食べたくなることがない。我慢したぶんは気分の減点として残っている
+          const category = placed.shop.category
+          if (category === 'food' || category === 'drink') {
+            const field = needFieldOf[category]
+            guest[field] = Math.max(guest[field], needsConfig.seekThreshold)
+          }
+          guest.satiety = clamp(guest.satiety + shopEffectAt(placed.shop, placed.tasteLevel, 'satiety'), 0, needsConfig.max)
+          guest.hydration = clamp(guest.hydration + shopEffectAt(placed.shop, placed.tasteLevel, 'hydration'), 0, needsConfig.max)
           // 飲食するとトイレ欲求が発生する
           guest.toiletUrge = Math.min(needsConfig.max, guest.toiletUrge + 1)
-          // 屋台型の商品はゴミが出る(独自仕様)
-          if (placed.shop.serviceStyle === 'stall') guest.trash += 1
+          // 屋台型の商品はゴミが出る(独自仕様)。種類は飲み物と食べ物で絵が違う
+          if (placed.shop.serviceStyle === 'stall') {
+            guest.trash[placed.shop.category === 'drink' ? 0 : 1] += 1
+          }
           evaluateShopUse(guest, placed)
           // 所持金がなくなった来園者は帰宅する
           if (guest.money <= 0) guest.leaveAtDay = elapsedDays
@@ -4349,11 +4457,8 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             // バスのマスに現れ、看板を経由してゲート下まで歩いてから徘徊を始める
             phase: 'fromBus',
             money,
-            hunger: 0,
-            thirst: 0,
-            fullFood: false,
-            fullDrink: false,
-            satiety: 0,
+            satiety: needsConfig.max,
+            hydration: needsConfig.max,
             fatigue: 0,
             mood: 0,
             stayValue: 0,
@@ -4361,7 +4466,9 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             reaction: 0x1c,
             reactionFrames: 0,
             reactionImage: this.add.image(0, 0, `reaction-${0x1c}`).setOrigin(0).setVisible(false),
-            trash: 0,
+            trash: Array<number>(trashKindCount).fill(0),
+            nausea: 0,
+            litterPatience: litterConfig.patience,
             toiletUrge: 0,
             facility: null,
             needTick: 0,
@@ -4411,18 +4518,17 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             // バイクのマスに現れ、来園者と同じ道すじでゲート下まで歩く
             phase: 'fromBus',
             money: 0,
-            hunger: 0,
-            thirst: 0,
-            fullFood: true,
-            fullDrink: true,
-            satiety: 0,
+            satiety: needsConfig.max,
+            hydration: needsConfig.max,
             fatigue: 0,
             mood: 0,
             stayValue: 0,
             reaction: 0x1c,
             reactionFrames: 0,
             reactionImage: this.add.image(0, 0, `reaction-${0x1c}`).setOrigin(0).setVisible(false),
-            trash: 0,
+            trash: Array<number>(trashKindCount).fill(0),
+            nausea: 0,
+            litterPatience: litterConfig.patience,
             toiletUrge: 0,
             facility: null,
             needTick: 0,
@@ -4483,6 +4589,12 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             guest.previousY = guest.fromY
             guest.fromX = guest.toX
             guest.fromY = guest.toY
+            // 汚れたマスを踏むたびに我慢が減り、使い切ると気分が大きく下がる(原作 0x801e64ec)。
+            // 一度使い切った来園者はそれ以上下がらない
+            if (!guest.outlaw && guest.litterPatience > 0 && isLittered(guest.fromX, guest.fromY)) {
+              guest.litterPatience = Math.max(0, guest.litterPatience - litterConfig.patiencePerStep)
+              if (guest.litterPatience === 0) changeMood(guest, litterConfig.moodPenalty)
+            }
             // 敷地内に道路が敷かれ、実際にそこへ足を踏み入れた時点で入場料を払う。
             // 園外の道路では払わない(払うまでは固定歩道も歩けるので、ゲートへ戻れる)
             if (!guest.paid

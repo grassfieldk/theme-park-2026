@@ -14,6 +14,8 @@ export type ParkSnapshot = {
   roads: string[]
   stairs?: Array<{ x: number, y: number, dx?: number, dy?: number }>
   queues: Array<{ key: string, state: number }>
+  /** 歩道に落ちているゴミ。1 = 飲み物、2 = 食べ物、4 = ゲロ の組み合わせ */
+  litter?: Array<{ key: string, mask: number }>
   attractions: Array<{
     id: string
     x: number

@@ -45,11 +45,15 @@ TERRAIN_CONFIG = ROOT / "src" / "config" / "terrainObjects.json"
 # 3 = 西へ上る(2/3 は左右反転ペア)。アルバトロスの敷地中央の階段と踊り場は 0 / 1 の流用。
 TERRAIN_OBJECTS = {"stairs": (20, [0, 1, 2, 3])}
 
-# 来園者が利用する設備の設定(design/16 の仕様。生成時に facilities.json へ引き継ぐ)
+# 来園者が利用する設備の設定(design/16 の仕様。生成時に facilities.json へ引き継ぐ)。
+# capacity は設備自身の内容量の上限で、D2MAIN の表 `0x801f92d6`(1 件 3 バイトの先頭)から取った。
+# 設備の情報ウィンドウ `0x800d7318` と清掃の判定 `0x801d73e8` も同じ表を引く。
+# trashCapacity は捨てられるゴミの上限で、原作にはない独自仕様の値である。
+# ゴミバコは自身の内容量を持たず、ゴミの個数がそのまま内容量になる
 FACILITY_USES = {
-    7: {"kind": "toilet", "capacityUses": 3},
-    8: {"kind": "toilet", "capacityUses": 6},
-    15: {"kind": "trash", "capacityUses": 3},
+    7: {"kind": "toilet", "capacity": 50, "trashCapacity": 10},
+    8: {"kind": "toilet", "capacity": 200, "trashCapacity": 30},
+    15: {"kind": "trash", "trashCapacity": 100},
     16: {"kind": "bench"},
 }
 

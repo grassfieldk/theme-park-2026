@@ -28,7 +28,7 @@
     "admissionFee": 100,
     "stayDays": 30,
     "money": { "base": 600, "randomRange": 100 },
-    "needs": { "updatesPerDay": 15, "seekThreshold": 150, "useThreshold": 50, "max": 250, "valueMax": 255, "satietyMax": 250, "satietyDecayPerUpdate": 10, "toiletSeekThreshold": 100, "toiletComplaint": 200, "fatigueComplaint": 50, "fatigueWalkPerUpdate": 3, "benchFatigueRelief": 100, "toiletFatigueRelief": 50 },
+    "needs": { "updatesPerDay": 15, "seekThreshold": 100, "fullThreshold": 200, "max": 250, "toiletSeekThreshold": 100, "toiletComplaint": 200, "fatigueComplaint": 50, "fatigueWalkPerUpdate": 3, "benchFatigueRelief": 100, "toiletFatigueRelief": 50 },
     "stay": { "perDay": 5, "limit": 150, "max": 250 },
     "mood": { "max": 511, "min": -512, "good": 400, "bad": -400, "leave": -500, "limitPenalty": -1, "toiletPenalty": -100, "queueGiveUpPenalty": -50 },
     "reaction": { "holdFrames": 30, "visibleFrames": 14, "offset": { "x": -11, "y": -40 } },
@@ -40,8 +40,9 @@
     ]
   },
   "shopUse": { "initialPrice": 100, "serviceDays": 0.3, "tasteLevel": 0, "useFatigueRelief": 100, "candidateCount": 5 },
-  "facilityUse": { "serviceDays": 0.2 },
+  "facilityUse": { "serviceDays": 0.2, "usePerVisit": 1 },
   "attractionUse": { "initialPrice": 100, "rideTimeSetting": 5, "rideDaysPerStep": 0.4, "loadTimeoutDays": 0.4, "joinChance": 0.5, "rideFatigueRelief": 100 },
+  "litter": { "dropThreshold": 150, "patience": 250, "patiencePerStep": 2, "complaintPatience": 100, "moodPenalty": -500, "nauseaRiseThreshold": 201, "nauseaRisePerUpdate": 2, "nauseaMax": 250, "vomitThreshold": 249 },
   "outlaw": { "bank": 8, "names": ["ハッスルほんだ", "さめちゃん", "モッチー", "ジャイアントレイ"], "checkIntervalDays": 7, "chance": 0.1, "stayDays": 20, "bikeTilesPerDay": 40, "bikeFrameDays": 0.02, "dropDays": 0.3, "kidMoodPenalty": -200, "kidShockDays": 1 },
   "facilityMenu": { "versionUpCost": 10000, "maxVersion": 9, "maxPrice": 9999, "priceStep": 10, "maxTasteLevel": 4, "maxSetting": 9, "maxWinRate": 100 },
   "evaluation": {
