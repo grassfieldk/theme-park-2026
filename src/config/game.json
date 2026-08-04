@@ -42,6 +42,7 @@
   "shopUse": { "initialPrice": 100, "serviceDays": 0.3, "tasteLevel": 0, "useFatigueRelief": 100, "candidateCount": 5 },
   "facilityUse": { "serviceDays": 0.2 },
   "attractionUse": { "initialPrice": 100, "rideTimeSetting": 5, "rideDaysPerStep": 0.4, "loadTimeoutDays": 0.4, "joinChance": 0.5, "rideFatigueRelief": 100 },
+  "outlaw": { "bank": 8, "names": ["ハッスルほんだ", "さめちゃん", "モッチー", "ジャイアントレイ"], "checkIntervalDays": 7, "chance": 0.1, "stayDays": 20, "bikeTilesPerDay": 40, "bikeFrameDays": 0.02, "dropDays": 0.3, "kidMoodPenalty": -200, "kidShockDays": 1 },
   "facilityMenu": { "versionUpCost": 10000, "maxVersion": 9, "maxPrice": 9999, "priceStep": 10, "maxTasteLevel": 4, "maxSetting": 9, "maxWinRate": 100 },
   "evaluation": {
     "scoreRange": 1023,

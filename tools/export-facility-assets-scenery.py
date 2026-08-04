@@ -58,7 +58,15 @@ FACILITY_USES = {
 # 16px 間隔で並べ、フレーム 2(後尾)をその後ろへつなげて 1 台を描く
 BUS_GROUPS = [(21, [1, 5]), (22, [6, 10])]
 BUS_PART_SPACING = 16
+
+# アウトローのバイク。バスと同じシーナリーリソースの中にある別の車両で、
+# 専用ハンドル `DAT_801c42a0` に結び付き、`DAT_801c4294 & 0x4000` でグループが替わる。
+# 0x4000 を立てるのは `0x801eae90`(D2MAIN)で、そのとき出現フラグ `0x8015f658 |= 0x100` も立つ。
+# `0x800bd69c` が同じフラグを見てイベント 0x22(= メッセージ 900
+# 「アウトローがやってきました。」)を積むので、この車両がアウトローの乗り物と確定する。
+BIKE_GROUPS = [23, 24]
 BUS_CONFIG = ROOT / "src" / "config" / "busSprites.json"
+BIKE_CONFIG = ROOT / "src" / "config" / "bikeSprites.json"
 
 # 経済表 DAT_800a7670(SLPS_008.10, t_addr=0x800a7000, header 0x800)、12 byte/件の +0 が設置費。
 # ID 0〜19 が設備、行 20〜25 が国別の植物(ID 6 の実費)。
@@ -293,6 +301,7 @@ def main() -> None:
     offsets_by_facility: dict[int, list] = {facility_id: [] for facility_id, *_ in FACILITIES}
     stairs_by_kind = []
     bus_offsets_by_kind: list[list] = [[] for _ in BUS_GROUPS]
+    bike_offsets_by_kind: list[list] = [[] for _ in BIKE_GROUPS]
     for kind in range(6):
         export_facility, export_group, _group_frames = make_kind_exporter(pak, resources, kind)
         for facility_id, slug, _name, _width, _height, placement in FACILITIES:
@@ -305,6 +314,8 @@ def main() -> None:
             stairs_by_kind.append(export_group(group, group_frame_list, "terrain-stairs"))
         for index, (group, _versions) in enumerate(BUS_GROUPS):
             bus_offsets_by_kind[index].append(export_group(group, [0, 1, 2], f"bus-{index}"))
+        for index, group in enumerate(BIKE_GROUPS):
+            bike_offsets_by_kind[index].append(export_group(group, [0, 1], f"bike-{index}"))
 
     terrain = {
         "_note": [
@@ -330,6 +341,21 @@ def main() -> None:
         ],
     }
     BUS_CONFIG.write_text(json.dumps(bus, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+
+    bike = {
+        "_note": [
+            "アウトローのバイク。バスと同じシーナリーリソースの別の車両。",
+            "variant 0 = 原作のグループ 23(運転手とアウトローの 2 人乗り)、",
+            "variant 1 = グループ 24(降ろした後の運転手だけ)。各 2 コマ。",
+            "offsetsByKind はシーナリー種ごとの基準点から画像左上までのずらし。",
+            "画像は /assets/park/facilities/{種}/bike-{車種}-{コマ}-s{季節}.png。",
+        ],
+        "variants": [
+            {"offsetsByKind": bike_offsets_by_kind[index]}
+            for index in range(len(BIKE_GROUPS))
+        ],
+    }
+    BIKE_CONFIG.write_text(json.dumps(bike, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
 
     entries = []
     for facility_id, slug, name, width, height, placement in FACILITIES:

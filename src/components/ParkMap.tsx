@@ -7,6 +7,7 @@ import facilities from '../config/facilities.json'
 import game from '../config/game.json'
 import type { MenuAction } from './GamepadController'
 import busSprites from '../config/busSprites.json'
+import bikeSprites from '../config/bikeSprites.json'
 import guestSprites from '../config/guestSprites.json'
 import riderSprites from '../config/riderSprites.json'
 import pointers from '../config/pointers.json'
@@ -389,6 +390,15 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
               `bus-0-${part}-s${season}`,
               `/assets/park/facilities/${sceneryKind}/bus-0-${part}-s${season}.png`,
             )
+          })
+          // アウトローのバイク。0 = 運転手とアウトローの 2 人乗り、1 = 降ろした後
+          bikeSprites.variants.forEach((variant, index) => {
+            variant.offsetsByKind[sceneryKind].forEach((_offset, frame) => {
+              this.load.image(
+                `bike-${index}-${frame}-s${season}`,
+                `/assets/park/facilities/${sceneryKind}/bike-${index}-${frame}-s${season}.png`,
+              )
+            })
           })
         }
         this.load.image('outside-cover-0', '/assets/park/outside-cover-0.png')
@@ -3242,7 +3252,11 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         // shopping はショップ利用中で、姿を消して一定時間後に walking へ戻る。
         // facility は設備(ゴミバコ・トイレ・ベンチ)の利用中。
         // queueing は整列歩道でアトラクション待ち、riding は乗車中(姿を消す)
-        type GuestPhase = 'walking' | 'queued' | 'toSign' | 'toBus' | 'shopping' | 'facility' | 'queueing' | 'riding'
+        // 乗り物への行き来は 2 段で、看板マスを経由する。
+        // 乗る: toSign(看板へ)→ toBus(看板の 1 マス南へ)で消える
+        // 降りる: fromBus(看板へ)→ fromSign(ゲート下へ)で歩き出す
+        type GuestPhase = 'walking' | 'queued' | 'toSign' | 'toBus' | 'fromBus' | 'fromSign'
+          | 'shopping' | 'facility' | 'queueing' | 'riding'
         type Guest = {
           type: number
           bank: GuestBank
@@ -3301,10 +3315,18 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           queueX: number
           queueY: number
           queueSide: number
+          // 乗り降りする乗り物が停まっている列。バスは看板の列、バイクはその 1 マス左
+          rideX: number
           facing: number
           walked: number
           paid: boolean
           leaveAtDay: number
+          // バイクで乗り付けて園内で問題を起こす来園者。買い物も乗車もしない
+          outlaw: boolean
+          // 帰る時刻を過ぎ、ゲート下で迎えのバイクを待っている
+          waitingForRide: boolean
+          // アウトローに出くわしたキッズが、次に怖がるまでの日付
+          shockedUntil: number
           image: Phaser.GameObjects.Sprite
         }
         const guests: Guest[] = []
@@ -3315,9 +3337,10 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         const wideAreaCorners = [[0, 0], [-1, 0], [0, -1], [-1, -1]]
         type Walkable = (x: number, y: number) => boolean
         // 入園済み(paid)で帰宅中でない客は、ゲート構造にも看板マスにも戻らない。
-        // ショップ前の道はそのショップを利用する客だけが入るので、ここでは歩ける場所に含めない
+        // ショップ前の道はそのショップを利用する客だけが入るので、ここでは歩ける場所に含めない。
+        // アウトローは入場料を払わないので、ゲートはいつでも通り抜ける
         const walkableFor = (guest: Guest, leaving: boolean): Walkable => {
-          const allowGate = !guest.paid || leaving
+          const allowGate = !guest.paid || leaving || guest.outlaw
           return (x, y) => {
             const key = tileKey(x, y)
             return (
@@ -3358,8 +3381,10 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           if (index >= 0) waitingGuests.splice(index, 1)
         }
         const queueTargetOf = (guest: Guest) => {
-          if (guest.phase === 'toBus') return { x: busStop.x, y: busStop.y + 1 }
-          if (guest.phase === 'toSign') return { x: busStop.x, y: busStop.y }
+          // 乗り物のマスは看板の 1 マス南。列は乗り物の停まる位置に合わせる
+          if (guest.phase === 'toBus') return { x: guest.rideX, y: busStop.y + 1 }
+          if (guest.phase === 'toSign' || guest.phase === 'fromBus') return { x: busStop.x, y: busStop.y }
+          if (guest.phase === 'fromSign') return { x: gateCrossing.x, y: gateCrossing.y }
           // 同じ側で自分より先に並んだ人数だけ外側へ
           let rank = 0
           for (const other of waitingGuests) {
@@ -4321,7 +4346,8 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             type,
             bank,
             tilesPerDay: guestConfig.types[type].tilesPerDay,
-            phase: 'walking',
+            // バスのマスに現れ、看板を経由してゲート下まで歩いてから徘徊を始める
+            phase: 'fromBus',
             money,
             hunger: 0,
             thirst: 0,
@@ -4355,18 +4381,83 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             progress: 1,
             previousX: gateCrossing.x,
             previousY: gateCrossing.y,
-            queueX: gateCrossing.x,
-            queueY: gateCrossing.y,
+            queueX: busStop.x,
+            queueY: busStop.y + 1,
             queueSide: 1,
-            facing: 0,
+            rideX: busStop.x,
+            // 看板のほうを向いて降りる
+            facing: 1,
             walked: 0,
             paid: false,
             leaveAtDay: elapsedDays + guestConfig.stayDays,
+            outlaw: false,
+            waitingForRide: false,
+            shockedUntil: 0,
             image: this.add.sprite(0, 0, `guest-${bank.bank}`).setOrigin(0, 0),
           }
           guests.push(guest)
           placeGuestImage(guest)
           return true
+        }
+        // バイクから降りたアウトロー。歩き方は来園者と同じ仕組みを使い、
+        // 買い物・乗車・入場料・欲求はすべて持たない
+        const spawnOutlaw = () => {
+          const bank = guestBankById.get(outlawConfig.bank)
+          if (!bank) return
+          const guest: Guest = {
+            type: outlawTypeIndex,
+            bank,
+            tilesPerDay: guestConfig.types[outlawTypeIndex].tilesPerDay,
+            // バイクのマスに現れ、来園者と同じ道すじでゲート下まで歩く
+            phase: 'fromBus',
+            money: 0,
+            hunger: 0,
+            thirst: 0,
+            fullFood: true,
+            fullDrink: true,
+            satiety: 0,
+            fatigue: 0,
+            mood: 0,
+            stayValue: 0,
+            reaction: 0x1c,
+            reactionFrames: 0,
+            reactionImage: this.add.image(0, 0, `reaction-${0x1c}`).setOrigin(0).setVisible(false),
+            trash: 0,
+            toiletUrge: 0,
+            facility: null,
+            needTick: 0,
+            seekCooldown: 0,
+            targetShop: null,
+            path: null,
+            pathIndex: 0,
+            targetAttraction: null,
+            queueWait: 0,
+            ridden: new Set(),
+            serviceRemaining: 0,
+            fromX: gateCrossing.x,
+            fromY: gateCrossing.y,
+            toX: gateCrossing.x,
+            toY: gateCrossing.y,
+            progress: 1,
+            previousX: gateCrossing.x,
+            previousY: gateCrossing.y,
+            queueX: busStop.x,
+            queueY: busStop.y + 1,
+            queueSide: 1,
+            rideX: busStop.x,
+            facing: 1,
+            walked: 0,
+            // 入場料は払わない
+            paid: true,
+            leaveAtDay: elapsedDays + outlawConfig.stayDays,
+            outlaw: true,
+            waitingForRide: false,
+            shockedUntil: 0,
+            image: this.add.sprite(0, 0, `guest-${bank.bank}`).setOrigin(0, 0),
+          }
+          guests.push(guest)
+          placeGuestImage(guest)
+          buildMessageHandler.current('アウトローがやってきました。')
         }
         const removeGuest = (index: number) => {
           leaveQueue(guests[index])
@@ -4400,6 +4491,28 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
               guest.paid = true
               guest.money -= guestConfig.admissionFee
               admissionHandler.current(guestConfig.admissionFee)
+            }
+            // アウトローは店にも乗り物にも設備にも用がなく、バスにも乗らない。
+            // 歩き方だけ来園者と同じで、行き先の判断はすべて飛ばす
+            if (guest.outlaw) {
+              // 帰る時刻を過ぎてゲート下まで戻ったら、迎えのバイクをその場で待つ
+              if (leaving && guest.fromX === gateCrossing.x && guest.fromY === gateCrossing.y) {
+                guest.waitingForRide = true
+                guest.progress = 0
+                guest.toX = guest.fromX
+                guest.toY = guest.fromY
+                guest.facing = 0
+                standStill(guest)
+                return
+              }
+              const step = chooseGuestStep(guest, leaving)
+              if (!step) {
+                guest.progress = 0
+                break
+              }
+              guest.toX = step.x
+              guest.toY = step.y
+              continue
             }
             // 看板マスに着いた帰る客は、ここから待ち行列の位置まで歩く
             if (leaving && isSignTile(guest.fromX, guest.fromY)) {
@@ -4497,6 +4610,25 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             // 看板の中心に着いたら下を向き、そのまま 1 マス進んでバスに乗る
             guest.phase = 'toBus'
             guest.facing = 0
+            return false
+          }
+          if (guest.phase === 'fromBus') {
+            // 乗り物から看板の中心まで出たら、続けてゲート下へ上がる
+            guest.phase = 'fromSign'
+            guest.facing = 1
+            return false
+          }
+          if (guest.phase === 'fromSign') {
+            // ゲート下に着いたらふつうの歩きに切り替える
+            guest.phase = 'walking'
+            guest.fromX = gateCrossing.x
+            guest.fromY = gateCrossing.y
+            guest.toX = gateCrossing.x
+            guest.toY = gateCrossing.y
+            guest.previousX = gateCrossing.x
+            guest.previousY = gateCrossing.y
+            // 1 にしておくと次の更新で待たずに進む先を選ぶ
+            guest.progress = 1
             return false
           }
           // 待機中は看板(中央)を向く
@@ -4613,6 +4745,117 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           }
           placeBusImage(bus)
         }
+        // ---- アウトロー ----
+        // バスと同じ道をバイクで乗り付け、ゲート下でアウトローだけを降ろして走り去る。
+        // 原作では降ろした瞬間に絵が 2 人乗りから運転手だけに替わる
+        const outlawConfig = game.outlaw
+        // 歩く速さはヤングに合わせる。区分の設定が変わればそのまま追従する
+        const outlawTypeIndex = Math.max(0, guestConfig.types.findIndex((entry) => entry.id === 'young'))
+        const bikeOffsets = bikeSprites.variants.map((variant) => variant.offsetsByKind[sceneryKind])
+        type Bike = {
+          x: number
+          state: 'arriving' | 'stopped' | 'leaving'
+          timer: number
+          // 迎えに来た側か。送り届けるときは false、乗せて帰るときは true
+          pickup: boolean
+          // rider = アウトローを乗せている間。絵が 2 人乗りと運転手だけで替わる
+          rider: boolean
+          frame: number
+          frameTimer: number
+          image: Phaser.GameObjects.Image
+        }
+        let bike: Bike | null = null
+        let outlawCheckTimer = 0
+        const placeBikeImage = (current: Bike) => {
+          const variant = current.rider ? 0 : 1
+          const offset = bikeOffsets[variant][current.frame]
+          const position = point(current.x + 1, busRow)
+          const baseX = position.x + busConfig.anchor.x
+          const baseY = position.y + busConfig.anchor.y
+          const column = Math.round(current.x + 1 - offset.x / stepX)
+          current.image
+            .setTexture(`bike-${variant}-${current.frame}-s${seasonIndex}`)
+            .setPosition(baseX - offset.x, baseY - offset.y)
+            .setDepth(renderDepthAt('facility', column, busRow))
+        }
+        const updateBike = (days: number) => {
+          if (!bike) return
+          if (bike.state === 'stopped') {
+            // いったん停まってから乗り降りする。乗っているかどうかで絵が替わる
+            bike.timer += days
+            if (bike.timer < outlawConfig.dropDays) return
+            if (!bike.pickup) {
+              bike.frame = 0
+              bike.state = 'leaving'
+              bike.rider = false
+              spawnOutlaw()
+            }
+            else {
+              // 待っているアウトローに乗り込みを始めさせ、消えるまで停まって待つ
+              const outlaw = guests.find((guest) => guest.outlaw)
+              if (outlaw) {
+                if (outlaw.waitingForRide) {
+                  outlaw.waitingForRide = false
+                  outlaw.phase = 'toSign'
+                  outlaw.queueX = outlaw.fromX
+                  outlaw.queueY = outlaw.fromY
+                }
+              }
+              else {
+                bike.frame = 0
+                bike.state = 'leaving'
+                bike.rider = true
+              }
+            }
+          }
+          else {
+            bike.x -= outlawConfig.bikeTilesPerDay * days
+            // 車輪のコマ送り。停まっている間は動かさない
+            bike.frameTimer += days
+            while (bike.frameTimer >= outlawConfig.bikeFrameDays) {
+              bike.frameTimer -= outlawConfig.bikeFrameDays
+              bike.frame = (bike.frame + 1) % bikeOffsets[bike.rider ? 0 : 1].length
+            }
+            // 停まる位置はバスと同じ
+            if (bike.state === 'arriving' && bike.x <= busHaltX) {
+              bike.x = busHaltX
+              bike.state = 'stopped'
+              bike.timer = 0
+              bike.frame = 0
+            }
+            if (bike.x < busExitX) {
+              bike.image.destroy()
+              bike = null
+              return
+            }
+          }
+          placeBikeImage(bike)
+        }
+        const spawnBike = (pickup: boolean) => {
+          bike = {
+            x: busEnterX,
+            state: 'arriving',
+            timer: 0,
+            pickup,
+            // 送り届けるときは 2 人乗りで来て、迎えのときは運転手だけで来る
+            rider: !pickup,
+            frame: 0,
+            frameTimer: 0,
+            image: this.add.image(0, 0, `bike-${pickup ? 1 : 0}-0-s${seasonIndex}`).setOrigin(0),
+          }
+          placeBikeImage(bike)
+        }
+        // アウトローに出くわしたキッズは怖がって気分が大きく下がる。
+        // 同じ子が続けて何度も下がらないよう、少し間を空ける
+        const scareNearbyKids = (outlaw: Guest) => {
+          guests.forEach((guest) => {
+            if (guest.outlaw || guestConfig.types[guest.type].id !== 'kids') return
+            if (guest.fromX !== outlaw.fromX || guest.fromY !== outlaw.fromY) return
+            if (elapsedDays < guest.shockedUntil) return
+            guest.shockedUntil = elapsedDays + outlawConfig.kidShockDays
+            changeMood(guest, outlawConfig.kidMoodPenalty)
+          })
+        }
         const spawnBus = () => {
           bus = {
             x: busEnterX,
@@ -4647,15 +4890,24 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           elapsedDays += days
           refreshSeason()
           refreshMonth()
-          // 前のバスが去ってから次の間隔で、右手からバスが入ってくる
+          // 前のバスが去ってから次の間隔で、右手からバスが入ってくる。
+          // バスとバイクは同じ道を走るので、相手が走っている間は入ってこない
           if (!bus) {
             busTimerDays += days
-            if (busTimerDays >= busConfig.intervalDays) {
+            if (busTimerDays >= busConfig.intervalDays && !bike) {
               busTimerDays = 0
               spawnBus()
             }
           }
           updateBus(days)
+          // 決まった間隔でアウトローの出現を判定する。園内に居る間と走行中は判定しない
+          outlawCheckTimer += days
+          if (outlawCheckTimer >= outlawConfig.checkIntervalDays) {
+            outlawCheckTimer = 0
+            const present = bus !== null || bike !== null || guests.some((guest) => guest.outlaw)
+            if (!present && Math.random() < outlawConfig.chance) spawnBike(false)
+          }
+          updateBike(days)
           // 受け入れ中は時間切れで入口を閉めて動き出し、稼働が終わったら全員降ろす
           rideStates.forEach((state, placed) => {
             if (state.aboard.length === 0) return
@@ -4680,6 +4932,26 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           const attractionKinds = new Set(placedAttractions.map(({ id }) => id)).size
           for (let index = guests.length - 1; index >= 0; index -= 1) {
             const guest = guests[index]
+            // アウトローは欲求も反応も持たない。歩いてキッズを怖がらせ、頃合いで帰る
+            if (guest.outlaw) {
+              if (guest.phase === 'walking') {
+                if (guest.waitingForRide) {
+                  // ゲート下で迎えを待つ。バスが走っている間は呼べないので、空くまで待つ
+                  if (!bike && !bus) spawnBike(true)
+                }
+                else {
+                  updateWalkingGuest(guest, guest.tilesPerDay * days)
+                  scareNearbyKids(guest)
+                }
+              }
+              else if (updateQueuedGuest(guest, days)) {
+                // バイクのマスまで進みきったら乗り込んで消える
+                removeGuest(index)
+                continue
+              }
+              placeGuestImage(guest)
+              continue
+            }
             updateGuestNeeds(guest, days)
             // 出ていた反応を出しきったら、今の状態から選び直す
             guest.reactionFrames = Math.max(0, guest.reactionFrames - originalFramesPerStep)
@@ -4700,9 +4972,11 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             placeGuestImage(guest)
             placeReactionImage(guest)
           }
-          if (guests.length !== reportedGuestCount) {
-            reportedGuestCount = guests.length
-            guestCountHandler.current(guests.length)
+          // 来園者数にアウトローは数えない
+          const visitorCount = guests.reduce((total, guest) => total + (guest.outlaw ? 0 : 1), 0)
+          if (visitorCount !== reportedGuestCount) {
+            reportedGuestCount = visitorCount
+            guestCountHandler.current(visitorCount)
           }
         }
         // ここまでで絵の読み込みと園の組み立てが終わり、遊べる状態になる

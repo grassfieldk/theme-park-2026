@@ -74,6 +74,13 @@
     "frameHeight": 30,
     "anchorX": 14,
     "anchorY": 27
+   },
+   {
+    "bank": 8,
+    "frameWidth": 18,
+    "frameHeight": 25,
+    "anchorX": 8,
+    "anchorY": 24
    }
   ],
   "b": [
@@ -132,6 +139,13 @@
     "frameHeight": 30,
     "anchorX": 14,
     "anchorY": 27
+   },
+   {
+    "bank": 8,
+    "frameWidth": 18,
+    "frameHeight": 25,
+    "anchorX": 8,
+    "anchorY": 24
    }
   ],
   "c": [
@@ -190,6 +204,13 @@
     "frameHeight": 30,
     "anchorX": 14,
     "anchorY": 27
+   },
+   {
+    "bank": 8,
+    "frameWidth": 18,
+    "frameHeight": 25,
+    "anchorX": 8,
+    "anchorY": 24
    }
   ]
  }
