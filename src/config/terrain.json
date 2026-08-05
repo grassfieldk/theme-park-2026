@@ -629,5 +629,31 @@
    "x": 7,
    "y": 3
   }
- ]
+ ],
+ "tileObjectOffsets": {
+  "mechanic-post": {
+   "x": 3,
+   "y": -14
+  },
+  "repair-fence-bottom": {
+   "x": 7,
+   "y": 4
+  },
+  "repair-fence-top": {
+   "x": -1,
+   "y": -12
+  },
+  "repair-fence-left": {
+   "x": 0,
+   "y": -12
+  },
+  "repair-fence-right": {
+   "x": 22,
+   "y": -12
+  },
+  "rubble": {
+   "x": 0,
+   "y": 0
+  }
+ }
 }

@@ -50,8 +50,29 @@ FLIP_X = 0x0100
 # キッズ・ヤング = 1 人、カップル = 2 人、ファミリー = 3 人に対応する。
 # バンク 8 は種別 9 = アウトロー(情報ウィンドウ `0x800d6cb4` が種別 9 で名前を
 # 936 + [0x801c64be] にする)。4 方向の歩行だけを持つので同じ形で書き出せる。
-# バンク 9 以降はスタッフなど別のキャラクターなのでここでは出力しない。
-GUEST_BANKS = range(9)
+# バンク 9〜14 はスタッフ 6 職種(順にメカニック・スイーパー・ガードマン・
+# ウサギのぬいぐるみ・グーチョくん・ミュージシャン)。歩行 4 方向を持つので同じ形で書き出せる。
+# バンク 15 以降はここでは出力しない(15〜16 は 6 職種と同構造の削られた枠、
+# 17 以降は来園者バンクの色替えなど別用途)。
+GUEST_BANKS = range(15)
+# スタッフ 6 職種。種別 = 0x17 - バンク(FUN_801eb320 / FUN_801eb3c4 の `0x17 - kind`)
+STAFF_BANKS = range(9, 15)
+D2MAIN = ROOT / "recovery" / "disc" / "PRO" / "D2MAIN.BIN"
+D2MAIN_BASE = 0x801D06F8
+# 中身の無いコマ。ガードマンのグループ 5〜7 が全コマこれで、絵を持たない
+EMPTY_DESCRIPTOR = 0xFFFF
+
+
+def bank_end(banks, resources, index: int) -> int:
+    """バンクの終わり(= 次のバンクの先頭)。最後のグループのコマ数を出すのに使う。"""
+    resource_id, start = banks[index]
+    end = len(resources[resource_id])
+    for other in banks:
+        if other is None or other[0] != resource_id:
+            continue
+        if start < other[1] < end:
+            end = other[1]
+    return end - start
 
 
 def exe_offset(vaddr: int) -> int:
@@ -173,6 +194,7 @@ def main() -> None:
     }
     banks = read_banks(exe, resources)
 
+
     DESTINATION.mkdir(parents=True, exist_ok=True)
     for previous in DESTINATION.glob("*.png"):
         previous.unlink()
@@ -204,8 +226,28 @@ def main() -> None:
                     composed.append(compose_frame(body, vram, descriptor))
             if not composed:
                 continue
+            # スタッフは歩行 4 方向のほかにも動作のグループを持つ。どれが何かは
+            # コードから引けない(表 `DAT_801fadf7` は来園者の着席用で、
+            # ガードマンでは中身の無いグループを指す)ので、空でないグループを
+            # 全部そのまま続きの行に出し、どれを使うかは staff.json で指す
+            extra_groups = []
+            if index in STAFF_BANKS:
+                for group in range(WALK_GROUPS, group_count):
+                    table = group_offsets[group]
+                    end = group_offsets[group + 1] if group + 1 < group_count else bank_end(banks, resources, index)
+                    count = (end - table) // 4
+                    frames = [struct.unpack_from("<H", body, table + f * 4 + 2)[0] for f in range(count)]
+                    # 記述子が 0xffff のグループは中身が無い(ガードマンの 5〜7 番)
+                    if not count or any(f == EMPTY_DESCRIPTOR for f in frames):
+                        continue
+                    extra_groups.append({"group": group, "frame": len(composed), "count": count})
+                    for descriptor in frames:
+                        composed.append(compose_frame(body, vram, descriptor))
+                    # 行の右端まで空きを埋めて、次のグループを行頭から始める
+                    while len(composed) % WALK_FRAMES:
+                        composed.append(compose_frame(body, vram, frames[0]))
             # 着席ポーズ(グループ 8)を 5 行目に足す。コマ順は歩行の方向順と同じ
-            if group_count > SEAT_GROUP + 1:
+            if not extra_groups and group_count > SEAT_GROUP + 1:
                 table = group_offsets[SEAT_GROUP]
                 if (group_offsets[SEAT_GROUP + 1] - table) // 4 == WALK_FRAMES:
                     for frame in range(WALK_FRAMES):
@@ -226,20 +268,25 @@ def main() -> None:
                 row = position // WALK_FRAMES
                 sheet.alpha_composite(image, (column * cell_width + anchor_x - ax, row * cell_height + anchor_y - ay))
             sheet.save(DESTINATION / f"{people_set.lower()}-{index}.png")
-            exported.append({
+            entry = {
                 "bank": index,
                 "frameWidth": cell_width,
                 "frameHeight": cell_height,
                 "anchorX": anchor_x,
                 "anchorY": anchor_y,
-            })
+            }
+            if extra_groups:
+                entry["groups"] = extra_groups
+            exported.append(entry)
         sets[people_set.lower()] = exported
         print(f"PEOPLE{people_set}: {len(exported)} banks")
 
     config = {
         "_note": [
             "来園者のスプライト。set は国ごとの PEOPLE ファイル、bank は見た目の種類。",
-            "1 枚のシートに 4 行(方向)× 4 列(コマ)+ 5 行目に着席ポーズ(列 = 方向)。",
+            "1 枚のシートに 4 行(方向)× 4 列(コマ)。",
+            "来園者は 5 行目が着席ポーズ(列 = 方向)。",
+            "スタッフは 5 行目以降が立ち止まっているときのアニメで、idleFrame から idleCount コマ。",
             "方向は 0=下 1=上 2=左 3=右。",
             "画像は /assets/park/guests/{set}-{bank}.png。anchorX/anchorY は足元の基準点。",
         ],

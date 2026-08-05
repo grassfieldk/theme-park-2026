@@ -27,8 +27,11 @@ ROAD_MENU_ICONS = [7, 8, 9, 10, 75, 11, 12]
 # 0x80117f3c(ショップ)の行(先頭バイトが件数)による
 ATTRACTION_SETTING_ICONS = [74, 36, 29, 37, 40, 41]
 SHOP_SETTING_ICONS = [43, 44, 45, 46]
-# ステータス枠。項目は 0x80118254 の (x, y, アイコン, メッセージ ID) の並びによる
-STATUS_ICONS = [35, 36, 38, 40, 43, 44, 46, 52, 53, 55, 56, 57, 58, 59, 60]
+# スタッフの設定メニュー。一覧に並ぶアイコンは 0x80117fa0(6 byte × 2 行、先頭バイトが件数)
+STAFF_SETTING_ICONS = [53, 47, 41, 48, 49]
+# ステータス枠。項目は 0x80118254 の (x, y, アイコン, メッセージ ID) の並びで、
+# 種別ごとの索引表は 0x801183e4(0x1a byte 単位、スタッフは種別 6)
+STATUS_ICONS = [4, 35, 36, 38, 40, 43, 44, 46, 52, 53, 55, 56, 57, 58, 59, 60, 62, 63, 64]
 
 
 def psx_color(value: int) -> tuple[int, int, int, int]:
@@ -107,7 +110,10 @@ def main() -> None:
     vram = load_vram(data)
     palette = [psx_color(vram[482 * 1024 + index]) for index in range(256)]
     DESTINATION.mkdir(parents=True, exist_ok=True)
-    icons = MAIN_MENU_ICONS + ROAD_MENU_ICONS + ATTRACTION_SETTING_ICONS + SHOP_SETTING_ICONS + STATUS_ICONS
+    icons = (
+        MAIN_MENU_ICONS + ROAD_MENU_ICONS + ATTRACTION_SETTING_ICONS
+        + SHOP_SETTING_ICONS + STAFF_SETTING_ICONS + STATUS_ICONS
+    )
     for index in sorted(set(icons)):
         export_icon(vram, palette, index)
 

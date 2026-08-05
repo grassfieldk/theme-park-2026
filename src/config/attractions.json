@@ -50,7 +50,10 @@
   "excitement": 7,
   "speedSetting": 5,
   "capacityMax": 8,
-  "speedAdjustable": true
+  "speedAdjustable": true,
+  "durability": 5,
+  "durabilityMax": 9,
+  "manualStart": false
  },
  {
   "id": "g-shock",
@@ -154,7 +157,10 @@
   "excitement": 8,
   "speedSetting": 5,
   "capacityMax": 8,
-  "speedAdjustable": true
+  "speedAdjustable": true,
+  "durability": 3,
+  "durabilityMax": 4,
+  "manualStart": false
  },
  {
   "id": "space-dive",
@@ -264,7 +270,10 @@
   "excitement": 8,
   "speedSetting": 5,
   "capacityMax": 8,
-  "speedAdjustable": true
+  "speedAdjustable": true,
+  "durability": 4,
+  "durabilityMax": 6,
+  "manualStart": false
  },
  {
   "id": "dome-zero",
@@ -305,7 +314,10 @@
   "excitement": 9,
   "speedSetting": 5,
   "capacityMax": 10,
-  "speedAdjustable": true
+  "speedAdjustable": true,
+  "durability": 0,
+  "durabilityMax": 9,
+  "manualStart": false
  },
  {
   "id": "pirate-ship",
@@ -514,7 +526,10 @@
   "excitement": 6,
   "speedSetting": 5,
   "capacityMax": 8,
-  "speedAdjustable": true
+  "speedAdjustable": true,
+  "durability": 5,
+  "durabilityMax": 9,
+  "manualStart": false
  },
  {
   "id": "space-shuttle",
@@ -641,7 +656,10 @@
   "excitement": 7,
   "speedSetting": 5,
   "capacityMax": 9,
-  "speedAdjustable": true
+  "speedAdjustable": true,
+  "durability": 4,
+  "durabilityMax": 8,
+  "manualStart": false
  },
  {
   "id": "magic-carpet",
@@ -846,7 +864,10 @@
   "excitement": 8,
   "speedSetting": 5,
   "capacityMax": 8,
-  "speedAdjustable": true
+  "speedAdjustable": true,
+  "durability": 5,
+  "durabilityMax": 9,
+  "manualStart": false
  },
  {
   "id": "hammer-swing",
@@ -978,7 +999,10 @@
   "excitement": 9,
   "speedSetting": 5,
   "capacityMax": 10,
-  "speedAdjustable": true
+  "speedAdjustable": true,
+  "durability": 5,
+  "durabilityMax": 9,
+  "manualStart": false
  },
  {
   "id": "coffee-cup",
@@ -1133,7 +1157,10 @@
   "excitement": 5,
   "speedSetting": 5,
   "capacityMax": 9,
-  "speedAdjustable": true
+  "speedAdjustable": true,
+  "durability": 3,
+  "durabilityMax": 7,
+  "manualStart": false
  },
  {
   "id": "merry-go-round",
@@ -1201,7 +1228,10 @@
   "excitement": 2,
   "speedSetting": 5,
   "capacityMax": 8,
-  "speedAdjustable": true
+  "speedAdjustable": true,
+  "durability": 4,
+  "durabilityMax": 6,
+  "manualStart": false
  },
  {
   "id": "joy-plane",
@@ -1297,7 +1327,10 @@
   "excitement": 7,
   "speedSetting": 5,
   "capacityMax": 8,
-  "speedAdjustable": true
+  "speedAdjustable": true,
+  "durability": 4,
+  "durabilityMax": 8,
+  "manualStart": false
  },
  {
   "id": "parasol-chair",
@@ -1453,7 +1486,10 @@
   "excitement": 7,
   "speedSetting": 5,
   "capacityMax": 8,
-  "speedAdjustable": true
+  "speedAdjustable": true,
+  "durability": 3,
+  "durabilityMax": 4,
+  "manualStart": false
  },
  {
   "id": "super-spinner",
@@ -1484,7 +1520,10 @@
   "excitement": 7,
   "speedSetting": 5,
   "capacityMax": 9,
-  "speedAdjustable": true
+  "speedAdjustable": true,
+  "durability": 4,
+  "durabilityMax": 8,
+  "manualStart": false
  },
  {
   "id": "wild-roll",
@@ -1552,7 +1591,10 @@
   "excitement": 8,
   "speedSetting": 5,
   "capacityMax": 9,
-  "speedAdjustable": true
+  "speedAdjustable": true,
+  "durability": 3,
+  "durabilityMax": 5,
+  "manualStart": false
  },
  {
   "id": "dish-spin",
@@ -1719,7 +1761,10 @@
   "excitement": 8,
   "speedSetting": 5,
   "capacityMax": 9,
-  "speedAdjustable": true
+  "speedAdjustable": true,
+  "durability": 1,
+  "durabilityMax": 9,
+  "manualStart": false
  },
  {
   "id": "ferris-wheel",
@@ -1752,7 +1797,10 @@
   "excitement": 3,
   "speedSetting": 5,
   "capacityMax": 8,
-  "speedAdjustable": true
+  "speedAdjustable": true,
+  "durability": 6,
+  "durabilityMax": 7,
+  "manualStart": false
  },
  {
   "id": "sky-tower",
@@ -1786,7 +1834,10 @@
   "excitement": 2,
   "speedSetting": 2,
   "capacityMax": 10,
-  "speedAdjustable": false
+  "speedAdjustable": false,
+  "durability": 5,
+  "durabilityMax": 9,
+  "manualStart": false
  },
  {
   "id": "great-wheel",
@@ -1819,7 +1870,10 @@
   "excitement": 0,
   "speedSetting": 5,
   "capacityMax": 10,
-  "speedAdjustable": true
+  "speedAdjustable": true,
+  "durability": 5,
+  "durabilityMax": 6,
+  "manualStart": false
  },
  {
   "id": "albatross",
@@ -1865,7 +1919,10 @@
   "excitement": 1,
   "speedSetting": 1,
   "capacityMax": 9,
-  "speedAdjustable": false
+  "speedAdjustable": false,
+  "durability": 2,
+  "durabilityMax": 4,
+  "manualStart": false
  },
  {
   "id": "virtual-flight",
@@ -1899,7 +1956,10 @@
   "excitement": 8,
   "speedSetting": 5,
   "capacityMax": 7,
-  "speedAdjustable": true
+  "speedAdjustable": true,
+  "durability": 4,
+  "durabilityMax": 5,
+  "manualStart": false
  },
  {
   "id": "jigoku-meguri",
@@ -1944,7 +2004,10 @@
   "excitement": 7,
   "speedSetting": 7,
   "capacityMax": 8,
-  "speedAdjustable": false
+  "speedAdjustable": false,
+  "durability": 5,
+  "durabilityMax": 9,
+  "manualStart": false
  },
  {
   "id": "haunted-mansion",
@@ -1995,7 +2058,10 @@
   "excitement": 8,
   "speedSetting": 8,
   "capacityMax": 9,
-  "speedAdjustable": false
+  "speedAdjustable": false,
+  "durability": 5,
+  "durabilityMax": 9,
+  "manualStart": false
  },
  {
   "id": "inferno",
@@ -2029,7 +2095,10 @@
   "excitement": 8,
   "speedSetting": 8,
   "capacityMax": 9,
-  "speedAdjustable": false
+  "speedAdjustable": false,
+  "durability": 1,
+  "durabilityMax": 9,
+  "manualStart": false
  },
  {
   "id": "athletic",
@@ -2083,7 +2152,10 @@
   "excitement": 3,
   "speedSetting": 3,
   "capacityMax": 9,
-  "speedAdjustable": false
+  "speedAdjustable": false,
+  "durability": 5,
+  "durabilityMax": 9,
+  "manualStart": false
  },
  {
   "id": "circus-show",
@@ -2169,7 +2241,10 @@
   "excitement": 2,
   "speedSetting": 2,
   "capacityMax": 10,
-  "speedAdjustable": false
+  "speedAdjustable": false,
+  "durability": 5,
+  "durabilityMax": 9,
+  "manualStart": false
  },
  {
   "id": "virtual-wars",
@@ -2200,7 +2275,10 @@
   "excitement": 9,
   "speedSetting": 9,
   "capacityMax": 9,
-  "speedAdjustable": false
+  "speedAdjustable": false,
+  "durability": 1,
+  "durabilityMax": 9,
+  "manualStart": false
  },
  {
   "id": "maze",
@@ -2246,7 +2324,10 @@
   "excitement": 3,
   "speedSetting": 3,
   "capacityMax": 9,
-  "speedAdjustable": false
+  "speedAdjustable": false,
+  "durability": 5,
+  "durabilityMax": 9,
+  "manualStart": false
  },
  {
   "id": "ninja-house",
@@ -2277,7 +2358,10 @@
   "excitement": 2,
   "speedSetting": 2,
   "capacityMax": 9,
-  "speedAdjustable": false
+  "speedAdjustable": false,
+  "durability": 5,
+  "durabilityMax": 9,
+  "manualStart": false
  },
  {
   "id": "marine-show",
@@ -2363,7 +2447,10 @@
   "excitement": 2,
   "speedSetting": 2,
   "capacityMax": 10,
-  "speedAdjustable": false
+  "speedAdjustable": false,
+  "durability": 5,
+  "durabilityMax": 9,
+  "manualStart": false
  },
  {
   "id": "fantasy-castle",
@@ -2394,7 +2481,10 @@
   "excitement": 0,
   "speedSetting": 0,
   "capacityMax": 10,
-  "speedAdjustable": false
+  "speedAdjustable": false,
+  "durability": 5,
+  "durabilityMax": 9,
+  "manualStart": false
  },
  {
   "id": "oedo-castle",
@@ -2425,7 +2515,10 @@
   "excitement": 1,
   "speedSetting": 1,
   "capacityMax": 10,
-  "speedAdjustable": false
+  "speedAdjustable": false,
+  "durability": 5,
+  "durabilityMax": 9,
+  "manualStart": false
  },
  {
   "id": "pool-skate-rink",
@@ -2479,7 +2572,10 @@
   "excitement": 1,
   "speedSetting": 1,
   "capacityMax": 11,
-  "speedAdjustable": false
+  "speedAdjustable": false,
+  "durability": 5,
+  "durabilityMax": 9,
+  "manualStart": false
  },
  {
   "id": "skate-rink-pool",
@@ -2532,7 +2628,10 @@
   "excitement": 1,
   "speedSetting": 1,
   "capacityMax": 11,
-  "speedAdjustable": false
+  "speedAdjustable": false,
+  "durability": 5,
+  "durabilityMax": 9,
+  "manualStart": false
  },
  {
   "id": "boat-dock",
@@ -2584,7 +2683,10 @@
   "excitement": 4,
   "speedSetting": 4,
   "capacityMax": 9,
-  "speedAdjustable": false
+  "speedAdjustable": false,
+  "durability": 4,
+  "durabilityMax": 9,
+  "manualStart": false
  },
  {
   "id": "mississippi-cruise",
@@ -2617,7 +2719,10 @@
   "excitement": 2,
   "speedSetting": 2,
   "capacityMax": 10,
-  "speedAdjustable": false
+  "speedAdjustable": false,
+  "durability": 5,
+  "durabilityMax": 6,
+  "manualStart": false
  },
  {
   "id": "treasure-island",
@@ -2649,6 +2754,9 @@
   "excitement": 3,
   "speedSetting": 3,
   "capacityMax": 10,
-  "speedAdjustable": false
+  "speedAdjustable": false,
+  "durability": 6,
+  "durabilityMax": 9,
+  "manualStart": false
  }
 ]

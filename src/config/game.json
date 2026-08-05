@@ -13,7 +13,7 @@
     "cameraMarginTiles": { "top": 4, "bottom": 1, "side": 4 }
   },
   "input": { "initialRepeatDelayMs": 400, "repeatIntervalMs": 60, "cameraPanPixelsPerSecond": 480 },
-  "time": { "defaultSpeedIndex": 1, "framesPerSecond": 60, "originalFramesPerSecond": 30 },
+  "time": { "defaultSpeedIndex": 1, "framesPerSecond": 60, "originalFramesPerSecond": 30, "originalFramesPerDay": 150 },
   "loading": { "messageFrames": 120, "blackoutFadeFrames": 12, "blackoutHoldFrames": 60 },
   "guests": {
     "display": {
@@ -43,6 +43,9 @@
   "facilityUse": { "serviceDays": 0.2, "usePerVisit": 1 },
   "attractionUse": { "initialPrice": 100, "rideTimeSetting": 5, "rideDaysPerStep": 0.4, "loadTimeoutDays": 0.4, "joinChance": 0.5, "rideFatigueRelief": 100 },
   "litter": { "dropThreshold": 150, "patience": 250, "patiencePerStep": 2, "complaintPatience": 100, "moodPenalty": -500, "nauseaRiseThreshold": 201, "nauseaRisePerUpdate": 2, "nauseaMax": 250, "vomitThreshold": 249 },
+  "staff": { "maxTotal": 50, "caps": { "mechanic": 20, "sweeper": 20, "guard": 5, "entertainer": 5 }, "efficiency": { "start": 100, "strikeThreshold": 0.5, "angerWeights": [10, 20, 40, 20, 10], "negotiationGain": 30 }, "names": ["おおた", "あべ", "いしざき", "いのうえ", "いわさき", "うえの", "うすい", "うえむら", "おおはし", "おがわ", "おくむら", "かわさき", "こやなぎ", "こにし", "さかきばら", "さかべ", "しおみ", "しぶや", "すち", "さこ", "たかだ", "たかぎ", "たかつき", "たけだ", "たけむら", "ちけん", "つじもと", "つじかわ", "なかおか", "ならざき", "にしかわ", "にし", "ねもと", "のむら", "ばじょう", "ひろせ", "ふじい", "ふくかわ", "べっしょ", "ほそい", "ほり", "ますだ", "まつした", "まつづか", "みうら", "みはら", "めかた", "ももい", "もりもと", "やなぎ", "やまもと", "やまぐち", "ゆかわ", "よこた", "よこやま", "らもん", "りきた", "ろくた", "わきやま", "こんだ"], "tilesPerDay": 18, "idleFramesPerDay": 8, "negotiation": { "month": 4, "day": 10, "raisePerMille": 50 }, "retirementYears": 30, "mechanic": { "fenceWorkFrames": 22 }, "entertainer": { "range": 1, "moodGain": 50, "performDays": 1.5, "waitDays": 6.73 } },
+  "lostChild": { "chancePerUpdate": 0.2, "maxFatigue": 100 },
+  "breakdown": { "unit": 100, "wearPerRun": 1, "smokeThreshold": 0.3, "brokenRating": -500, "explodeRating": -200, "shakeBase": 3, "smokeFrames": 3, "smokeFrameHold": 16, "rubbleChance": 0.505, "rubbleRemovalCost": 3000 },
   "outlaw": { "bank": 8, "names": ["ハッスルほんだ", "さめちゃん", "モッチー", "ジャイアントレイ"], "checkIntervalDays": 7, "chance": 0.1, "stayDays": 20, "bikeTilesPerDay": 40, "bikeFrameDays": 0.02, "dropDays": 0.3, "kidMoodPenalty": -200, "kidShockDays": 1 },
   "facilityMenu": { "versionUpCost": 10000, "maxVersion": 9, "maxPrice": 9999, "priceStep": 10, "maxTasteLevel": 4, "maxSetting": 9, "maxWinRate": 100 },
   "evaluation": {

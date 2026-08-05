@@ -5,6 +5,7 @@ import shops from './config/shops.json'
 import facilities from './config/facilities.json'
 import game from './config/game.json'
 import parkMenu from './config/parkMenu.json'
+import staffConfig from './config/staff.json'
 import seasons from './config/seasons.json'
 import { GamepadController, type MenuAction } from './components/GamepadController'
 import type { FacilitySettingItem, FacilitySettings, ParkMapHandle } from './components/ParkMap'
@@ -18,8 +19,8 @@ import { buttonStyleLabels, readControls, writeControls, type ControlSettings } 
 const ParkMap = lazy(() => import('./components/ParkMap'))
 
 type Screen = 'title' | 'country' | 'park'
-type ParkMode = 'map' | 'mainMenu' | 'roadMenu' | 'pathBuild' | 'queueBuild' | 'stairsBuild' | 'attractionMenu' | 'attractionBuild' | 'attractionQueueBuild' | 'shopMenu' | 'shopBuild' | 'facilityMenu' | 'facilityBuild' | 'systemMenu' | 'controlsMenu' | 'facilitySettings'
-const mainMenuModeById: Record<string, ParkMode> = { roads: 'roadMenu', attractions: 'attractionMenu', shops: 'shopMenu', facilities: 'facilityMenu', system: 'systemMenu' }
+type ParkMode = 'map' | 'mainMenu' | 'roadMenu' | 'pathBuild' | 'queueBuild' | 'stairsBuild' | 'attractionMenu' | 'attractionBuild' | 'attractionQueueBuild' | 'shopMenu' | 'shopBuild' | 'facilityMenu' | 'facilityBuild' | 'staffMenu' | 'staffBuild' | 'staffMove' | 'staffRoute' | 'accessMove' | 'systemMenu' | 'controlsMenu' | 'facilitySettings'
+const mainMenuModeById: Record<string, ParkMode> = { roads: 'roadMenu', attractions: 'attractionMenu', shops: 'shopMenu', facilities: 'facilityMenu', staff: 'staffMenu', system: 'systemMenu' }
 type AttractionBuildStep = 'body' | 'entrance' | 'exit'
 type ConfirmPrompt = { message: string, confirmLabel: string, onConfirm: () => void, onCancel?: () => void }
 const countryColumns = 2
@@ -378,6 +379,7 @@ export default function App() {
   const [attractionMenuIndex, setAttractionMenuIndex] = useState(0)
   const [shopMenuIndex, setShopMenuIndex] = useState(0)
   const [facilityMenuIndex, setFacilityMenuIndex] = useState(0)
+  const [staffMenuIndex, setStaffMenuIndex] = useState(0)
   const [systemMenuIndex, setSystemMenuIndex] = useState(0)
   const [controlsMenuIndex, setControlsMenuIndex] = useState(0)
   // 設置済みの施設に合わせて開く設定メニュー。中身はマップ側が組み立てる
@@ -390,6 +392,8 @@ export default function App() {
   const [stairsBuildStep, setStairsBuildStep] = useState<'body' | 'direction'>('body')
   const [attractionBuildStep, setAttractionBuildStep] = useState<AttractionBuildStep>('body')
   const [cash, setCash] = useState(game.park.initialCash)
+  const cashRef = useRef(cash)
+  cashRef.current = cash
   const [titleStep, setTitleStep] = useState<'menu' | 'mode'>('menu')
   const [titleIndex, setTitleIndex] = useState(0)
   const [buildMessage, setBuildMessage] = useState('')
@@ -589,16 +593,45 @@ export default function App() {
     },
   ], [controls])
 
-  // 施設の設定項目を決定したとき。切り替えはその場で、数値は調整に入り、性能は確認を出す
+  // 施設の設定項目を決定したとき。切り替えはその場で、数値は調整に入り、
+  // 性能と解雇は確認を出す(どちらも取り消せない操作のため)。位置は移動先を選ぶモードに移る
   const startSettingItem = useCallback((item: FacilitySettingItem) => {
     if (item.kind === 'toggle') {
       parkMap.current?.activateFacilitySetting(item.id)
       return
     }
+    if (item.id === 'inspect') {
+      parkMap.current?.activateFacilitySetting(item.id)
+      return
+    }
+    if (item.id === 'reposition') {
+      parkMap.current?.activateFacilitySetting(item.id)
+      setParkMode('staffMove')
+      return
+    }
+    if (item.id === 'relocateAccess') {
+      parkMap.current?.activateFacilitySetting(item.id)
+      setAttractionBuildStep('entrance')
+      setParkMode('accessMove')
+      return
+    }
+    if (item.id === 'route') {
+      parkMap.current?.activateFacilitySetting(item.id)
+      setParkMode('staffRoute')
+      return
+    }
+    // 開発サーバでだけ出るデバッグ操作。確認なしでその場で効かせる
+    if (item.id === 'debugBreak' || item.id === 'debugExplode') {
+      parkMap.current?.activateFacilitySetting(item.id)
+      return
+    }
     if (item.kind === 'confirm') {
+      const isDismiss = item.id === 'dismiss'
       setConfirmPrompt({
-        message: `${game.facilityMenu.versionUpCost.toLocaleString()} かかります。性能を上げますか？`,
-        confirmLabel: '上げる',
+        message: isDismiss
+          ? 'このスタッフを解雇しますか？'
+          : `${game.facilityMenu.versionUpCost.toLocaleString()} かかります。性能を上げますか？`,
+        confirmLabel: isDismiss ? '解雇する' : '上げる',
         onConfirm: () => parkMap.current?.activateFacilitySetting(item.id),
       })
       return
@@ -633,6 +666,10 @@ export default function App() {
     else if (mode === 'facilityMenu') {
       setFacilityMenuIndex(index)
       setParkMode('facilityBuild')
+    }
+    else if (mode === 'staffMenu') {
+      setStaffMenuIndex(index)
+      setParkMode('staffBuild')
     }
     else if (mode === 'systemMenu') {
       if (!parkMenu.system[index].enabled) return
@@ -738,6 +775,34 @@ export default function App() {
         else setFacilityMenuIndex((current) => moveMenu(current, input, countryFacilities.length, menuPageSize))
         return
       }
+      if (parkMode === 'staffMenu') {
+        if (input === 'cancel') setParkMode('mainMenu')
+        else if (input === 'confirm') openMenuItem('staffMenu', staffMenuIndex)
+        else setStaffMenuIndex((current) => moveMenu(current, input, staffConfig.length, menuPageSize))
+        return
+      }
+      if (parkMode === 'staffBuild' && input === 'cancel') {
+        setParkMode('staffMenu')
+        return
+      }
+      if (parkMode === 'accessMove' && input === 'cancel') {
+        // 置き直しを取り消すと、変更前の出入口に戻る
+        parkMap.current?.handleAction('cancel')
+        setAttractionBuildStep('body')
+        setParkMode('map')
+        return
+      }
+      if (parkMode === 'staffMove' && input === 'cancel') {
+        parkMap.current?.handleAction('cancel')
+        setParkMode('map')
+        return
+      }
+      if (parkMode === 'staffRoute' && input === 'cancel') {
+        // キャンセルはそれまでに選んだマスを清掃ルートとして確定してから抜ける
+        parkMap.current?.handleAction('cancel')
+        setParkMode('map')
+        return
+      }
       if (parkMode === 'systemMenu') {
         if (input === 'cancel') setParkMode('mainMenu')
         else if (input === 'confirm') openMenuItem('systemMenu', systemMenuIndex)
@@ -812,7 +877,7 @@ export default function App() {
       const mapAction = input === 'left' || input === 'right' || input === 'up' || input === 'down'
         || input === 'zoomIn' || input === 'zoomOut'
         // 何のモードでもないときの決定は、カーソルの下の施設の設定メニューを開く
-        || ((parkMode === 'map' || parkMode === 'pathBuild' || parkMode === 'queueBuild' || parkMode === 'stairsBuild' || parkMode === 'attractionQueueBuild' || parkMode === 'attractionBuild' || parkMode === 'shopBuild' || parkMode === 'facilityBuild') && (input === 'confirm' || input === 'confirmRelease'))
+        || ((parkMode === 'map' || parkMode === 'pathBuild' || parkMode === 'queueBuild' || parkMode === 'stairsBuild' || parkMode === 'attractionQueueBuild' || parkMode === 'attractionBuild' || parkMode === 'shopBuild' || parkMode === 'facilityBuild' || parkMode === 'staffBuild' || parkMode === 'staffMove' || parkMode === 'staffRoute' || parkMode === 'accessMove') && (input === 'confirm' || input === 'confirmRelease'))
         // 撤去はどのモードでも使える。何を消せるかはマップ側で判断する
         || input === 'remove' || input === 'removeRelease'
       if (mapAction) parkMap.current?.handleAction(input)
@@ -831,7 +896,7 @@ export default function App() {
     const nextCountry = moveCountry(selectedCountry, input)
     if (nextCountry === selectedCountry) return
     setSelectedCountry(nextCountry)
-  }, [screen, selectedCountry, parkMode, mainMenuIndex, roadMenuIndex, attractionMenuIndex, shopMenuIndex, facilityMenuIndex, systemMenuIndex, controlsMenuIndex, controlItems, menuPageSize, shopBuildStep, facilityBuildStep, stairsBuildStep, titleStep, titleIndex, confirmPrompt, answerConfirm, activateTitleItem, openMenuItem, startNewGame, countryAttractions, countryShops, countryFacilities, facilitySettings, facilitySettingsIndex, editingSetting, startSettingItem])
+  }, [screen, selectedCountry, parkMode, mainMenuIndex, roadMenuIndex, attractionMenuIndex, shopMenuIndex, facilityMenuIndex, staffMenuIndex, systemMenuIndex, controlsMenuIndex, controlItems, menuPageSize, shopBuildStep, facilityBuildStep, stairsBuildStep, titleStep, titleIndex, confirmPrompt, answerConfirm, activateTitleItem, openMenuItem, startNewGame, countryAttractions, countryShops, countryFacilities, facilitySettings, facilitySettingsIndex, editingSetting, startSettingItem])
 
 
   useEffect(() => setBuildMessage(''), [parkMode])
@@ -905,16 +970,24 @@ export default function App() {
             id: facility.id,
             label: facility.name,
             description: `${facility.width} × ${facility.height} マス`,
-            // 設備のアイコンは国ごとのシーナリー種の絵柄になる
             iconSrc: `/assets/park/facility-icons/${(seasons.countryScenery as Record<string, number>)[countries[selectedCountry].id] ?? 0}/${facility.id}.png`,
             enabled: true,
           }))
-          : null
+          : parkMode === 'staffMenu'
+            ? staffConfig.map((type) => ({
+              id: type.id,
+              label: type.label,
+              description: `${type.role}(雇用費 ${type.hireCost.toLocaleString()}　月給 ${type.monthlyWage.toLocaleString()})`,
+              iconSrc: `/assets/park/staff-icons/${type.id}.png`,
+              enabled: true,
+            }))
+            : null
   const menuIndexByMode: Partial<Record<ParkMode, [number, (index: number) => void]>> = {
     mainMenu: [mainMenuIndex, setMainMenuIndex],
     roadMenu: [roadMenuIndex, setRoadMenuIndex],
     shopMenu: [shopMenuIndex, setShopMenuIndex],
     facilityMenu: [facilityMenuIndex, setFacilityMenuIndex],
+    staffMenu: [staffMenuIndex, setStaffMenuIndex],
     systemMenu: [systemMenuIndex, setSystemMenuIndex],
     controlsMenu: [controlsMenuIndex, setControlsMenuIndex],
     facilitySettings: [facilitySettingsIndex, setFacilitySettingsIndex],
@@ -940,7 +1013,15 @@ export default function App() {
             ? facilityBuildStep === 'direction'
               ? '向きを選んでください'
               : `${countryFacilities[facilityMenuIndex].name} 設置中`
-            : ''
+            : parkMode === 'staffBuild'
+              ? `スタッフ雇用中(${staffConfig[staffMenuIndex].label})`
+              : parkMode === 'staffMove'
+                ? 'スタッフ位置変更中'
+                : parkMode === 'staffRoute'
+                  ? '清掃ルート設定中'
+                  : parkMode === 'accessMove'
+                    ? attractionBuildStep === 'entrance' ? '入口変更中' : '出口変更中'
+                    : ''
   // 左上は今のモード、下部のバーは通知・アドバイスなどのメッセージと役割を分ける。
   // 設定メニューでは資金不足などの知らせを項目の説明より先に出す
   const statusBarText = parkMode === 'facilitySettings' && buildMessage
@@ -1067,6 +1148,9 @@ export default function App() {
               attractionBuildStep={attractionBuildStep}
               shopBuild={parkMode === 'shopBuild' ? countryShops[shopMenuIndex] : null}
               facilityBuild={parkMode === 'facilityBuild' ? countryFacilities[facilityMenuIndex] : null}
+              staffBuild={parkMode === 'staffBuild' ? staffConfig[staffMenuIndex] : null}
+              onStaffHired={(cost) => setCash((current) => current - cost)}
+              onStaffMoved={() => setParkMode('map')}
               onFacilityPlaced={(cost) => setCash((current) => current - cost)}
               onFacilityBuildStep={setFacilityBuildStep}
               onStairsBuildStep={setStairsBuildStep}
@@ -1080,7 +1164,8 @@ export default function App() {
                 if (step === 'entrance') setAttractionBuildStep('exit')
                 else {
                   setAttractionBuildStep('body')
-                  setParkMode('attractionQueueBuild')
+                  // 出入口変更で置き直したときは整列歩道の設置へ進まず地図に戻る
+                  setParkMode((current) => current === 'accessMove' ? 'map' : 'attractionQueueBuild')
                 }
               }}
               onShopPlaced={(cost) => setCash((current) => current - cost)}

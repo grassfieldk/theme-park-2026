@@ -9,6 +9,7 @@ import type { MenuAction } from './GamepadController'
 import busSprites from '../config/busSprites.json'
 import bikeSprites from '../config/bikeSprites.json'
 import guestSprites from '../config/guestSprites.json'
+import staffConfig from '../config/staff.json'
 import riderSprites from '../config/riderSprites.json'
 import pointers from '../config/pointers.json'
 import reactions from '../config/reactions.json'
@@ -33,6 +34,8 @@ type Props = {
   attractionBuildStep: AttractionBuildStep
   shopBuild: Shop | null
   facilityBuild: Facility | null
+  /** 雇用するスタッフの職種。選んでいる間は配置モードになる */
+  staffBuild: StaffType | null
   availableCash: number
   onAttractionPlaced: (cost: number) => void
   onAttractionPlacementCancelled: (cost: number) => void
@@ -42,6 +45,10 @@ type Props = {
   onShopComplete: () => void
   onFacilityPlaced: (cost: number) => void
   onFacilityBuildStep: (step: 'body' | 'direction') => void
+  /** スタッフを配置して雇用費を払ったとき */
+  onStaffHired: (cost: number) => void
+  /** 設定メニューの「位置」で選んだ移動先へスタッフを動かし終えたとき */
+  onStaffMoved: () => void
   onStairsBuildStep: (step: 'body' | 'direction') => void
   secondsPerDay: number
   onAdmissionPaid: (fee: number) => void
@@ -116,12 +123,31 @@ export type ParkMapHandle = {
   resolveRemoval: (confirmed: boolean) => void
   /** 日付を飛ばす(開発サーバのデバッグ用)。飛ばした間の計算は行わない */
   setElapsedDays: (days: number) => void
+  /** 経営の「スタッフ経費」。一覧画面はまだ無いが、集計はここから取れる */
+  staffExpense: () => StaffExpense
+}
+
+/** 月給の集計。今月・先月の合計と、スタッフ 1 人ずつの内訳 */
+export type StaffExpense = {
+  thisMonth: number
+  lastMonth: number
+  total: number
+  byStaff: Array<{ id: string, wage: number, paid: number }>
 }
 
 type Attraction = (typeof attractions)[number]
 type Shop = (typeof shops)[number]
 type Facility = (typeof facilities)[number]
-type GuestBank = { bank: number, frameWidth: number, frameHeight: number, anchorX: number, anchorY: number }
+export type StaffType = (typeof staffConfig)[number]
+type GuestBank = {
+  bank: number
+  frameWidth: number
+  frameHeight: number
+  anchorX: number
+  anchorY: number
+  /** 歩行 4 方向のあとに続く動作のグループ(スタッフだけが持つ) */
+  groups?: Array<{ group: number, frame: number, count: number }>
+}
 type Footprint = { width: number, height: number, constructionCost: number }
 type AttractionBuildStep = 'body' | 'entrance' | 'exit'
 type RoadBuildMode = 'path' | 'queue' | 'stairs' | null
@@ -146,6 +172,18 @@ type PlacedAttraction = {
   rating: number
   // 性能ＵＰで上がるバージョン(0〜9)。上がるほど定員の上限が増える
   version: number
+  // 耐久度。運転するたびに減り、0 になると爆発してガレキになる。
+  // メカニックが修理すると満杯に戻る
+  durability: number
+  // メカニックを呼んでいる状態(煙が出ている)。修理が終わるまで下がらない
+  needsRepair: boolean
+  // 揺れの基準にする、絵の本来の位置
+  imageX: number
+  imageY: number
+  // 設定メニューの「点検」でメカニックを呼んだ状態。点検が終わると下りる
+  inspectRequested: boolean
+  // メカニックが到着して点検している間。運転を止め、撤去も受け付けない
+  underInspection: boolean
   // 休止中は受け入れを止める
   suspended: boolean
   // ステータスに出す利用者数。月が替わるときに今月ぶんを先月へ送る
@@ -172,6 +210,8 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
   attractionBuildStep,
   shopBuild,
   facilityBuild,
+  staffBuild,
+  onStaffMoved,
   availableCash,
   onAttractionPlaced,
   onAttractionPlacementCancelled,
@@ -180,6 +220,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
   onShopBuildStep,
   onShopComplete,
   onFacilityPlaced,
+  onStaffHired,
   onFacilityBuildStep,
   onStairsBuildStep,
   secondsPerDay,
@@ -201,6 +242,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
   const initialParkData = useRef(initialPark)
   const initialDays = useRef(initialElapsedDays)
   const takeSnapshot = useRef<(() => ParkSnapshot) | null>(null)
+  const readStaffExpense = useRef<(() => StaffExpense) | null>(null)
   const initialSecondsPerDay = useRef(secondsPerDay)
   const phaserGame = useRef<Phaser.Game | null>(null)
   const attractionPlacedHandler = useRef(onAttractionPlaced)
@@ -210,6 +252,8 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
   const shopStepHandler = useRef(onShopBuildStep)
   const shopCompleteHandler = useRef(onShopComplete)
   const facilityPlacedHandler = useRef(onFacilityPlaced)
+  const staffHiredHandler = useRef(onStaffHired)
+  const staffMovedHandler = useRef(onStaffMoved)
   const facilityStepHandler = useRef(onFacilityBuildStep)
   const stairsStepHandler = useRef(onStairsBuildStep)
   const admissionHandler = useRef(onAdmissionPaid)
@@ -229,6 +273,8 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
   shopStepHandler.current = onShopBuildStep
   shopCompleteHandler.current = onShopComplete
   facilityPlacedHandler.current = onFacilityPlaced
+  staffHiredHandler.current = onStaffHired
+  staffMovedHandler.current = onStaffMoved
   facilityStepHandler.current = onFacilityBuildStep
   stairsStepHandler.current = onStairsBuildStep
   admissionHandler.current = onAdmissionPaid
@@ -258,6 +304,9 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
     },
     snapshot() {
       return takeSnapshot.current?.() ?? null
+    },
+    staffExpense() {
+      return readStaffExpense.current?.() ?? { thisMonth: 0, lastMonth: 0, total: 0, byStaff: [] }
     },
     resolveRemoval(confirmed) {
       phaserGame.current?.scene.getScene('park')?.events.emit('resolve-removal', confirmed)
@@ -403,6 +452,12 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             })
           })
         }
+        this.load.image('mechanic-post', '/assets/park/mechanic-post.png')
+        this.load.image('rubble', '/assets/park/rubble.png')
+        this.load.image('repair-fence-bottom', '/assets/park/repair-fence-bottom.png')
+        this.load.image('repair-fence-top', '/assets/park/repair-fence-top.png')
+        this.load.image('repair-fence-left', '/assets/park/repair-fence-left.png')
+        this.load.image('repair-fence-right', '/assets/park/repair-fence-right.png')
         this.load.image('path-litter-drink', '/assets/park/path-litter-drink.png')
         this.load.image('path-litter-food', '/assets/park/path-litter-food.png')
         this.load.image('path-vomit', '/assets/park/path-vomit.png')
@@ -450,7 +505,20 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         const shopPrize = (shop: Shop) => ('prize' in shop ? shop.prize : null)
         // 飲食ショップの味付けの呼び名(店ごとに違う)。味付けのない店は null
         const shopTasteName = (shop: Shop) => ('tasteName' in shop ? shop.tasteName : null)
+        // 今どのモードかを持つ変数はここにまとめる。drawCursor がこれらを読み、
+        // その drawCursor はシーンの組み立て中に一度呼ばれるので、
+        // 後ろで宣言すると読み込み時に落ちる
         let activeFacility = facilityBuild
+        let activeStaffType = staffBuild
+        // 設定メニューを開いているスタッフ。settingsAttraction/settingsShop と同じ仕組みで扱う
+        let settingsStaff: Staff | null = null
+        // ピンセットでつまんでいるスタッフと、つまむ前にいたマス(取り消しで戻す)
+        let movingStaff: Staff | null = null
+        let carriedFrom: { x: number, y: number } | null = null
+        // 設定メニューの「清掃ルート」で編集中のスタッフと、そのマス列(最大 72)
+        let routeStaff: Staff | null = null
+        let routeTiles: Array<{ x: number, y: number }> = []
+        const routeTileLimit = 72
         let facilityDirection = 0
         let facilityStep: 'body' | 'direction' = 'body'
         let pendingFacility: { x: number, y: number } | null = null
@@ -796,6 +864,18 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           return date.getUTCFullYear() * 12 + date.getUTCMonth()
         }
         let monthIndex = monthAt(initialDays.current)
+        // 迷子を出してよい状態。原作は迷子が出た時点で下ろし(`FUN_801efb78`)、
+        // 日ごとの処理(`FUN_801f1894`)が
+        // 「乱数(0〜99) + 1 < パークの資産価値 ÷ 年間来場者数 ÷ 100」で立て直す
+        let lostChildArmed = true
+        let lastLostChildDay = Math.floor(initialDays.current)
+        // パークの資産価値。初期資金から始まり、設置費・雇用費を積み上げる(原作の項目 5)
+        let parkValue = game.park.initialCash
+        // 年間来場者数。入園するたびに 1 増え、年が替わると 0 に戻る
+        let visitorsThisYear = 0
+        let visitorYear = new Date(startDateMs + Math.floor(initialDays.current) * 86_400_000).getUTCFullYear()
+        // 月をまたいだときに追加で走らせたい処理を差し込む口。スタッフの月給・能率など
+        let monthlyExtraTask: (() => void) | null = null
         const refreshMonth = () => {
           const month = monthAt(elapsedDays)
           if (month === monthIndex) return
@@ -806,6 +886,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           }
           placedAttractions.forEach(roll)
           placedShops.forEach(roll)
+          monthlyExtraTask?.()
         }
 
         // ---- 歩道の汚れ ----
@@ -888,6 +969,16 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         const occupiedByAttraction = new Set<string>()
         const placedAttractions: PlacedAttraction[] = []
         let pendingAttraction: PlacedAttraction | null = null
+        // メカニックの拠点。原作は置いたマスのタイル種別コードを 0xbe にして
+        // 属性 0x400000(地面を占める建造物)を立て、地形描画がその絵を出す。
+        // 本作もマスを 1 つ占め、そこに拠点の絵を置く
+        const mechanicPosts = new Map<string, Phaser.GameObjects.Image>()
+        // アトラクションが爆発したあとに敷地へ残るガレキ。原作は跡地のマスのタイル種別コードを
+        // 0xbf にして、地形描画がその絵を出す。本作も同じくマスを 1 つ占める
+        const rubbleTiles = new Map<string, Phaser.GameObjects.Image>()
+        // 出入口変更で置き直しているアトラクションと、取り消したときに戻す変更前の出入口
+        let relocatingAccess: PlacedAttraction | null = null
+        let relocatedFrom: { entrance: AccessPoint | undefined, exit: AccessPoint | undefined } | null = null
         const tileKey = (x: number, y: number) => `${x},${y}`
         const parseKey = (key: string) => {
           const comma = key.indexOf(',')
@@ -935,6 +1026,8 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             && !isLockedEntranceTile(x, y)
             && !isGateStructureTile(x, y)
             && !occupiedByAttraction.has(tileKey(x, y))
+            && !mechanicPosts.has(tileKey(x, y))
+            && !rubbleTiles.has(tileKey(x, y))
         }
         const hasRoadConnection = (x: number, y: number) => (
           roads.has(tileKey(x, y)) || stairsTiles.has(tileKey(x, y)) || isLockedEntranceTile(x, y)
@@ -1069,6 +1162,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         let accessSide: AccessSide = 'bottom'
         const cursor = this.add.graphics().setDepth(overlayDepth)
         const shopArrow = this.add.graphics().setDepth(overlayDepth).setVisible(false)
+        const routeGraphics = this.add.graphics().setDepth(overlayDepth)
         // 原作のポインタ。通常は矢印、設置操作中はシャベルに変わる
         const pointer = this.add.image(0, 0, 'pointer-arrow').setOrigin(0).setDepth(overlayDepth)
         let attractionPreview: Phaser.GameObjects.Image | null = null
@@ -1420,6 +1514,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           // 設置費を課金。柵はドラッグ 1 マスごと、イケは 1 回の設置ごとに 1 回課金される
           currentCash -= facility.constructionCost
           facilityPlacedHandler.current(facility.constructionCost)
+          parkValue += facility.constructionCost
           if (facility.placement === 'pond') {
             placePond(facility, x, y)
             drawCursor()
@@ -1595,7 +1690,8 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           const shop = activeShop
           const placingShopBody = shop && shopStep === 'body'
           const placingBody = attraction && activeAttractionBuildStep === 'body'
-          const placingAccess = attraction && activeAttractionBuildStep !== 'body'
+          // 出入口変更のときは選んでいるアトラクションが無いので、置きかけの実体で判断する
+          const placingAccess = Boolean(pendingAttraction) && activeAttractionBuildStep !== 'body'
           // 設備もアトラクション/ショップと同じプレビュー経路に載せる(設置予定地に実物を表示)
           const placingFacility = activeFacility && facilityStep === 'body' ? activeFacility : null
           const facilityFrame = placingFacility ? facilityFrameAt(placingFacility, cursorPosition.x, cursorPosition.y) : 0
@@ -1620,7 +1716,14 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
                 }
                 : null
           const attractionOrigin = footprint ? attractionOriginAtCursor(footprint) : null
-          const valid = placingFacility
+          const valid = routeStaff
+            ? routeTiles.some((tile) => tile.x === cursorPosition.x && tile.y === cursorPosition.y)
+              || canToggleRouteTile(cursorPosition.x, cursorPosition.y)
+            : movingStaff
+            ? canPlaceStaffType(movingStaff.type, cursorPosition.x, cursorPosition.y)
+            : activeStaffType
+            ? canPlaceStaffType(activeStaffType, cursorPosition.x, cursorPosition.y)
+            : placingFacility
             ? canPlaceFacility(placingFacility, cursorPosition.x, cursorPosition.y)
             : footprint && attractionOrigin
               ? canPlaceAttraction(footprint, attractionOrigin.x, attractionOrigin.y)
@@ -1708,6 +1811,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           }
           // ポインタはメニューやダイアログが開いている間は隠す(原作のフラグ 0x8000 相当)
           const pointerConfig = activeRoadBuildMode || attraction || shop || activeFacility
+            || activeStaffType || movingStaff || routeStaff || relocatingAccess
             ? { key: 'pointer-shovel', offset: pointers.shovel.offset }
             : { key: 'pointer-arrow', offset: pointers.arrow.offset }
           const pointerBase = point(cursorPosition.x, cursorPosition.y)
@@ -1729,6 +1833,17 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
               .setPosition(tile.x + offsetX, tile.y + offsetY)
               .setDepth(renderDepthAt('facility', drawn.x, drawn.y))
               .setVisible(true).setAlpha(valid ? 1 : 0.55).setTint(valid ? 0xffffff : 0xff6048))
+          }
+          // つまんでいるスタッフはカーソルに付いてくる
+          if (movingStaff) holdStaffAtCursor(movingStaff, cursorPosition.x, cursorPosition.y)
+          // 清掃ルートを編集している間、選んだマスに丸印を出す
+          routeGraphics.clear()
+          if (routeStaff) {
+            routeGraphics.fillStyle(0x4ade80, 0.85)
+            routeTiles.forEach((tile) => {
+              const position = point(tile.x + 0.5, tile.y + 0.5)
+              routeGraphics.fillCircle(position.x, position.y, 4)
+            })
           }
         }
         // カメラ追従に使う、マスに丸める前のカーソル位置(画面座標)
@@ -2056,6 +2171,17 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           }
           drawCursor()
         }
+        // ---- 耐久度 ----
+        // 設定には施設仕様のバージョン 0 とバージョン 9 の段階(0〜9)を持たせてあるので、
+        // 今のバージョンぶんを内挿してから 1 段階あたりの点数を掛けて満杯の値にする
+        const breakdownConfig = game.breakdown
+        // 原作の 1 日ぶんの更新フレーム数(標準速度)。フレーム単位の値を日数に直すのに使う
+        const originalFramesPerDay = game.time.originalFramesPerDay
+        const durabilityLimitOf = (attraction: Attraction, version: number) => {
+          const level = attraction.durability
+            + Math.round((attraction.durabilityMax - attraction.durability) * version / game.facilityMenu.maxVersion)
+          return (level + 1) * breakdownConfig.unit
+        }
         // アトラクション本体を置く。設置操作とセーブデータからの復元で共通に使う
         const addAttraction = (attraction: Attraction, x: number, y: number) => {
           const bottomX = x
@@ -2119,10 +2245,16 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             price: attractionUseConfig.initialPrice,
             rating: 0,
             version: 0,
+            durability: durabilityLimitOf(attraction, 0),
+            needsRepair: false,
+            inspectRequested: false,
+            underInspection: false,
             suspended: false,
             usedThisMonth: 0,
             usedLastMonth: 0,
             image,
+            imageX: image.x,
+            imageY: image.y,
             baseImages,
           }
           placedAttractions.push(placed)
@@ -2144,6 +2276,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           pendingAttraction = addAttraction(attraction, x, y)
           currentCash -= attraction.constructionCost
           attractionPlacedHandler.current(attraction.constructionCost)
+          parkValue += attraction.constructionCost
           activeAttractionBuildStep = 'entrance'
           // 最初は手前(下)の辺の中央から選ばせる
           accessSide = 'bottom'
@@ -2265,6 +2398,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           pendingShop = { x, y, cost: shop.constructionCost, image }
           currentCash -= shop.constructionCost
           shopPlacedHandler.current(shop.constructionCost)
+          parkValue += shop.constructionCost
           if (shop.directions > 1) {
             shopStep = 'direction'
             shopStepHandler.current('direction')
@@ -2372,6 +2506,50 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           entrance.image.setTexture(`facility-entrance-frame-${entranceFrameAt(facility)}`)
           redrawQueueTiles(connection.x, connection.y)
         }
+        // 出入口変更。今の入口・出口を外して、設置のときと同じ手順で置き直す。
+        // 取り消したときに戻せるよう、外した位置を控えておく
+        const dropAccess = (placed: PlacedAttraction, accessStep: 'entrance' | 'exit') => {
+          const access = placed[accessStep]
+          if (!access) return
+          access.image.destroy()
+          if (accessStep === 'entrance') {
+            occupiedByAttraction.delete(tileKey(access.x, access.y))
+            redrawQueueTiles(access.x, access.y)
+          }
+          placed[accessStep] = undefined
+        }
+        const startAccessRelocation = (placed: PlacedAttraction) => {
+          relocatingAccess = placed
+          relocatedFrom = { entrance: placed.entrance, exit: placed.exit }
+          dropAccess(placed, 'entrance')
+          dropAccess(placed, 'exit')
+          pendingAttraction = placed
+          activeAttractionBuildStep = 'entrance'
+          accessSide = 'bottom'
+          snapAccessCursor(placed.x + Math.floor(placed.width / 2), placed.y + placed.height)
+          drawCursor()
+        }
+        // 取り消し。置きかけの入口を外し、元の入口・出口を描き直す
+        const cancelAccessRelocation = () => {
+          const placed = relocatingAccess
+          const before = relocatedFrom
+          relocatingAccess = null
+          relocatedFrom = null
+          pendingAttraction = null
+          activeAttractionBuildStep = 'body'
+          if (!placed) return
+          dropAccess(placed, 'entrance')
+          dropAccess(placed, 'exit')
+          if (before?.entrance) {
+            placed.entrance = addAttractionAccess('entrance', before.entrance.x, before.entrance.y, before.entrance.frame)
+            connectEntranceToQueue(placed)
+            redrawQueueTiles(before.entrance.x, before.entrance.y)
+          }
+          if (before?.exit) {
+            placed.exit = addAttractionAccess('exit', before.exit.x, before.exit.y, before.exit.frame)
+          }
+          drawCursor()
+        }
         const placeAttractionAccess = () => {
           const facility = pendingAttraction
           const { x, y } = cursorPosition
@@ -2397,6 +2575,8 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             facility.exit = access
             pendingAttraction = null
             activeAttractionBuildStep = 'body'
+            relocatingAccess = null
+            relocatedFrom = null
             attractionAccessPlacedHandler.current('exit')
           }
           drawCursor()
@@ -2509,6 +2689,10 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           const index = placedAttractions.indexOf(placed)
           if (index >= 0) placedAttractions.splice(index, 1)
           if (settingsAttraction === placed) closeFacilitySettings()
+          // 修理の柵と故障の煙も一緒に消す
+          clearRepairFence(placed)
+          breakdownSmoke.get(placed)?.destroy()
+          breakdownSmoke.delete(placed)
           // 乗車中の客は支払いなしで降ろし、並んでいた客は列を離れさせる
           releaseRiders(placed, false)
           guests.forEach((guest) => {
@@ -2525,6 +2709,60 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           // 入口につながっていた整列歩道は行き先を失うので描き直す
           if (placed.entrance) redrawQueueTiles(placed.entrance.x, placed.entrance.y)
           drawCursor()
+        }
+        // 爆発したアトラクションの跡地に残るガレキ。原作は跡地のマスを 1 つずつ見て、
+        // 抽選に当たったマスだけをガレキにし、外れたマスは更地に戻す
+        // (`FUN_801f7368` の爆発の枝。当たりはおよそ半々)
+        const addRubble = (x: number, y: number) => {
+          const key = tileKey(x, y)
+          if (rubbleTiles.has(key)) return
+          const offset = terrain.tileObjectOffsets.rubble
+          const tile = point(x, y)
+          rubbleTiles.set(key, this.add.image(tile.x + offset.x, tile.y + offset.y, 'rubble')
+            .setOrigin(0).setDepth(roadPieceDepth(x, y)))
+        }
+        const removeRubble = (x: number, y: number) => {
+          const key = tileKey(x, y)
+          rubbleTiles.get(key)?.destroy()
+          rubbleTiles.delete(key)
+        }
+        // ガレキは設置できないが、撤去はできる。費用は 1 マスあたり 3,000
+        const removeRubbleAtCursor = () => {
+          const { x, y } = cursorPosition
+          if (!rubbleTiles.has(tileKey(x, y))) return
+          const cost = breakdownConfig.rubbleRemovalCost
+          if (currentCash < cost) {
+            buildMessageHandler.current('資金が足りないので撤去できません。')
+            return
+          }
+          currentCash -= cost
+          spendHandler.current(cost)
+          removeRubble(x, y)
+          drawCursor()
+        }
+        const scatterRubble = (placed: PlacedAttraction) => {
+          for (let offsetY = 0; offsetY < placed.height; offsetY += 1) {
+            for (let offsetX = 0; offsetX < placed.width; offsetX += 1) {
+              if (Math.random() < breakdownConfig.rubbleChance) addRubble(placed.x + offsetX, placed.y + offsetY)
+            }
+          }
+        }
+        // 1 回運転するごとに耐久度を減らす。一定割合を下回るとメカニックを呼び、
+        // 0 になると事故で壊れて爆発し、跡地にガレキが残る
+        const wearAttraction = (placed: PlacedAttraction) => {
+          const limit = durabilityLimitOf(placed.attraction, placed.version)
+          placed.durability = Math.max(0, placed.durability - breakdownConfig.wearPerRun)
+          if (placed.durability <= 0) {
+            const name = attractionForm(placed.attraction).name
+            scatterRubble(placed)
+            removeAttraction(placed)
+            buildMessageHandler.current(`${name} が事故を起こしました。`)
+            return
+          }
+          if (!placed.needsRepair && placed.durability < limit * breakdownConfig.smokeThreshold) {
+            placed.needsRepair = true
+            buildMessageHandler.current(`${attractionForm(placed.attraction).name} から煙が出ています。`)
+          }
         }
         const removeShop = (placed: PlacedShop) => {
           const index = placedShops.indexOf(placed)
@@ -2590,13 +2828,14 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         const serviceCountOf = (placed: PlacedShop) => (
           byVersion(placed.shop.serviceCount, placed.shop.serviceCountMax, placed.version)
         )
-        const versionItem = (version: number): FacilitySettingItem => ({
+        // 施設・ショップは「性能ＵＰ」、スタッフは「能力ＵＰ」で、アイコン(41)と定額の費用は共通
+        const versionItem = (version: number, label = '性能', target = '性能'): FacilitySettingItem => ({
           id: 'versionUp',
-          label: '性能',
+          label,
           icon: 41,
           kind: 'confirm',
           text: `Lv.${version}`,
-          description: `性能を上げられます。費用は ${settingsConfig.versionUpCost.toLocaleString()} です。`,
+          description: `${target}を上げられます。費用は ${settingsConfig.versionUpCost.toLocaleString()} です。`,
           enabled: version < settingsConfig.maxVersion,
         })
         // 金額の項目。桁ごとに変えるので、桁数は上限の桁数に合わせる
@@ -2621,10 +2860,12 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
               label: '運転休止',
               icon: 74,
               kind: 'toggle',
-              text: placed.suspended ? '休 止' : '運 転',
-              on: !placed.suspended,
-              description: 'アトラクションの運転や休止の設定ができます。',
-              enabled: true,
+              text: placed.underInspection ? '点 検' : placed.suspended ? '休 止' : '運 転',
+              on: !placed.suspended && !placed.underInspection,
+              description: placed.underInspection
+                ? '点検中は運転できません。'
+                : 'アトラクションの運転や休止の設定ができます。',
+              enabled: !placed.underInspection,
             },
             {
               id: 'capacity',
@@ -2664,9 +2905,49 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
               description: 'お客さんがアトラクションに乗っている時間を設定できます。',
               enabled: true,
             },
+            {
+              id: 'inspect',
+              label: '点検',
+              icon: 38,
+              kind: 'confirm',
+              text: placed.underInspection ? '点検中' : placed.inspectRequested || placed.needsRepair ? '呼出中' : '',
+              description: 'アトラクションを修理するためにメカニックをよべます。',
+              enabled: !placed.inspectRequested && !placed.needsRepair && !placed.underInspection,
+            },
             priceItem('price', '乗車額', 40, 'アトラクションの乗車額を設定できます。', placed.price),
             versionItem(placed.version),
+            {
+              id: 'relocateAccess',
+              label: '出入口変更',
+              icon: 42,
+              kind: 'confirm',
+              description: placed.underInspection
+                ? '点検中は出入口変更ができません。'
+                : 'アトラクションの出入口を移動できます。',
+              enabled: !placed.underInspection,
+            },
           )
+          // 開発サーバでだけ出すデバッグ操作。本番の書き出しにはこの分岐ごと残らない
+          if (import.meta.env.DEV) {
+            items.push(
+              {
+                id: 'debugBreak',
+                label: '故障させる',
+                icon: 38,
+                kind: 'confirm',
+                description: '【デバッグ】耐久度を黒煙が上がるところまで下げます。',
+                enabled: !placed.underInspection,
+              },
+              {
+                id: 'debugExplode',
+                label: '事故を起こす',
+                icon: 38,
+                kind: 'confirm',
+                description: '【デバッグ】耐久度を 1 にします。次に運転すると事故を起こします。',
+                enabled: !placed.underInspection,
+              },
+            )
+          }
           return items
         }
         const shopSettingItems = (placed: PlacedShop): FacilitySettingItem[] => {
@@ -2713,8 +2994,9 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           items.push(versionItem(placed.version))
           return items
         }
-        // ステータス枠の中身。並びは原作のステータス表示に合わせる。
-        // 耐久度・耐久性・撤去費用・在庫はまだ扱っていないので出さない
+        // ステータス枠の中身。並びは原作のステータス表示に合わせる(原作の記録は
+        // `0x80118254`、耐久度は message 783、アイコン 38)。
+        // 耐久性・撤去費用・在庫はまだ扱っていないので出さない
         const usedText = (placed: { usedLastMonth: number, usedThisMonth: number }) => (
           `${placed.usedLastMonth} / ${placed.usedThisMonth}`
         )
@@ -2723,6 +3005,11 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             { icon: 35, label: '運転状態', value: placed.suspended ? '休 止' : '運 転' },
             { icon: 40, label: '乗車額', value: placed.price.toLocaleString() },
             { icon: 36, label: '定員数 / 最大', value: `${placed.capacity} / ${capacityLimitOf(placed)}` },
+            {
+              icon: 38,
+              label: '耐久度',
+              value: `${placed.durability} / ${durabilityLimitOf(placed.attraction, placed.version)}`,
+            },
             { icon: 52, label: '興奮度', value: `${placed.attraction.excitement}` },
             { icon: 53, label: '経費', value: placed.attraction.maintenanceCost.toLocaleString() },
           ]
@@ -2776,23 +3063,34 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
               status: shopStatus(settingsShop),
             }
           }
+          if (settingsStaff) {
+            return {
+              title: `${settingsStaff.name}(${settingsStaff.type.label})`,
+              version: settingsStaff.version,
+              items: staffSettingItems(settingsStaff),
+              status: staffStatus(settingsStaff),
+            }
+          }
           return null
         }
         const pushFacilitySettings = () => facilitySettingsHandler.current(facilitySettingsModel())
         const closeFacilitySettings = () => {
-          if (!settingsAttraction && !settingsShop) return
+          if (!settingsAttraction && !settingsShop && !settingsStaff) return
           settingsAttraction = null
           settingsShop = null
+          settingsStaff = null
           pushFacilitySettings()
         }
-        // カーソルの下に設置済みの施設があれば設定メニューを開く
+        // カーソルの下に設置済みの施設・スタッフがあれば設定メニューを開く
         const openFacilitySettings = () => {
           const { x, y } = cursorPosition
           const attraction = attractionCoveringTile(x, y)
           const shop = attraction ? null : shopCoveringTile(x, y)
-          if (!attraction && !shop) return false
+          const worker = attraction || shop ? null : staffAtTile(x, y)
+          if (!attraction && !shop && !worker) return false
           settingsAttraction = attraction
           settingsShop = shop
+          settingsStaff = worker
           pushFacilitySettings()
           return true
         }
@@ -2800,6 +3098,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         const setFacilitySetting = (itemId: string, value: number) => {
           const attraction = settingsAttraction
           const shop = settingsShop
+          const worker = settingsStaff
           const price = (input: number) => clampSetting(input, 0, settingsConfig.maxPrice)
           if (attraction) {
             if (itemId === 'capacity') attraction.capacity = clampSetting(value, 1, capacityLimitOf(attraction))
@@ -2813,22 +3112,99 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             if (itemId === 'prizePrice') shop.prizePrice = price(value)
             if (itemId === 'winRate') shop.winRate = clampSetting(value, 0, settingsConfig.maxWinRate)
           }
+          else if (worker) {
+            if (itemId === 'wage') worker.wage = price(value)
+          }
           else return
           pushFacilitySettings()
         }
-        // 切り替えの項目(運転休止)と、確認を経て効く項目(性能)
+        // 切り替えの項目(運転休止)と、確認を経て効く項目(性能・解雇)
         const activateFacilitySetting = (itemId: string) => {
           const attraction = settingsAttraction
           const shop = settingsShop
-          if (!attraction && !shop) return
+          const worker = settingsStaff
+          if (!attraction && !shop && !worker) return
           if (itemId === 'suspend') {
             if (!attraction) return
             attraction.suspended = !attraction.suspended
             pushFacilitySettings()
             return
           }
+          if (itemId === 'inspect') {
+            if (!attraction || attraction.inspectRequested || attraction.needsRepair) return
+            if (attraction.underInspection) return
+            // 呼べるメカニックがいなければ受け付けない
+            if (!staff.some((entry) => entry.type.id === 'mechanic' && !entry.striking)) {
+              buildMessageHandler.current('点検できるメカニックがいません。')
+              return
+            }
+            attraction.inspectRequested = true
+            buildMessageHandler.current('メカニックをよびました。')
+            pushFacilitySettings()
+            return
+          }
+          if (itemId === 'suspend' && attraction?.underInspection) {
+            buildMessageHandler.current('点検中は運転できません。')
+            return
+          }
+          // 開発サーバでだけ効くデバッグ操作
+          if (itemId === 'debugBreak' || itemId === 'debugExplode') {
+            if (!import.meta.env.DEV || !attraction || attraction.underInspection) return
+            if (itemId === 'debugExplode') {
+              // 次に運転したときに耐久度が 0 になって事故を起こす
+              attraction.durability = 1
+              buildMessageHandler.current('【デバッグ】耐久度を 1 にしました。')
+            }
+            else {
+              // 黒煙が上がる境目のすぐ下まで下げ、その場で故障の状態にする
+              const limit = durabilityLimitOf(attraction.attraction, attraction.version)
+              attraction.durability = Math.max(1, Math.ceil(limit * breakdownConfig.smokeThreshold) - 1)
+              attraction.needsRepair = true
+              buildMessageHandler.current(`${attractionForm(attraction.attraction).name} から煙が出ています。`)
+            }
+            pushFacilitySettings()
+            return
+          }
+          if (itemId === 'relocateAccess') {
+            if (!attraction) return
+            if (attraction.underInspection) {
+              buildMessageHandler.current('点検中は出入口変更ができません。')
+              return
+            }
+            closeFacilitySettings()
+            startAccessRelocation(attraction)
+            buildMessageHandler.current('入口を置く場所を選んでください。')
+            return
+          }
+          if (itemId === 'dismiss') {
+            if (!worker || worker.striking) return
+            dismissStaff(worker)
+            closeFacilitySettings()
+            return
+          }
+          if (itemId === 'reposition') {
+            if (!worker || worker.striking || staffIsBusy(worker)) return
+            // つまみ上げる。以降カーソルに付いて動き、決定で下ろす
+            movingStaff = worker
+            carriedFrom = { x: worker.fromX, y: worker.fromY }
+            worker.path = null
+            worker.pathIndex = 0
+            worker.progress = 0
+            worker.walked = 0
+            closeFacilitySettings()
+            buildMessageHandler.current(`${worker.type.label}をつまみました。下ろす場所を選んでください。`)
+            return
+          }
+          if (itemId === 'route') {
+            if (!worker || worker.type.id !== 'sweeper' || worker.striking || staffIsBusy(worker)) return
+            routeStaff = worker
+            routeTiles = worker.route ? [...worker.route] : []
+            closeFacilitySettings()
+            buildMessageHandler.current('清掃するマスを選んでください。決定で追加・削除、キャンセルで確定します。')
+            return
+          }
           if (itemId !== 'versionUp') return
-          const version = attraction?.version ?? shop!.version
+          const version = attraction?.version ?? shop?.version ?? worker!.version
           if (version >= settingsConfig.maxVersion) return
           if (currentCash < settingsConfig.versionUpCost) {
             buildMessageHandler.current('資金が足りないので性能を上げられません。')
@@ -2836,7 +3212,8 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           }
           spendHandler.current(settingsConfig.versionUpCost)
           if (attraction) attraction.version += 1
-          else shop!.version += 1
+          else if (shop) shop.version += 1
+          else worker!.version += 1
           pushFacilitySettings()
         }
 
@@ -2848,9 +3225,12 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           // 設置モード中は同じ系統のものだけ撤去できる。何のモードでもなければどちらも撤去できる
           const buildingMode = Boolean(activeAttraction || activeShop)
           const groundMode = Boolean(activeRoadBuildMode || activeFacility)
+          // スタッフの配置中・移動先選択中・清掃ルート編集中は撤去に何も反応させない(道を消してしまわないように)
+          if (activeStaffType || movingStaff || routeStaff || relocatingAccess) return
           if (!buildingMode) {
             removeRoad()
             removeFacilityAtCursor()
+            removeRubbleAtCursor()
           }
           if (groundMode || pendingRemoval) return
           // 確認を出したら押しっぱなし扱いは解除する。返事のあと勝手に続きが消えないように
@@ -2860,6 +3240,10 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             removeConfirmHandler.current(name)
           }
           const attraction = attractionCoveringTile(x, y)
+          if (attraction?.underInspection) {
+            buildMessageHandler.current('修理中のアトラクションは撤去できません。')
+            return
+          }
           if (attraction) {
             askRemoval(() => removeAttraction(attraction), (() => {
               const base = attractions.find((entry) => entry.id === attraction.id)
@@ -2881,11 +3265,92 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           (activeRoadBuildMode && stairsStep === 'body')
           || (activeFacility && facilityStep === 'body'),
         )
+        // つまんでいるスタッフをカーソルのマスに置く。1 マスずつ運ぶので歩かせない
+        const holdStaffAtCursor = (worker: Staff, x: number, y: number) => {
+          worker.fromX = x
+          worker.fromY = y
+          worker.toX = x
+          worker.toY = y
+          worker.previousX = x
+          worker.previousY = y
+          worker.progress = 1
+          worker.walked = 0
+          placeStaffImage(worker)
+        }
+        // 決定でその場に下ろす
+        const moveStaffToCursor = () => {
+          const worker = movingStaff
+          if (!worker) return
+          if (!canPlaceStaffType(worker.type, cursorPosition.x, cursorPosition.y)) {
+            buildMessageHandler.current(
+              worker.type.id === 'mechanic'
+                ? '何もない地面にしか下ろせません。'
+                : 'その場所には下ろせません。',
+            )
+            return
+          }
+          movingStaff = null
+          carriedFrom = null
+          clearCarriedLook(worker)
+          // メカニックは拠点ごと移る
+          if (worker.type.id === 'mechanic') {
+            removeMechanicPost(worker.homeX, worker.homeY)
+            addMechanicPost(cursorPosition.x, cursorPosition.y)
+          }
+          holdStaffAtCursor(worker, cursorPosition.x, cursorPosition.y)
+          worker.homeX = cursorPosition.x
+          worker.homeY = cursorPosition.y
+          // 楽しませる職種は下ろした場所を持ち場にして待ちから始める(雇ったときと同じ)
+          worker.settled = true
+          worker.performing = false
+          worker.performTick = 0
+          worker.waitTick = 0
+          buildMessageHandler.current(`${worker.type.label}を下ろしました。`)
+          drawCursor()
+          staffMovedHandler.current()
+        }
+        // 取り消し。つまむ前のマスへ戻す
+        const cancelCarry = () => {
+          const worker = movingStaff
+          const origin = carriedFrom
+          movingStaff = null
+          carriedFrom = null
+          if (worker && origin) {
+            clearCarriedLook(worker)
+            holdStaffAtCursor(worker, origin.x, origin.y)
+          }
+        }
+        // 清掃ルートのマスを 1 つ選ぶかどうか。同じ高さの歩道だけ、既にあれば外す、
+        // なければ上限まで足す(清掃ルートは同じ高さの場所だけに設定できる)
+        const canToggleRouteTile = (x: number, y: number) => {
+          if (!roads.has(tileKey(x, y))) return false
+          if (routeTiles.length === 0) return true
+          return heightAt(x, y) === heightAt(routeTiles[0].x, routeTiles[0].y)
+        }
+        const toggleRouteTile = () => {
+          const { x, y } = cursorPosition
+          const index = routeTiles.findIndex((tile) => tile.x === x && tile.y === y)
+          if (index >= 0) { routeTiles.splice(index, 1); drawCursor(); return }
+          if (!canToggleRouteTile(x, y)) {
+            buildMessageHandler.current('清掃ルートは同じ高さの歩道だけに設定できます。')
+            return
+          }
+          if (routeTiles.length >= routeTileLimit) {
+            buildMessageHandler.current(`清掃ルートは ${routeTileLimit} マスまでです。`)
+            return
+          }
+          routeTiles.push({ x, y })
+          drawCursor()
+        }
         // カーソル位置に今のモードのものを置く
         const placeAtCursor = () => {
-          if (activeRoadBuildMode) stairsStep === 'direction' ? finishStairsDirection() : placeRoad()
+          if (routeStaff) toggleRouteTile()
+          else if (movingStaff) moveStaffToCursor()
+          else if (activeStaffType) placeStaff()
+          else if (activeRoadBuildMode) stairsStep === 'direction' ? finishStairsDirection() : placeRoad()
           else if (activeFacility) facilityStep === 'direction' ? finishFacilityDirection() : placeFacility()
           else if (activeShop) shopStep === 'direction' ? confirmShopDirection() : placeShop()
+          else if (pendingAttraction && activeAttractionBuildStep !== 'body') placeAttractionAccess()
           else if (activeAttraction) {
             if (activeAttractionBuildStep === 'body') placeAttraction()
             else placeAttractionAccess()
@@ -3097,6 +3562,15 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           if (direction === 'cancel' && activeShop && shopStep === 'direction') cancelShopDirection()
           if (direction === 'cancel' && activeFacility && facilityStep === 'direction') cancelFacilityDirection()
           if (direction === 'cancel' && stairsStep === 'direction') cancelStairsDirection()
+          if (direction === 'cancel' && relocatingAccess) cancelAccessRelocation()
+          if (direction === 'cancel' && movingStaff) cancelCarry()
+          // 清掃ルートの編集を終える。それまでに選んだマスをそのまま清掃ルートにする
+          if (direction === 'cancel' && routeStaff) {
+            routeStaff.route = routeTiles.length > 0 ? [...routeTiles] : null
+            routeStaff.routeIndex = 0
+            routeStaff = null
+            routeTiles = []
+          }
           if (direction === 'remove') {
             removeHeld = true
             removeAtCursor()
@@ -3145,6 +3619,11 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           if (facilityStep === 'direction') cancelFacilityDirection()
           facilityDirection = 0
           activeFacility = facility
+          confirmHeld = false
+          drawCursor()
+        })
+        this.events.on('staff-build-mode', (type: StaffType | null) => {
+          activeStaffType = type
           confirmHeld = false
           drawCursor()
         })
@@ -3208,6 +3687,8 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
                 version: placed.version,
                 usedThisMonth: placed.usedThisMonth,
                 usedLastMonth: placed.usedLastMonth,
+                durability: placed.durability,
+                needsRepair: placed.needsRepair,
               },
             })),
           shops: placedShops.map((placed) => ({
@@ -3231,6 +3712,22 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             frame: placed.frame,
           })),
           buildings: [...placedBuildings],
+          rubble: [...rubbleTiles.keys()].map((key) => parseKey(key)),
+          staff: staff.map((worker) => ({
+            id: worker.type.id,
+            x: worker.fromX,
+            y: worker.fromY,
+            homeX: worker.homeX,
+            homeY: worker.homeY,
+            name: worker.name,
+            version: worker.version,
+            wage: worker.wage,
+            hireDay: worker.hireDay,
+            efficiency: worker.efficiency,
+            paid: worker.paid,
+            anger: worker.anger,
+            route: worker.route ?? undefined,
+          })),
         })
         // セーブデータから園を組み立て直す。道の絵は全部そろえてから一度に描き直す
         const restoreSnapshot = (snapshot: ParkSnapshot) => {
@@ -3255,6 +3752,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             if (facility) addFacility(facility, frame, x, y)
           })
           snapshot.buildings.forEach((id) => placedBuildings.add(id))
+          snapshot.rubble?.forEach(({ x, y }) => addRubble(x, y))
           snapshot.attractions.forEach((saved) => {
             let attraction = attractions.find((entry) => entry.id === saved.id)
             // 古いセーブに秋冬の姿の ID で残っている場合は元のアトラクションに読み替える
@@ -3280,7 +3778,12 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
               placed.version = saved.settings.version
               placed.usedThisMonth = saved.settings.usedThisMonth ?? 0
               placed.usedLastMonth = saved.settings.usedLastMonth ?? 0
+              // 古いセーブには耐久度がないので、そのバージョンでの満杯として扱う
+              placed.durability = saved.settings.durability ?? durabilityLimitOf(attraction, placed.version)
+              placed.needsRepair = saved.settings.needsRepair ?? false
             }
+            // 手動で稼動させる系統は、ロード後は休止から始める
+            if (attraction.manualStart) placed.suspended = true
           })
           snapshot.shops.forEach(({ id, x, y, direction, settings }) => {
             const shop = shops.find((entry) => entry.id === id)
@@ -3401,8 +3904,14 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           outlaw: boolean
           // 帰る時刻を過ぎ、ゲート下で迎えのバイクを待っている
           waitingForRide: boolean
+          // ガードマンに退治され、バス待ち看板まで連れて行かれている間。自分では歩かない
+          arrested: boolean
           // アウトローに出くわしたキッズが、次に怖がるまでの日付
           shockedUntil: number
+          // 子とはぐれた親。ファミリーだけがなる
+          lost: boolean
+          // 迷子の子から見た親。null ならこの来園者は子ではない
+          lostParent: Guest | null
           image: Phaser.GameObjects.Sprite
         }
         const guests: Guest[] = []
@@ -3609,6 +4118,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
         // 満腹度と水分は 1 日 15 回の更新で 1 ずつ減り、100 を下回ると飲食ショップを探す。
         // 原作は逆に「空腹値」「渇き値」が増えていく作りで、それとは別に満腹値を持っていた
         const needsConfig = guestConfig.needs
+        const lostChildConfig = game.lostChild
         // ショップの分類と、それが満たす内部値の対応
         const needFieldOf = { food: 'satiety', drink: 'hydration' } as const
         const moodConfig = guestConfig.mood
@@ -3676,6 +4186,21 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             }
             if (guest.phase === 'walking') {
               guest.fatigue = Math.min(needsConfig.max, guest.fatigue + needsConfig.fatigueWalkPerUpdate)
+              // 迷子は原作 `FUN_801efb78`(D2MAIN)の条件そのまま: 種別 7/8(ファミリー)だけが対象、
+              // 疲労が 100 以下、パーク全体で同時に 1 件まで(`_DAT_8014f560` の 0x40/0x20 ビット)
+              if (lostChildArmed && !guest.lost && !guest.lostParent
+                && guestConfig.types[guest.type].id === 'family'
+                && guest.fatigue <= lostChildConfig.maxFatigue
+                && !guests.some((other) => other.lost)
+                && Math.random() < lostChildConfig.chancePerUpdate) {
+                lostChildArmed = false
+                guest.lost = true
+                guest.path = null
+                guest.pathIndex = 0
+                guest.targetShop = null
+                spawnLostChild(guest)
+                buildMessageHandler.current('パーク内で迷子になっている子どもがいるようです。')
+              }
             }
             if (guest.fatigue >= needsConfig.max) changeMood(guest, moodConfig.limitPenalty)
           }
@@ -3854,6 +4379,33 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           const walkway = shopWalkwayTiles(placed.shop, placed.x, placed.y, placed.direction)
           path.push(walkway[walkway.length - 1])
           return path
+        }
+        // インフォメーションの正面マス。無ければ null
+        const informationFront = () => {
+          for (const [key, placed] of placedFacilities) {
+            if (placed.facility.id === 'information') return parseKey(key)
+          }
+          return null
+        }
+        // はぐれた親子をインフォメーションへ向かわせる。原作は迷子が出たときに
+        // 親の目的地をインフォメーションにし、子も手が空くたびにそこを目指す
+        const headForInformation = (guest: Guest) => {
+          const target = informationFront()
+          if (!target) return
+          if (guest.fromX === target.x && guest.fromY === target.y) return
+          const reach = buildReachMap(guest.fromX, guest.fromY, walkableFor(guest, false))
+          const goal = tileKey(target.x, target.y)
+          if (!reach.has(goal)) return
+          const path: Array<{ x: number, y: number }> = []
+          let key: string | null = goal
+          while (key) {
+            path.unshift(parseKey(key))
+            key = reach.get(key) ?? null
+          }
+          path.shift()
+          if (path.length === 0) return
+          guest.path = path
+          guest.pathIndex = 0
         }
         // 店を利用できるか(支払い能力とキッズ制限)。探索と通りすがり発見で共通
         const canAffordShop = (guest: Guest, shop: Shop) => {
@@ -4107,8 +4659,8 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
               attraction.exit && queueDistanceMap(attraction).has(key)
             ))
             if (!placed || guest.ridden.has(placed.id)) continue
-            // 休止中のアトラクションには並ばない
-            if (placed.suspended) continue
+            // 休止中・点検中のアトラクションには並ばない
+            if (placed.suspended || placed.underInspection) continue
             if (placed.price * guestConfig.types[guest.type].people > guest.money) continue
             if (Math.random() >= attractionUseConfig.joinChance) continue
             occupiedQueueTiles.add(key)
@@ -4161,6 +4713,8 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
               // 乗るたびに酔いがたまる。原作はアトラクションごとの酔いやすさを掛けるが、
               // その表がまだ取れていないので速度設定だけで増やしている
               guest.nausea = Math.min(litterConfig.nauseaMax, guest.nausea + placed.speedSetting)
+              // 煙が出たまま乗せると気分が大きく下がる
+              if (placed.needsRepair) changeMood(guest, breakdownConfig.brokenRating)
               // 乗り終えると待ちくたびれ具合が種類ごとの初期値に戻る
               guest.queueWait = guestConfig.types[guest.type].queueWaitBase
               if (guest.money <= 0) guest.leaveAtDay = elapsedDays
@@ -4179,6 +4733,8 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           })
           rideStates.delete(placed)
           drawRiders(placed)
+          // 1 回運転するたびに耐久度が減る。休止中は運転しないので減らない
+          if (charge) wearAttraction(placed)
         }
         // 列の先頭で乗り込む。入口のマスへは踏み込まず、その手前で姿を消す
         const boardRide = (guest: Guest, placed: PlacedAttraction) => {
@@ -4236,7 +4792,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             // 入口の前。受け入れ中で定員に空きがあればここで乗り込む。
             // 稼働中は入口が閉まっているので次の受け入れまで待つ
             const state = rideStates.get(placed)
-            const boardable = !placed.suspended
+            const boardable = !placed.suspended && !placed.underInspection
               && (!state || state.phase === 'loading')
               && (state?.people ?? 0) + guestConfig.types[guest.type].people <= placed.capacity
             if (boardable) {
@@ -4499,7 +5055,10 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             leaveAtDay: elapsedDays + guestConfig.stayDays,
             outlaw: false,
             waitingForRide: false,
+            arrested: false,
             shockedUntil: 0,
+            lost: false,
+            lostParent: null,
             image: this.add.sprite(0, 0, `guest-${bank.bank}`).setOrigin(0, 0),
           }
           guests.push(guest)
@@ -4558,19 +5117,1401 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             leaveAtDay: elapsedDays + outlawConfig.stayDays,
             outlaw: true,
             waitingForRide: false,
+            arrested: false,
             shockedUntil: 0,
+            lost: false,
+            lostParent: null,
             image: this.add.sprite(0, 0, `guest-${bank.bank}`).setOrigin(0, 0),
           }
           guests.push(guest)
           placeGuestImage(guest)
           buildMessageHandler.current('アウトローがやってきました。')
         }
+        // 親とはぐれた子。親と同じ姿で親のいたマスに現れ、買い物も乗車もせずに歩き回る。
+        // 親と同じマスで出会うか、ガードマンに親のところまで運ばれると再会する
+        const spawnLostChild = (parent: Guest) => {
+          const child: Guest = {
+            ...parent,
+            money: 0,
+            paid: true,
+            satiety: needsConfig.max,
+            hydration: needsConfig.max,
+            fatigue: 0,
+            nausea: 0,
+            toiletUrge: 0,
+            trash: Array<number>(trashKindCount).fill(0),
+            facility: null,
+            targetShop: null,
+            targetAttraction: null,
+            ridden: new Set(),
+            path: null,
+            pathIndex: 0,
+            serviceRemaining: 0,
+            phase: 'walking',
+            progress: 1,
+            reactionFrames: 0,
+            reactionImage: this.add.image(0, 0, `reaction-${0x1c}`).setOrigin(0).setVisible(false),
+            lost: false,
+            lostParent: parent,
+            image: this.add.sprite(0, 0, `guest-${parent.bank.bank}`).setOrigin(0, 0),
+          }
+          guests.push(child)
+          placeGuestImage(child)
+          return child
+        }
+        // 親と子が同じマスにいれば再会する。原作は親の疲労・空腹・渇き・気分を
+        // 子と平均してから迷子の状態を解く
+        const reuniteLostChild = (child: Guest) => {
+          const parent = child.lostParent
+          if (!parent) return
+          const mix = (a: number, b: number) => Math.round((a + b) / 2)
+          parent.fatigue = mix(parent.fatigue, child.fatigue)
+          parent.satiety = mix(parent.satiety, child.satiety)
+          parent.hydration = mix(parent.hydration, child.hydration)
+          parent.mood = mix(parent.mood, child.mood)
+          parent.lost = false
+          const index = guests.indexOf(child)
+          if (index >= 0) removeGuest(index)
+        }
         const removeGuest = (index: number) => {
-          leaveQueue(guests[index])
-          guests[index].image.destroy()
-          guests[index].reactionImage.destroy()
+          const guest = guests[index]
+          // 子が消えるときは親の迷子を解く。親が帰るときは子もゲートへ向かわせる
+          if (guest.lostParent) guest.lostParent.lost = false
+          guests.forEach((other) => {
+            if (other.lostParent !== guest) return
+            other.lostParent = null
+            other.leaveAtDay = elapsedDays
+          })
+          leaveQueue(guest)
+          guest.image.destroy()
+          guest.reactionImage.destroy()
           guests.splice(index, 1)
         }
+
+        // ---- スタッフ ----
+        // 雇用メニューで職種を選ぶと配置モードになり、置いた場所から働き始める。
+        // 歩道の外に置かれた場合は、いちばん近い歩道まで歩いてから仕事を探す
+        const staffSettings = game.staff
+        const staffTypeById = new Map<string, StaffType>(staffConfig.map((entry) => [entry.id, entry]))
+        type Staff = {
+          type: StaffType
+          bank: GuestBank
+          x: number
+          y: number
+          fromX: number
+          fromY: number
+          toX: number
+          toY: number
+          previousX: number
+          previousY: number
+          progress: number
+          facing: number
+          walked: number
+          // 個体名(原作の 60 姓から雇用時に重複しないよう選ぶ。構造体 +0xb8 の番号にあたる)
+          name: string
+          efficiency: number
+          striking: boolean
+          // 性能ＵＰ(施設・ショップと同じ定額の仕組み)で上がるバージョン。
+          // ガードマンの勝率と楽しませる効果に効く
+          version: number
+          // 月給。既定は職種ごとの月給で、設定メニューから変えられる
+          wage: number
+          // 雇用した日(経過日数)。30 年勤務すると定年退職する
+          hireDay: number
+          // 配置したマス。仕事が終わったらここへ戻る
+          homeX: number
+          homeY: number
+          path: Array<{ x: number, y: number }> | null
+          pathIndex: number
+          // 目的地がゴミバコ・トイレなら、正面に着いたあとに中へ入ってから戻ってくる
+          useSpot: FacilitySpot | null
+          useStage: 'enter' | 'clean' | 'exit' | null
+          useTimer: number
+          useFront: { x: number, y: number } | null
+          // メカニックが修理に向かっているアトラクション
+          repairTarget: PlacedAttraction | null
+          // ガードマンが保護に向かっている迷子と、連れ歩いている迷子
+          rescueTarget: Guest | null
+          escorting: Guest | null
+          // 退治してバス待ち看板まで連れて行く途中のアウトロー。うしろを付いて歩く
+          arresting: Guest | null
+          // 仕事の残り時間(修理・戦闘に負けたあとの休み)
+          jobTimer: number
+          // 楽しませる効果の更新の端数持ち越し(欲求と同じ 1 日 15 回の刻み)
+          entertainTick: number
+          // スイーパーの清掃ルート(最大 72 マス)。設定してある間はこの順に巡回する
+          route: Array<{ x: number, y: number }> | null
+          routeIndex: number
+          // ステータス枠の「ウケた数」。仕事をこなした回数を数える
+          pleased: number
+          // このスタッフに払った月給の累計(経営の「スタッフ経費」の内訳になる)
+          paid: number
+          // 立ち止まっているか(歩行でなく動作のアニメを出す)と、そのコマ送りの進み
+          idle: boolean
+          idleTick: number
+          // ガードマンがアウトローに負けて倒れている間
+          downed: boolean
+          // メカニックの修理の順路の何歩目か
+          repairStep: number
+          // 柵を 1 つ建てる・回収するあいだ、その場で作業の動きを見せている残り時間
+          workTimer: number
+          // 怒りやすさ 1〜5。雇用時に決まり、毎月これに応じて能率が下がる
+          anger: number
+          // 楽しませる職種。持ち場に落ち着いているか、いま芸をしているか、
+          // 芸の残り時間と、誰も来ないまま待っている時間
+          settled: boolean
+          performing: boolean
+          performTick: number
+          waitTick: number
+          image: Phaser.GameObjects.Sprite
+        }
+        const staff: Staff[] = []
+        const addMechanicPost = (x: number, y: number) => {
+          const key = tileKey(x, y)
+          if (mechanicPosts.has(key)) return
+          const offset = terrain.tileObjectOffsets['mechanic-post']
+          const tile = point(x, y)
+          mechanicPosts.set(key, this.add.image(tile.x + offset.x, tile.y + offset.y, 'mechanic-post')
+            .setOrigin(0).setDepth(roadPieceDepth(x, y)))
+        }
+        const removeMechanicPost = (x: number, y: number) => {
+          const key = tileKey(x, y)
+          mechanicPosts.get(key)?.destroy()
+          mechanicPosts.delete(key)
+        }
+        // スタッフは歩道と階段の上だけを歩く。ショップ前の道も通り道として使う
+        const staffWalkable: Walkable = (x, y) => {
+          const key = tileKey(x, y)
+          return roads.has(key) || stairsTiles.has(key)
+        }
+        // 2 点を結ぶマスの並び。上下左右にしか進まないので、
+        // 縦横の差が大きいほうから 1 マスずつ詰めていく。歩道の外を歩くときだけ使う
+        const straightTilesTo = (from: { x: number, y: number }, to: { x: number, y: number }) => {
+          const tiles: Array<{ x: number, y: number }> = []
+          let { x, y } = from
+          while (x !== to.x || y !== to.y) {
+            if (Math.abs(to.x - x) >= Math.abs(to.y - y)) x += Math.sign(to.x - x)
+            else y += Math.sign(to.y - y)
+            tiles.push({ x, y })
+          }
+          return tiles
+        }
+        // 歩道でないマスから、いちばん近い歩道を探す。
+        // 原作は置く場所を選ばないので、歩道の外に置かれたスタッフはここへ歩いて働き始める
+        const nearestWalkableTile = (x: number, y: number) => {
+          if (staffWalkable(x, y)) return { x, y }
+          const seen = new Set([tileKey(x, y)])
+          const frontier = [{ x, y }]
+          for (let head = 0; head < frontier.length && head < 4096; head += 1) {
+            const current = frontier[head]
+            for (const { x: ox, y: oy } of guestNeighbours) {
+              const nx = current.x + ox
+              const ny = current.y + oy
+              const key = tileKey(nx, ny)
+              if (seen.has(key)) continue
+              seen.add(key)
+              if (staffWalkable(nx, ny)) return { x: nx, y: ny }
+              frontier.push({ x: nx, y: ny })
+            }
+          }
+          return null
+        }
+        const staffTilesPerDay = staffSettings.tilesPerDay
+        // 動作速度。原作は `(能力 + 1) ×(能率 + 1) ÷ 101` を 0〜9 に丸める
+        // (構造体 +0xb2 能力=バージョン、+0xb3 能率。`FUN_801e9420`)。能力は雇用時 0
+        const staffAnimSpeed = (worker: Staff) => Math.min(
+          9, Math.floor((worker.version + 1) * (worker.efficiency + 1) / 101),
+        )
+        // 歩く速さの倍率。原作は速度テーブル `0x801d0e62` を「動作速度 × 0x19 + 1」から作った
+        // 段(0〜4)で引く。段は動作速度 0〜2→0 / 3〜4→1 / 5〜6→2 / 7〜8→3 / 9→4、
+        // 段ごとの速さは基準(段 0)比で 1 / 1.2 / 1.5 / 2 / 3。能力 0 のスタッフは動作速度が
+        // 0〜1 にしかならず必ず段 0(= 基準速度 staffTilesPerDay)になる
+        const staffSpeedTierByAnim = [0, 0, 0, 1, 1, 2, 2, 3, 3, 4]
+        const staffSpeedFactorByTier = [1, 1.2, 1.5, 2, 3]
+        const staffSpeedFactor = (worker: Staff) => (
+          staffSpeedFactorByTier[staffSpeedTierByAnim[staffAnimSpeed(worker)]]
+        )
+        // 怒りやすさ。雇用時に 1〜5 を重み付きで抽選する
+        // (原作は `func_0x800c5128(5, DAT_801facc0) + 1`、重みは 10 / 20 / 40 / 20 / 10)
+        const rollAnger = () => {
+          const weights: number[] = staffSettings.efficiency.angerWeights
+          const total = weights.reduce((sum, value) => sum + value, 0)
+          let roll = Math.random() * total
+          for (let index = 0; index < weights.length; index += 1) {
+            roll -= weights[index]
+            if (roll < 0) return index + 1
+          }
+          return weights.length
+        }
+        // 個体名は原作の 60 姓から選ぶ。原作は雇用時に他のスタッフと重複しない番号を
+        // 無作為に選ぶ(`FUN_801e41bc`)ので、空いている名前から選び、全部埋まっていれば
+        // 重複を許して選ぶ
+        const staffNames: string[] = staffSettings.names
+        const pickStaffName = () => {
+          const used = new Set(staff.map((worker) => worker.name))
+          const free = staffNames.filter((candidate) => !used.has(candidate))
+          const pool = free.length > 0 ? free : staffNames
+          return pool[Math.floor(Math.random() * pool.length)]
+        }
+        const spawnStaff = (
+          id: string,
+          at: { x: number, y: number },
+          efficiency?: number,
+          version?: number,
+          wage?: number,
+          hireDay?: number,
+          route?: Array<{ x: number, y: number }>,
+          paid?: number,
+          anger?: number,
+          name?: string,
+          // 拠点。省略すると置いた場所がそのまま拠点になる(雇ったときはこれ)。
+          // セーブから戻すときは、出動先で保存されていても拠点は動かさない
+          home?: { x: number, y: number },
+        ) => {
+          const typeConfig = staffTypeById.get(id)
+          if (!typeConfig) return null
+          const bank = guestBankById.get(typeConfig.bank)
+          if (!bank) return null
+          const start = at
+          const base = home ?? at
+          const entry: Staff = {
+            type: typeConfig,
+            bank,
+            x: start.x,
+            y: start.y,
+            fromX: start.x,
+            fromY: start.y,
+            toX: start.x,
+            toY: start.y,
+            previousX: start.x,
+            previousY: start.y,
+            progress: 1,
+            facing: 0,
+            walked: 0,
+            name: name ?? pickStaffName(),
+            efficiency: efficiency ?? staffSettings.efficiency.start,
+            striking: false,
+            // 施設・ショップと同じくバージョン 0 から始まり、性能ＵＰで上げる
+            version: version ?? 0,
+            wage: wage ?? typeConfig.monthlyWage,
+            hireDay: hireDay ?? elapsedDays,
+            homeX: base.x,
+            homeY: base.y,
+            path: null,
+            pathIndex: 0,
+            useSpot: null,
+            useStage: null,
+            useTimer: 0,
+            useFront: null,
+            repairTarget: null,
+            rescueTarget: null,
+            escorting: null,
+            arresting: null,
+            jobTimer: 0,
+            entertainTick: 0,
+            route: route && route.length > 0 ? route : null,
+            routeIndex: 0,
+            pleased: 0,
+            paid: paid ?? 0,
+            idle: true,
+            idleTick: 0,
+            downed: false,
+            repairStep: 0,
+            workTimer: 0,
+            anger: anger ?? rollAnger(),
+            // 原作は雇った時点で待ちの段(その場が持ち場)から始まる
+            settled: true,
+            performing: false,
+            performTick: 0,
+            waitTick: 0,
+            image: this.add.sprite(0, 0, `guest-${bank.bank}`).setOrigin(0, 0),
+          }
+          staff.push(entry)
+          if (typeConfig.id === 'mechanic') addMechanicPost(base.x, base.y)
+          placeStaffImage(entry)
+          return entry
+        }
+        const removeStaff = (index: number) => {
+          staff[index].image.destroy()
+          staff.splice(index, 1)
+        }
+        // カーソルが乗っているマスに立っているスタッフ(いなければ null)
+        const staffAtTile = (x: number, y: number) => (
+          staff.find((worker) => worker.fromX === x && worker.fromY === y) ?? null
+        )
+        // 解雇する。迷子を連れている途中なら、その場で解放してから消す。
+        // 点検の途中なら、そのアトラクションの運転を戻す
+        const dismissStaff = (worker: Staff) => {
+          if (worker.type.id === 'mechanic') removeMechanicPost(worker.homeX, worker.homeY)
+          if (worker.repairTarget) {
+            worker.repairTarget.underInspection = false
+            clearRepairFence(worker.repairTarget)
+          }
+          worker.image.setVisible(true)
+          if (worker.escorting) worker.escorting.image.setVisible(true)
+          const index = staff.indexOf(worker)
+          if (index >= 0) removeStaff(index)
+        }
+        // 出動・修理・保護・清掃の途中かどうか。仕事中は位置変更できない(原作仕様)
+        const staffIsBusy = (worker: Staff) => (
+          worker.repairTarget !== null || worker.rescueTarget !== null || worker.escorting !== null
+          || worker.arresting !== null || worker.useStage !== null
+        )
+        // 項目の並び・アイコン・説明は原作のスタッフ設定メニュー表による。
+        // 一覧アイコン `0x80117fa0`(6 byte × 2 行、先頭バイトが件数)、
+        // ヘルプ ID `0x80117fb8`(u16 × 6 × 2 行)= メッセージ 302〜306、
+        // 項目 ID `0x80118120`(u8 × 5 × 2 行)。
+        // 2 行目はスイーパー以外で、清掃ルートだけが抜ける
+        const staffSettingItems = (worker: Staff): FacilitySettingItem[] => {
+          const items: FacilitySettingItem[] = [
+            priceItem('wage', '月給', 53, '月給を設定できます。低いとスタッフがおこってしまいます。', worker.wage),
+            {
+              id: 'reposition',
+              label: 'ピンセット',
+              icon: 47,
+              kind: 'confirm',
+              description: worker.striking
+                ? 'ストライキ中はピンセットアイコンを使用できません。'
+                : staffIsBusy(worker)
+                  ? '仕事中はピンセットアイコンを使用できません。'
+                  : 'スタッフの位置を移動させられます。',
+              enabled: !worker.striking && !staffIsBusy(worker),
+            },
+            versionItem(worker.version, '能力', '能力'),
+          ]
+          if (worker.type.id === 'sweeper') {
+            items.push({
+              id: 'route',
+              label: '清掃ルート',
+              icon: 48,
+              kind: 'confirm',
+              text: worker.route ? `${worker.route.length} マス` : '未設定',
+              description: worker.striking
+                ? 'ストライキ中は清掃ルートアイコンを使用できません。'
+                : staffIsBusy(worker)
+                  ? '仕事中は清掃ルートアイコンを使用できません。'
+                  : 'スイーパーの清掃ルートを設定できます。',
+              enabled: !worker.striking && !staffIsBusy(worker),
+            })
+          }
+          items.push({
+            id: 'dismiss',
+            label: '解雇',
+            icon: 49,
+            kind: 'confirm',
+            description: worker.striking
+              ? 'ストライキ中は解雇できません。'
+              : 'スタッフをやめさせられます。',
+            enabled: !worker.striking,
+          })
+          return items
+        }
+        // 並びとアイコンは原作のステータス枠表(種別 6)による。
+        // 索引表 `0x801183e4` + 6 × 0x1a、項目は `0x80118254` の (x, y, アイコン, メッセージ ID)
+        const staffStatus = (worker: Staff): FacilityStatusItem[] => [
+          { icon: 43, label: '月給', value: worker.wage.toLocaleString() },
+          { icon: 62, label: '雇用年数', value: `${Math.floor((elapsedDays - worker.hireDay) / 365)}` },
+          { icon: 63, label: '能率', value: `${worker.efficiency}` },
+          { icon: 4, label: '職種', value: worker.type.label },
+          { icon: 64, label: 'ウケた数', value: `${worker.pleased}` },
+        ]
+        // 雇用の上限。全体 64 人、ガードマン 5 人、楽しませる 3 職種は合計 5 人
+        // 上限は原作の雇用処理そのまま。メカニック 20、スイーパー 20、ガードマン 5、
+        // 楽しませる 3 職種は合計 5。全体はスタッフ配列の 50 人
+        const staffCaps: Record<string, number> = staffSettings.caps
+        const capLabel: Record<string, string> = {
+          mechanic: 'メカニック',
+          sweeper: 'スイーパー',
+          guard: 'ガードマン',
+          entertainer: 'お客さんを楽しませるスタッフ',
+        }
+        const staffCapacityMessage = (type: StaffType) => {
+          if (staff.length >= staffSettings.maxTotal) return 'スタッフはこれ以上雇えません。'
+          const limit = staffCaps[type.cap]
+          const hired = staff.filter((worker) => worker.type.cap === type.cap).length
+          if (limit !== undefined && hired >= limit) return `${capLabel[type.cap]}はこれ以上雇えません。`
+          return null
+        }
+        // メカニックは道路の上ではなく、何もない地面に拠点を構える
+        const isEmptyGroundTile = (x: number, y: number) => {
+          const key = tileKey(x, y)
+          return !roads.has(key) && !stairsTiles.has(key) && !queueRoads.has(key)
+            && !placedFacilities.has(key) && !mechanicPosts.has(key)
+            && !attractionCoveringTile(x, y) && !shopCoveringTile(x, y)
+        }
+        // カーソルの位置にスタッフを配置できるか。メカニックだけ何もない地面が必要で、
+        // それ以外は原作と同じく置く場所を選ばない(歩道の外なら最寄りの歩道まで歩いて働く)
+        // 置ける場所は原作の判定(`FUN_801e46f8`)そのまま。歩道か何もない地面で、
+        // メカニックだけは何もない地面に限る
+        const canPlaceStaffType = (type: StaffType, x: number, y: number) => (
+          type.id === 'mechanic'
+            ? isEmptyGroundTile(x, y)
+            : staffWalkable(x, y) || isEmptyGroundTile(x, y)
+        )
+        // カーソルの位置にスタッフを配置して雇用費を払う
+        const placeStaff = () => {
+          const type = activeStaffType
+          if (!type) return
+          const capacity = staffCapacityMessage(type)
+          if (capacity) {
+            buildMessageHandler.current(capacity)
+            return
+          }
+          if (currentCash < type.hireCost) {
+            buildMessageHandler.current('資金が足りないので雇えません。')
+            return
+          }
+          if (!canPlaceStaffType(type, cursorPosition.x, cursorPosition.y)) {
+            buildMessageHandler.current(
+              type.id === 'mechanic'
+                ? '何もない地面にしか拠点を構えられません。'
+                : 'その場所には配置できません。',
+            )
+            return
+          }
+          currentCash -= type.hireCost
+          staffHiredHandler.current(type.hireCost)
+          parkValue += type.hireCost
+          // 置いた場所にそのまま現れる。メカニック以外は、そこからいちばん近い歩道まで歩いていく
+          const hired = spawnStaff(type.id, { x: cursorPosition.x, y: cursorPosition.y })
+          // ストライキ中に雇うと、その新人も能率 0 でストライキに加わる
+          if (hired && staff.some((worker) => worker !== hired && worker.striking)) {
+            hired.efficiency = 0
+            hired.striking = true
+          }
+          buildMessageHandler.current(`${type.label}を雇いました。`)
+          drawCursor()
+        }
+        // 歩いていないときのアニメ。バンクは歩行 4 方向のほかに動作のグループを持っており、
+        // どれを使うかは staff.json の idleGroup で指す(メカニックの弁当、
+        // ガードマンのきょろきょろなど)。指したグループが無いバンクは歩行の 1 コマ目で立つ
+        const groupRangeOf = (worker: Staff, group: number | undefined) => (
+          group === undefined ? null : worker.bank.groups?.find((entry) => entry.group === group) ?? null
+        )
+        // ガードマンはアウトローに負けている間だけ別のグループ(倒れている絵)になり、
+        // メカニックは柵を建てている間だけ作業のグループになる
+        const idleRangeOf = (worker: Staff) => groupRangeOf(worker, (
+          worker.downed && 'downGroup' in worker.type ? worker.type.downGroup
+            : worker.workTimer > 0 && 'workGroup' in worker.type ? worker.type.workGroup
+              : worker.type.idleGroup
+        ))
+        const placeStaffImage = (worker: Staff) => {
+          const fx = worker.fromX + (worker.toX - worker.fromX) * worker.progress
+          const fy = worker.fromY + (worker.toY - worker.fromY) * worker.progress
+          const fromLift = heightAt(worker.fromX, worker.fromY)
+          const toLift = heightAt(worker.toX, worker.toY)
+          const lift = fromLift + (toLift - fromLift) * worker.progress
+          const base = flatPoint(fx + guestDisplay.tileOffset.x, fy + guestDisplay.tileOffset.y)
+          const tileX = worker.progress < 0.5 ? worker.fromX : worker.toX
+          const tileY = worker.progress < 0.5 ? worker.fromY : worker.toY
+          const idle = worker.idle ? idleRangeOf(worker) : null
+          // 柵の作業中は、その 1 回の持ち時間でちょうど 1 周ぶん見せる
+          const workSpan = staffSettings.mechanic.fenceWorkFrames / game.time.originalFramesPerDay
+          const frame = idle
+            ? idle.frame + (worker.workTimer > 0
+              ? Math.min(idle.count - 1, Math.floor((1 - worker.workTimer / workSpan) * idle.count))
+              : Math.floor(worker.idleTick * staffSettings.idleFramesPerDay) % idle.count)
+            : worker.facing * 4 + (Math.floor(worker.walked * 4) % 4)
+          worker.image.setFrame(frame)
+            .setPosition(base.x - worker.bank.anchorX, base.y - lift * terrain.heightStepPx - worker.bank.anchorY)
+            .setDepth(renderDepthAt('facility', tileX, tileY))
+          // ピンセットでつまんでいる間は、施設を置くときと同じ見せ方にする。
+          // 半透明で、置けないマスでは赤くする
+          if (worker === movingStaff) {
+            const valid = canPlaceStaffType(worker.type, worker.fromX, worker.fromY)
+            worker.image.setAlpha(valid ? 0.7 : 0.4).setTint(valid ? 0xffffff : 0xff6048)
+          }
+        }
+        // つまむのをやめたときに見た目を戻す
+        const clearCarriedLook = (worker: Staff) => {
+          worker.image.setAlpha(1).clearTint()
+        }
+        // 目的地までの経路を経路探索で組む(BFS)。着けなければ null。
+        // 出発地・目的地が歩道の外にあるときは、いちばん近い歩道までのまっすぐな道のりを
+        // 前後に足す(配置したその場から歩き出す・拠点や施設の前まで戻るときに使う)
+        const findStaffPath = (from: { x: number, y: number }, to: { x: number, y: number }) => {
+          const entry = nearestWalkableTile(from.x, from.y)
+          if (!entry) return null
+          const lead = straightTilesTo(from, entry)
+          const goalEntry = nearestWalkableTile(to.x, to.y)
+          if (!goalEntry) return null
+          const reach = buildReachMap(entry.x, entry.y, staffWalkable)
+          const goal = tileKey(goalEntry.x, goalEntry.y)
+          if (!reach.has(goal)) return null
+          const path: Array<{ x: number, y: number }> = []
+          let key: string | null = goal
+          while (key) {
+            path.unshift(parseKey(key))
+            key = reach.get(key) ?? null
+          }
+          path.shift()
+          const tail = straightTilesTo(goalEntry, to)
+          return [...lead, ...path, ...tail]
+        }
+        // 経路に沿って 1 フレーム分進める。マスに着くたびに onArrive を呼び、
+        // 経路を使い切ったら true を返す(呼び出し側はここで次の行動を選び直す)
+        const advanceStaffPath = (
+          worker: Staff,
+          step: number,
+          onArrive?: (x: number, y: number) => void,
+        ): boolean => {
+          if (!worker.path) return true
+          worker.walked += step
+          worker.progress += step
+          while (worker.progress >= 1) {
+            worker.progress -= 1
+            worker.previousX = worker.fromX
+            worker.previousY = worker.fromY
+            worker.fromX = worker.toX
+            worker.fromY = worker.toY
+            onArrive?.(worker.fromX, worker.fromY)
+            if (worker.pathIndex >= worker.path.length) {
+              worker.progress = 0
+              worker.path = null
+              return true
+            }
+            const next = worker.path[worker.pathIndex]
+            worker.pathIndex += 1
+            worker.toX = next.x
+            worker.toY = next.y
+            worker.facing = directionOf(next.x - worker.fromX, next.y - worker.fromY)
+          }
+          return false
+        }
+        // 経路を渡して歩き出させる。前の行き先が残ったままだと 1 マス飛んでしまうので、
+        // 最初の 1 マスをここで目標に据える。歩き出せたら true
+        const startStaffPath = (worker: Staff, path: Array<{ x: number, y: number }> | null) => {
+          worker.pathIndex = 0
+          worker.progress = 0
+          if (!path || path.length === 0) {
+            worker.path = null
+            worker.toX = worker.fromX
+            worker.toY = worker.fromY
+            return false
+          }
+          worker.path = path
+          worker.pathIndex = 1
+          worker.toX = path[0].x
+          worker.toY = path[0].y
+          worker.facing = directionOf(path[0].x - worker.fromX, path[0].y - worker.fromY)
+          return true
+        }
+        // アトラクションの敷地が占めるマス
+        const attractionFootprintTiles = (placed: PlacedAttraction) => {
+          const tiles: Array<{ x: number, y: number }> = []
+          for (let oy = 0; oy < placed.height; oy += 1) {
+            for (let ox = 0; ox < placed.width; ox += 1) tiles.push({ x: placed.x + ox, y: placed.y + oy })
+          }
+          return tiles
+        }
+        // 敷地の縁に接するマスのうち、いちばん近いもの(直線距離)。
+        // メカニックは池や崖を無視してまっすぐ歩くので、歩道の到達可否は問わない
+        const nearestFootprintAdjacent = (from: { x: number, y: number }, footprint: Array<{ x: number, y: number }>) => {
+          const footprintSet = new Set(footprint.map((tile) => tileKey(tile.x, tile.y)))
+          let best: { x: number, y: number } | null = null
+          let bestDist = Infinity
+          for (const tile of footprint) {
+            for (const { x: ox, y: oy } of guestNeighbours) {
+              const nx = tile.x + ox
+              const ny = tile.y + oy
+              if (footprintSet.has(tileKey(nx, ny))) continue
+              const dist = Math.hypot(nx - from.x, ny - from.y)
+              if (dist < bestDist) { bestDist = dist; best = { x: nx, y: ny } }
+            }
+          }
+          return best
+        }
+        // T 字路・十字路(道が 3 方向以上つながるマス)。ガードマンの見張り場所に使う
+        const isJunctionTile = (x: number, y: number) => {
+          const mask = roadMaskAt(x, y)
+          const count = (mask & 1) + ((mask >> 1) & 1) + ((mask >> 2) & 1) + ((mask >> 3) & 1)
+          return roads.has(tileKey(x, y)) && count >= 3
+        }
+        // 歩いたマスの汚れは、通りがけに拾って歩く
+        const cleanLitterAt = (x: number, y: number) => {
+          const key = tileKey(x, y)
+          if (!litterTiles.has(key)) return false
+          clearLitter(x, y)
+          return true
+        }
+        // ゴミバコ・トイレのマスの中身を空にする(スイーパーが中に入って作業したとき)
+        const emptyFacilitySpot = (spot: FacilitySpot) => {
+          const placed = placedFacilities.get(spot.key)
+          if (!placed) return
+          if (spot.kind === 'trash' || spot.kind === 'toilet') placed.trash = 0
+          if (spot.kind === 'toilet') placed.used = 0
+        }
+        // 今立っているマスでできる仕事を片づける。中身の残ったゴミバコ・トイレの正面なら
+        // 設備のマスへ 1 マス進む段に入り、true を返す。
+        // 行き先選びより先にここを通さないと、足元の汚れを目的地に選んでその場から動けなくなる
+        const workAtCurrentTile = (worker: Staff) => {
+          if (cleanLitterAt(worker.fromX, worker.fromY)) worker.pleased += 1
+          const spot = facilitySpots.get(tileKey(worker.fromX, worker.fromY))
+          if (!spot || (spot.kind !== 'trash' && spot.kind !== 'toilet')) return false
+          const placed = placedFacilities.get(spot.key)
+          if (!placed) return false
+          if (placed.trash <= 0 && !(spot.kind === 'toilet' && placed.used > 0)) return false
+          const spotKey = tileKey(spot.tile.x, spot.tile.y)
+          if (occupiedSpotTiles.has(spotKey)) return false
+          occupiedSpotTiles.add(spotKey)
+          worker.useSpot = spot
+          worker.useStage = 'enter'
+          worker.useFront = { x: worker.fromX, y: worker.fromY }
+          worker.progress = 0
+          worker.toX = spot.tile.x
+          worker.toY = spot.tile.y
+          worker.facing = directionOf(worker.toX - worker.fromX, worker.toY - worker.fromY)
+          return true
+        }
+        // スイーパーを 1 フレーム分進める。清掃ルートが無ければ歩道をあてもなく歩き、
+        // 踏んだマスが汚れていれば掃除する(遠くのゴミを探しには行かない)
+        const updateSweeper = (worker: Staff, step: number, days: number) => {
+          if (worker.striking) return
+          // ゴミバコ・トイレの中に入って清掃する短い演出(客の利用と同じ仕組み)。
+          // 中にこもっている時間は歩く速さに依らない純粋な時間
+          if (worker.useStage === 'clean') {
+            worker.useTimer -= days
+            if (worker.useTimer > 0) return
+            if (worker.useSpot) emptyFacilitySpot(worker.useSpot)
+            worker.pleased += 1
+            // 元の正面マスへ 1 マス戻る
+            worker.useStage = 'exit'
+            worker.progress = 0
+            if (worker.useFront) {
+              worker.toX = worker.useFront.x
+              worker.toY = worker.useFront.y
+              worker.facing = directionOf(worker.toX - worker.fromX, worker.toY - worker.fromY)
+            }
+            return
+          }
+          if (worker.useStage === 'exit') {
+            worker.walked += step
+            worker.progress += step
+            if (worker.progress < 1) return
+            worker.progress = 0
+            worker.previousX = worker.fromX
+            worker.previousY = worker.fromY
+            worker.fromX = worker.toX
+            worker.fromY = worker.toY
+            if (worker.useSpot) {
+              occupiedSpotTiles.delete(tileKey(worker.useSpot.tile.x, worker.useSpot.tile.y))
+            }
+            worker.useSpot = null
+            worker.useStage = null
+            worker.useFront = null
+            return
+          }
+          if (worker.useStage === 'enter') {
+            worker.walked += step
+            worker.progress += step
+            if (worker.progress < 1) return
+            worker.progress = 0
+            worker.previousX = worker.fromX
+            worker.previousY = worker.fromY
+            worker.fromX = worker.toX
+            worker.fromY = worker.toY
+            worker.useStage = 'clean'
+            // 清掃 1 回の時間は原作 `FUN_801d705c` で `(速度 + 1) ×(0xb − 動作速度)× 4` フレーム
+            // (対象により ÷2・×2 のモード差がある)。標準速度・1 日 150 フレームで
+            // `(11 − 動作速度)× 4 ÷ 75` 日。動作速度は能力と能率で決まり、能力が高いほど速い
+            worker.useTimer = (11 - staffAnimSpeed(worker)) * 4 / 75
+            return
+          }
+          if (!worker.path) {
+            // 足元の仕事が先。ゴミバコ・トイレに入る段へ移ったら今回はここまで
+            if (workAtCurrentTile(worker)) return
+            // 清掃ルートを設定してあれば、その順に巡回する
+            if (worker.route && worker.route.length > 0) {
+              worker.routeIndex = worker.routeIndex % worker.route.length
+              const target = worker.route[worker.routeIndex]
+              worker.routeIndex = (worker.routeIndex + 1) % worker.route.length
+              if (!startStaffPath(worker, findStaffPath({ x: worker.fromX, y: worker.fromY }, target))) return
+            }
+            // ルートが無ければ歩道をあてもなく 1 マスずつ歩く。原作のスイーパーは
+            // 遠くのゴミを探しに行かず、歩き回って踏んだマスが汚れていたら掃除するだけで
+            // (`FUN_801d6954` の段 0 が徘徊 `FUN_801e9460` と足元の判定 `FUN_801d797c` を呼ぶ)、
+            // だから何人雇っても勝手にばらける
+            else if (!roads.has(tileKey(worker.fromX, worker.fromY))) {
+              // 歩道の外に出ていたら、いちばん近い歩道へ戻ってから歩き回る
+              const entry = nearestWalkableTile(worker.fromX, worker.fromY)
+              if (!entry) return
+              if (!startStaffPath(worker, straightTilesTo({ x: worker.fromX, y: worker.fromY }, entry))) return
+            }
+            else {
+              const next = wanderStep(worker)
+              if (!next || !startStaffPath(worker, [next])) return
+            }
+          }
+          // 目的地に着いたら、足元の汚れを拾い、ゴミバコ・トイレの正面なら中へ入る
+          const sweepAlong = (x: number, y: number) => { if (cleanLitterAt(x, y)) worker.pleased += 1 }
+          if (advanceStaffPath(worker, step, sweepAlong)) workAtCurrentTile(worker)
+        }
+
+        // ---- メカニック ----
+        // 耐久度が煙の出るしきい値を下回ったアトラクションと、設定メニューの「点検」で
+        // 呼ばれたアトラクションのうち、手の空いているメカニックの中で最も近い者が出動する。
+        // 点検が終わると耐久度を全快させて拠点へ戻る
+        const mechanicConfig = staffSettings.mechanic
+        // 修理中に敷地の外周へ建てる柵。原作はマスの属性 4 ビットで
+        // 「そのマスのどの辺に柵があるか」を持ち(`FUN_801d66dc`)、
+        // 地形描画が辺ごとの絵を重ねる。本作はマスごとに絵を持つ
+        const repairFences = new Map<PlacedAttraction, Map<string, Phaser.GameObjects.Image[]>>()
+        type RepairSpot = { x: number, y: number, edges: Array<'top' | 'bottom' | 'left' | 'right'> }
+        // 柵を建てるマス。原作の順路表(`FUN_801d5ef4` が引く座標列)を読むと、
+        // 5 × 5 の敷地なら中心から ±2 のリング ── つまり**敷地そのものの外周**であって、
+        // 1 マス外側ではない。6 × 6 は横 -3〜+2・縦 -2〜+3、7 × 7 は ±3 で、いずれも敷地と同じ
+        const repairRingOf = (placed: PlacedAttraction): RepairSpot[] => {
+          const left = placed.x
+          const right = placed.x + placed.width - 1
+          const top = placed.y
+          const bottom = placed.y + placed.height - 1
+          const ring: RepairSpot[] = []
+          const add = (x: number, y: number) => {
+            const edges: RepairSpot['edges'] = []
+            if (y === top) edges.push('top')
+            if (y === bottom) edges.push('bottom')
+            if (x === left) edges.push('left')
+            if (x === right) edges.push('right')
+            ring.push({ x, y, edges })
+          }
+          for (let x = left; x <= right; x += 1) add(x, top)
+          for (let y = top + 1; y <= bottom; y += 1) add(right, y)
+          for (let x = right - 1; x >= left; x -= 1) add(x, bottom)
+          for (let y = bottom - 1; y > top; y -= 1) add(left, y)
+          return ring
+        }
+        // 作業の順路。入口から外周を 1 周して柵を建て、入口へ戻り、
+        // もう 1 周して回収する。真ん中が入口になる
+        const repairRouteOf = (placed: PlacedAttraction): RepairSpot[] => {
+          const ring = repairRingOf(placed)
+          if (ring.length === 0) return []
+          const door = placed.entrance
+            ?? nearestFootprintAdjacent({ x: placed.x, y: placed.y }, attractionFootprintTiles(placed))
+            ?? ring[0]
+          let start = 0
+          let best = Infinity
+          ring.forEach((spot, index) => {
+            const distance = Math.hypot(spot.x - door.x, spot.y - door.y)
+            if (distance < best) { best = distance; start = index }
+          })
+          const lap = [...ring.slice(start), ...ring.slice(0, start)]
+          return [...lap, { x: door.x, y: door.y, edges: [] }, ...lap]
+        }
+        const fenceTexture = {
+          top: 'repair-fence-top',
+          bottom: 'repair-fence-bottom',
+          left: 'repair-fence-left',
+          right: 'repair-fence-right',
+        } as const
+        const addRepairFence = (placed: PlacedAttraction, spot: RepairSpot) => {
+          if (spot.edges.length === 0) return
+          const perTile = repairFences.get(placed) ?? new Map<string, Phaser.GameObjects.Image[]>()
+          repairFences.set(placed, perTile)
+          const key = tileKey(spot.x, spot.y)
+          if (perTile.has(key)) return
+          const tile = point(spot.x, spot.y)
+          perTile.set(key, spot.edges.map((edge) => {
+            const offset = terrain.tileObjectOffsets[fenceTexture[edge]]
+            return this.add.image(tile.x + offset.x, tile.y + offset.y, fenceTexture[edge])
+              .setOrigin(0).setDepth(renderDepthAt('facility', spot.x, spot.y))
+          }))
+        }
+        const removeRepairFence = (placed: PlacedAttraction, spot: RepairSpot) => {
+          const perTile = repairFences.get(placed)
+          const key = tileKey(spot.x, spot.y)
+          perTile?.get(key)?.forEach((image) => image.destroy())
+          perTile?.delete(key)
+        }
+        const clearRepairFence = (placed: PlacedAttraction) => {
+          repairFences.get(placed)?.forEach((images) => images.forEach((image) => image.destroy()))
+          repairFences.delete(placed)
+        }
+        // メカニックが着いたら運転を止める。乗っている客は支払いなしで降ろし、
+        // 並んでいた客は列を離れる(撤去したときと同じ扱い)
+        const startInspection = (placed: PlacedAttraction) => {
+          if (placed.underInspection) return
+          placed.underInspection = true
+          releaseRiders(placed, false)
+          guests.forEach((guest) => {
+            if (guest.targetAttraction === placed && guest.phase === 'queueing') abandonQueue(guest)
+          })
+          if (settingsAttraction === placed) pushFacilitySettings()
+        }
+        // 故障中の見せ方。原作はアトラクションの絵そのものを毎フレーム揺らし、
+        // その揺れた位置に黒煙のアニメを 1 つ重ねる(`FUN_801f609c`)。
+        // ずらし幅は縦横それぞれ「3 − 乱数(0〜100) ÷ 20」で、+3〜-2 ピクセル。
+        // 煙は 3 コマのアニメで、16 フレームごとにコマが進む(`FUN_801f7b64`)
+        const breakdownSmoke = new Map<PlacedAttraction, Phaser.GameObjects.Graphics>()
+        let breakdownTick = 0
+        const shakeOffset = () => breakdownConfig.shakeBase - Math.floor(Math.random() * 101 / 20)
+        const updateBreakdownEffects = (days: number) => {
+          breakdownTick += days * originalFramesPerDay
+          // 煙のコマ番号。原作と同じく 16 フレームごとに 3 コマを巡る
+          const smokeFrame = Math.floor(breakdownTick / breakdownConfig.smokeFrameHold)
+            % breakdownConfig.smokeFrames
+          placedAttractions.forEach((placed) => {
+            const broken = placed.needsRepair && !placed.underInspection
+            const smoke = breakdownSmoke.get(placed)
+            if (!broken) {
+              if (smoke) { smoke.destroy(); breakdownSmoke.delete(placed) }
+              if (placed.image.x !== placed.imageX) placed.image.setPosition(placed.imageX, placed.imageY)
+              return
+            }
+            const offsetX = shakeOffset()
+            const offsetY = shakeOffset()
+            placed.image.setPosition(placed.imageX + offsetX, placed.imageY + offsetY)
+            const graphics = smoke ?? this.add.graphics().setDepth(renderDepthAt('facility', placed.x, placed.y) + 1)
+            if (!smoke) breakdownSmoke.set(placed, graphics)
+            // 煙は揺れたアトラクションの位置に重なる。原作の絵はまだ取り出せていないので
+            // ここは仮の見た目で、コマの進み方だけ原作に合わせている
+            const base = point(placed.x + placed.width / 2, placed.y + placed.height / 2)
+            graphics.clear()
+            const spread = 1 + smokeFrame
+            graphics.fillStyle(0x101010, 0.55 - smokeFrame * 0.1)
+            graphics.fillCircle(base.x + offsetX, base.y - 16 - smokeFrame * 4 + offsetY, 3 + spread * 2)
+          })
+        }
+        // 修理が終わったときの後始末
+        const finishInspection = (worker: Staff, placed: PlacedAttraction) => {
+          if (placedAttractions.includes(placed)) {
+            placed.durability = durabilityLimitOf(placed.attraction, placed.version)
+            placed.needsRepair = false
+            placed.inspectRequested = false
+            placed.underInspection = false
+            // 手動で稼動させる系統は、点検が終わっても休止のままにする
+            if (placed.attraction.manualStart) placed.suspended = true
+            worker.pleased += 1
+            buildMessageHandler.current(`${attractionForm(placed.attraction).name} の点検が終わりました。`)
+            if (settingsAttraction === placed) pushFacilitySettings()
+          }
+          clearRepairFence(placed)
+          worker.repairTarget = null
+          worker.repairStep = 0
+          worker.workTimer = 0
+        }
+        const updateMechanic = (worker: Staff, step: number, days: number) => {
+          if (worker.striking) return
+          const target = worker.repairTarget
+          // 出動先が撤去されていたら柵を片づけて手が空いたことにする
+          if (target && !placedAttractions.includes(target)) {
+            clearRepairFence(target)
+            worker.repairTarget = null
+            worker.repairStep = 0
+            worker.workTimer = 0
+          }
+          // 入口の中で作業している間。こもっている時間は歩く速さに依らない純粋な時間
+          if (target && worker.jobTimer > 0 && !worker.path) {
+            worker.jobTimer -= days
+            if (worker.jobTimer > 0) return
+            // 出てきて、残りの順路で柵を回収する
+            worker.image.setVisible(true)
+            worker.repairStep += 1
+            return
+          }
+          // 順路を 1 マスずつ回る。前半は柵を建て、中間の入口で中に入り、後半は回収する
+          if (target && target.underInspection) {
+            // 柵 1 つぶんの作業を見せているあいだは、その場から動かない。
+            // 原作もマスに着くたびに作業の動きを一通り再生し終えるまで次へ進まない
+            if (worker.workTimer > 0) {
+              worker.workTimer -= days
+              worker.walked = 0
+              return
+            }
+            if (worker.path) { advanceStaffPath(worker, step); return }
+            const route = repairRouteOf(target)
+            const half = Math.floor(route.length / 2)
+            if (worker.repairStep >= route.length) { finishInspection(worker, target); return }
+            const spot = route[worker.repairStep]
+            if (worker.fromX !== spot.x || worker.fromY !== spot.y) {
+              worker.walked = 0
+              startStaffPath(worker, straightTilesTo({ x: worker.fromX, y: worker.fromY }, spot))
+              return
+            }
+            // 中間の入口に着いたら中へ入って一定時間こもる。原作の待ちは
+            // `(速度 + 1) ×(0xb − 動作速度)× 5` フレーム(外周のあるアトラクション)。
+            // 標準速度・1 日 150 フレームで `(11 − 動作速度)÷ 15` 日。能力が高いほど短い
+            if (worker.repairStep === half) {
+              worker.image.setVisible(false)
+              worker.jobTimer = (11 - staffAnimSpeed(worker)) / needsConfig.updatesPerDay
+              return
+            }
+            if (worker.repairStep < half) addRepairFence(target, spot)
+            else removeRepairFence(target, spot)
+            // 作業の動き 1 周ぶん(2 コマ × 11 フレーム)その場に留まる
+            worker.workTimer = mechanicConfig.fenceWorkFrames / originalFramesPerDay
+            worker.repairStep += 1
+            return
+          }
+          // 移動中。入口に着いたらアトラクションを止めて作業を始める
+          if (worker.path) {
+            if (advanceStaffPath(worker, step) && target) {
+              startInspection(target)
+              worker.repairStep = 0
+            }
+            return
+          }
+          if (worker.repairTarget) { worker.walked = 0; return }
+          // 他のメカニックがすでに向かっている出動先は外して、近い順に試す
+          const busy = new Set(
+            staff.filter((other) => other.type.id === 'mechanic' && other.repairTarget)
+              .map((other) => other.repairTarget),
+          )
+          const candidate = placedAttractions
+            .filter((placed) => (placed.needsRepair || placed.inspectRequested) && !busy.has(placed))
+            .sort((a, b) => (
+              Math.hypot(a.x - worker.fromX, a.y - worker.fromY) - Math.hypot(b.x - worker.fromX, b.y - worker.fromY)
+            ))[0]
+          if (candidate) {
+            // 急行する先はアトラクションの入口
+            const tile = candidate.entrance
+              ?? nearestFootprintAdjacent({ x: worker.fromX, y: worker.fromY }, attractionFootprintTiles(candidate))
+            if (tile) {
+              worker.repairTarget = candidate
+              worker.repairStep = 0
+              worker.walked = 0
+              // 移動時に池や崖は障害にならないので、歩道の経路探索は使わずまっすぐ歩く
+              const path = straightTilesTo({ x: worker.fromX, y: worker.fromY }, { x: tile.x, y: tile.y })
+              // すでに入口にいて経路が空なら、その場で作業を始める
+              if (!startStaffPath(worker, path)) startInspection(candidate)
+              return
+            }
+          }
+          const atHome = worker.fromX === worker.homeX && worker.fromY === worker.homeY
+          if (!atHome) {
+            worker.walked = 0
+            startStaffPath(worker, straightTilesTo({ x: worker.fromX, y: worker.fromY }, { x: worker.homeX, y: worker.homeY }))
+            return
+          }
+          // 拠点に着いた。以降のコマ送りは立ち止まりのアニメが受け持つ
+          worker.walked = 0
+        }
+
+        // ---- ガードマン ----
+        // アウトローと接触すると戦闘になる。勝率はそのガードマンの能率(%)そのもので、
+        // 能率 100 なら必ず勝ち、下がるほど負けやすい。アウトローの強さは一定
+        // (原作 `FUN_801d45b4` の case 6。アウトローの体力 -1 で割ると能率がそのまま確率になる)
+        const fightOutlaw = (worker: Staff, outlaw: Guest) => {
+          if (Math.floor(Math.random() * 100) < worker.efficiency) {
+            // 退治したらその場では消さず、うしろに連れてバス待ち看板まで送り届ける
+            worker.arresting = outlaw
+            outlaw.waitingForRide = false
+            outlaw.arrested = true
+            // 歩きかけのまま止まらないよう、いま乗っているマスに揃える
+            outlaw.toX = outlaw.fromX
+            outlaw.toY = outlaw.fromY
+            outlaw.progress = 1
+            standStill(outlaw)
+            worker.pleased += 1
+            buildMessageHandler.current('ガードマンがアウトローを退治しました。')
+            startStaffPath(worker, findStaffPath(
+              { x: worker.fromX, y: worker.fromY },
+              { x: gateCrossing.x, y: gateCrossing.y },
+            ))
+          }
+          else {
+            // 倒れている時間は原作で `(0xd − 能力)× 0x14 ÷(3 − 速度)` フレーム。標準速度・
+            // 1 日 150 フレームで換算すると `(13 − 能力)÷ 15` 日。能力が高いほど早く起きる
+            worker.jobTimer = (13 - worker.version) / needsConfig.updatesPerDay
+            buildMessageHandler.current('ガードマンがアウトローにやられてしまいました。')
+          }
+        }
+        const updateGuard = (worker: Staff, step: number, days: number) => {
+          if (worker.striking) return
+          // 戦闘に負けて倒れている間は動かない。原作は倒れている絵に切り替え、
+          // 手前を向かせる(`FUN_801d45b4` の case 4 が向き 0xc0 とグループ 8 を設定する)。
+          // 休みは歩く速さに依らない純粋な時間なので、経過日数で減らす
+          if (worker.jobTimer > 0) {
+            worker.jobTimer -= days
+            worker.downed = worker.jobTimer > 0
+            worker.facing = 0
+            worker.walked = 0
+            return
+          }
+          worker.downed = false
+          // 退治したアウトローをバス待ち看板まで連行する。アウトローは 1 マスうしろを付いて歩く
+          if (worker.arresting) {
+            const outlaw = worker.arresting
+            // 途中でアウトローが消えていたら連行をやめる
+            if (!guests.includes(outlaw)) {
+              worker.arresting = null
+              worker.path = null
+              return
+            }
+            if (worker.path) {
+              // ガードマンが次のマスへ移るたび、アウトローは直前までいたマスへ動く
+              advanceStaffPath(worker, step, () => {
+                outlaw.previousX = outlaw.fromX
+                outlaw.previousY = outlaw.fromY
+                outlaw.fromX = worker.previousX
+                outlaw.fromY = worker.previousY
+                outlaw.toX = outlaw.fromX
+                outlaw.toY = outlaw.fromY
+                outlaw.progress = 1
+                outlaw.facing = directionOf(outlaw.fromX - outlaw.previousX, outlaw.fromY - outlaw.previousY)
+                outlaw.walked += 1
+              })
+              return
+            }
+            // 看板の 1 マス北に着いた。ガードマンはここで止まり、
+            // アウトローだけが看板のマスへ進む。同時に迎えのバイクが来る
+            worker.arresting = null
+            outlaw.arrested = false
+            outlaw.phase = 'toSign'
+            outlaw.queueX = outlaw.fromX
+            outlaw.queueY = outlaw.fromY
+            if (!bike && !bus) spawnBike(true)
+            return
+          }
+          // 迷子を連れている間は、道連れにして目的地(インフォメーションか拠点)まで運ぶ
+          if (worker.escorting) {
+            const child = worker.escorting
+            if (!worker.path) {
+              child.image.setVisible(true)
+              child.progress = 1
+              child.toX = worker.fromX
+              child.toY = worker.fromY
+              worker.escorting = null
+              worker.pleased += 1
+              buildMessageHandler.current('迷子を保護しました。')
+              // 親のところまで運べていれば再会、届いていなければその場から自力で親を探す
+              if (child.lostParent
+                && Math.abs(child.fromX - child.lostParent.fromX) <= 1
+                && Math.abs(child.fromY - child.lostParent.fromY) <= 1) {
+                reuniteLostChild(child)
+              }
+              return
+            }
+            advanceStaffPath(worker, step, (x, y) => {
+              child.fromX = x
+              child.fromY = y
+              child.toX = x
+              child.toY = y
+              child.previousX = x
+              child.previousY = y
+              child.progress = 1
+            })
+            return
+          }
+          // 迷子へ向かっている途中
+          if (worker.rescueTarget) {
+            const child = worker.rescueTarget
+            if (!guests.includes(child) || !child.lostParent) {
+              worker.rescueTarget = null
+              worker.path = null
+              return
+            }
+            if (worker.path) {
+              advanceStaffPath(worker, step)
+              return
+            }
+            // 迷子のマスまで来たので抱えて運ぶ
+            worker.escorting = child
+            worker.rescueTarget = null
+            child.image.setVisible(false)
+            // 親のところまで運ぶ。親が帰ってしまっていればインフォメーションへ
+            const parent = child.lostParent
+            const infoEntry = [...placedFacilities].find(([, placed]) => placed.facility.id === 'information')
+            const destination = parent
+              ? { x: parent.fromX, y: parent.fromY }
+              : infoEntry ? parseKey(infoEntry[0]) : { x: worker.homeX, y: worker.homeY }
+            startStaffPath(worker, findStaffPath({ x: worker.fromX, y: worker.fromY }, destination))
+            return
+          }
+          // 出くわしたアウトローとは、見張り中でも移動中でもその場で戦う。
+          // 隣のマスまで来たら接触とみなす
+          const nearbyOutlaw = guests.find((guest) => (
+            guest.outlaw && !guest.arrested && guest.phase === 'walking'
+            && Math.abs(guest.fromX - worker.fromX) + Math.abs(guest.fromY - worker.fromY) <= 1
+          ))
+          if (nearbyOutlaw) { fightOutlaw(worker, nearbyOutlaw); return }
+          if (worker.path) {
+            advanceStaffPath(worker, step)
+            return
+          }
+          worker.walked = 0
+          // 他のガードマンがすでに向かっている・保護している迷子は外す
+          const busy = new Set(
+            staff.filter((other) => other.type.id === 'guard' && (other.rescueTarget || other.escorting))
+              .flatMap((other) => [other.rescueTarget, other.escorting].filter((g): g is Guest => g !== null)),
+          )
+          const lostChild = guests
+            .filter((guest) => guest.lostParent !== null && !busy.has(guest))
+            .sort((a, b) => (
+              Math.hypot(a.fromX - worker.fromX, a.fromY - worker.fromY)
+                - Math.hypot(b.fromX - worker.fromX, b.fromY - worker.fromY)
+            ))[0]
+          if (lostChild) {
+            const path = findStaffPath({ x: worker.fromX, y: worker.fromY }, { x: lostChild.fromX, y: lostChild.fromY })
+            if (path && startStaffPath(worker, path)) worker.rescueTarget = lostChild
+            return
+          }
+          // パーク内のアウトローは見つけしだい追いかける(退治は接触したときに起きる)
+          const outlaw = guests
+            .filter((guest) => (
+              guest.outlaw && guest.image.visible && !guest.arrested && guest.phase === 'walking'
+            ))
+            .sort((a, b) => (
+              Math.hypot(a.fromX - worker.fromX, a.fromY - worker.fromY)
+                - Math.hypot(b.fromX - worker.fromX, b.fromY - worker.fromY)
+            ))[0]
+          if (outlaw) {
+            const path = findStaffPath({ x: worker.fromX, y: worker.fromY }, { x: outlaw.fromX, y: outlaw.fromY })
+            if (path && startStaffPath(worker, path)) return
+          }
+          // 保護も戦闘もなければ、いちばん近い十字路・T 字路まで歩いてそこで見張る。
+          // 原作のガードマンは持ち場を持たず、十字路・T 字路のマスに着くとそこで立ち止まり
+          // きょろきょろするだけで自分からは動かない。アウトローや迷子が現れたときだけ動き、
+          // 片付いたらまた近くの十字路で見張りに就く(原作 `FUN_801d45b4` の case 0/5)
+          if (isJunctionTile(worker.fromX, worker.fromY)) return
+          const here = tileKey(worker.fromX, worker.fromY)
+          const reach = buildReachMap(worker.fromX, worker.fromY, staffWalkable)
+          let target: { x: number, y: number } | null = null
+          let best = Infinity
+          for (const key of reach.keys()) {
+            if (key === here || !roads.has(key)) continue
+            const pos = parseKey(key)
+            if (!isJunctionTile(pos.x, pos.y)) continue
+            const distance = Math.hypot(pos.x - worker.fromX, pos.y - worker.fromY)
+            if (distance < best) { best = distance; target = pos }
+          }
+          // 十字路・T 字路が 1 つも無いパークでは、いちばん近い歩道まで出てその場で見張る
+          if (!target) {
+            if (roads.has(here)) return
+            const entry = nearestWalkableTile(worker.fromX, worker.fromY)
+            if (entry) startStaffPath(worker, straightTilesTo({ x: worker.fromX, y: worker.fromY }, entry))
+            return
+          }
+          startStaffPath(worker, findStaffPath({ x: worker.fromX, y: worker.fromY }, target))
+        }
+
+        // ---- 来園者を楽しませる職種 ----
+        // 原作の処理は 3 職種で共通(D2MAIN の `FUN_801d51bc`、種別 13〜15)。
+        // 持ち場に立って待ち、来園者が近づくと芸のアニメ(グループ 4)を出す。
+        // 誰も来ないまま待ち時間が尽きると歩き出し、T 字路・十字路に着いたら
+        // そこを新しい持ち場にする。演じてよいマスはタイル種別 0x0c〜0x0f と 0x14 で、
+        // これは道が 3 方向以上つながるマス(表 `0x801179b4` で確認)。
+        // 直前の持ち場と、他のエンターテイナーがいるマスは選ばない
+        const entertainerConfig = staffSettings.entertainer
+        // 原作の当たり判定は毎フレーム走る。標準速度で 1 日 150 フレーム
+        // (高速 75・低速 300。[来園者](design/20_guests.md) 参照)なので、1 日あたり 150 回判定する
+        const entertainFramesPerDay = 150
+        // 効きの範囲は原作 `FUN_801d7ad8` で自分の位置から縦横 ±1 マスの矩形
+        // (x が ±0x16 = ±1 マス、y が ±0x10 = ±1 マス)。斜めも入るので市松距離で見る
+        const guestInEntertainRange = (worker: Staff, guest: Guest) => (
+          Math.abs(guest.fromX - worker.fromX) <= entertainerConfig.range
+          && Math.abs(guest.fromY - worker.fromY) <= entertainerConfig.range
+        )
+        const guestNearStaff = (worker: Staff) => guests.some((guest) => (
+          !guest.outlaw && guest.image.visible && guestInEntertainRange(worker, guest)
+        ))
+        // 次の 1 マス。行き止まりでなければ来た道は選ばない
+        const wanderStep = (worker: Staff) => {
+          const options = guestNeighbours
+            .map(({ x: ox, y: oy }) => ({ x: worker.fromX + ox, y: worker.fromY + oy }))
+            .filter((tile) => staffWalkable(tile.x, tile.y) && sameHeight(worker.fromX, worker.fromY, tile.x, tile.y))
+          const ahead = options.filter((tile) => tile.x !== worker.previousX || tile.y !== worker.previousY)
+          const pool = ahead.length > 0 ? ahead : options
+          return pool.length > 0 ? pool[Math.floor(Math.random() * pool.length)] : null
+        }
+        const updateEntertainer = (worker: Staff, step: number, days: number) => {
+          if (worker.striking) { worker.walked = 0; worker.performing = false; return }
+          // 芸をしている間だけ近くの来園者の気分が上がる。原作 `FUN_801d7b80` は毎フレーム
+          // (エンティティ更新ごとに 1 回 = 標準速度で 1 日 150 回)、範囲内の来園者ごとに
+          // 「乱数(0〜99) < 職種の係数 × 能力」で当たり判定し、当たると気分を 50 上げて
+          // ウケた数を 1 増やす。係数はウサギ 1・グーチョくん 3・ミュージシャン 2。
+          // 当たりに効くのは能率ではなく能力(バージョン)で、能力 0 では当たらない
+          if (worker.performing && worker.version >= 1) {
+            worker.entertainTick += days * entertainFramesPerDay
+            const weight = 'entertainWeight' in worker.type ? worker.type.entertainWeight ?? 1 : 1
+            const chance = weight * worker.version / 100
+            while (worker.entertainTick >= 1) {
+              worker.entertainTick -= 1
+              guests.forEach((guest) => {
+                if (guest.outlaw) return
+                if (!guestInEntertainRange(worker, guest)) return
+                if (Math.random() >= chance) return
+                changeMood(guest, entertainerConfig.moodGain)
+                worker.pleased += 1
+              })
+            }
+          }
+          else worker.entertainTick = 0
+          if (worker.path) {
+            worker.performing = false
+            advanceStaffPath(worker, step)
+            return
+          }
+          worker.walked = 0
+          if (worker.settled) {
+            // 待っている間も芸をしている間も手前を向く。原作は向きで選ばない
+            // グループ 0(待ち)とグループ 4(芸)を直に指定する
+            worker.facing = 0
+            if (worker.performing) {
+              worker.performTick += days
+              if (worker.performTick < entertainerConfig.performDays) return
+              worker.performing = false
+              worker.performTick = 0
+              worker.waitTick = 0
+              return
+            }
+            // 来園者が近づいたら芸をする
+            if (guestNearStaff(worker)) {
+              worker.performing = true
+              worker.performTick = 0
+              worker.waitTick = 0
+              return
+            }
+            // 誰も来ないまま待ち時間が尽きたら別の場所を探しに歩き出す
+            worker.waitTick += days
+            if (worker.waitTick < entertainerConfig.waitDays) return
+            worker.settled = false
+            worker.waitTick = 0
+            return
+          }
+          // 場所探しの途中。落ち着ける条件を満たしたマスならそこを持ち場にする
+          const taken = staff.some((other) => (
+            other !== worker && other.type.cap === 'entertainer'
+            && other.fromX === worker.fromX && other.fromY === worker.fromY
+          ))
+          const usable = isJunctionTile(worker.fromX, worker.fromY)
+            && !(worker.fromX === worker.homeX && worker.fromY === worker.homeY)
+            && !taken
+          if (usable || guestNearStaff(worker)) {
+            worker.settled = true
+            worker.homeX = worker.fromX
+            worker.homeY = worker.fromY
+            return
+          }
+          const next = wanderStep(worker)
+          if (next) startStaffPath(worker, [next])
+        }
+
+        const updateStaff = (worker: Staff, days: number) => {
+          // つまんでいる間は仕事をしない
+          if (worker === movingStaff) return
+          // 歩く速さは能力と能率で決まる動作速度に応じて上がる(原作の速度テーブル段)。
+          // 能力 0 のスタッフは能率が変わっても段 0 のまま基準速度で、能力を上げると速くなる
+          const step = staffTilesPerDay * days * staffSpeedFactor(worker)
+          if (worker.type.id === 'sweeper') updateSweeper(worker, step, days)
+          else if (worker.type.id === 'mechanic') updateMechanic(worker, step, days)
+          else if (worker.type.id === 'guard') updateGuard(worker, step, days)
+          else updateEntertainer(worker, step, days)
+          // 動作のアニメを出す状態か。楽しませる職種は芸をしている間だけで、
+          // それ以外の職種は経路を持たず設備の出入りもしていないとき。
+          // 状態に入った瞬間からアニメを頭出しする
+          const idle = worker.downed
+            || (worker.type.cap === 'entertainer'
+              ? worker.performing
+              : !worker.path && worker.useStage === null)
+          worker.idleTick = idle ? (worker.idle ? worker.idleTick + days : 0) : 0
+          worker.idle = idle
+        }
+        // 半数以上のスタッフの能率が 0 になるとストライキが起きる(月ごと判定)
+        // 能率 0 のスタッフが半数以上になるとストライキ、半数を割ると解除
+        // (原作 `FUN_800bc5ec`)。解除のときは全員の能率が 102 相当に戻る
+        const refreshStrike = (notify = true) => {
+          if (staff.length === 0) return
+          const dead = staff.filter((worker) => worker.efficiency <= 0).length
+          const striking = dead / staff.length >= staffSettings.efficiency.strikeThreshold
+          const before = staff.some((worker) => worker.striking)
+          staff.forEach((worker) => { worker.striking = striking })
+          if (before && !striking) {
+            staff.forEach((worker) => { worker.efficiency = staffSettings.efficiency.start })
+            if (notify) buildMessageHandler.current('ストライキが終わりました。')
+            return
+          }
+          if (striking && !before && notify) {
+            buildMessageHandler.current('スタッフがストライキを起こしました。')
+          }
+        }
+        // 月給の支払いと能率の増減。月が替わったときに 1 回だけ呼ぶ。
+        // 月給が既定額を下回っている間は能率が下がり(月給が低いと怒ることがある)、
+        // 既定額以上を払っていれば能率が少しずつ戻る(月給を上げると回復する)
+        const payWages = () => {
+          // 経費はスタッフ 1 人ずつ積み上げる。先月ぶんは経営の内訳に出すための控え
+          staffExpenseLastMonth = staffExpenseThisMonth
+          staffExpenseThisMonth = 0
+          if (staff.length === 0) return
+          let total = 0
+          staff.forEach((worker) => {
+            worker.paid += worker.wage
+            staffExpenseThisMonth += worker.wage
+            total += worker.wage
+          })
+          if (total > 0) spendHandler.current(total)
+          // 能率は毎月「乱数 % (怒りやすさ × 2)」だけ下がる(原作 `FUN_800bc330` の呼び分け 0)
+          staff.forEach((worker) => {
+            const drop = Math.floor(Math.random() * worker.anger * 2)
+            worker.efficiency = Math.max(0, worker.efficiency - drop)
+          })
+          refreshStrike()
+          // 30 年勤務したスタッフは定年退職する。後ろから調べて解雇中の詰め直しに影響させない
+          for (let index = staff.length - 1; index >= 0; index -= 1) {
+            const worker = staff[index]
+            if (elapsedDays - worker.hireDay < staffSettings.retirementYears * 365) continue
+            buildMessageHandler.current(`${worker.type.label}が定年退職しました。`)
+            dismissStaff(worker)
+          }
+        }
+        // 経営の「スタッフ経費」に出す集計。一覧画面が無いので表には出していないが、
+        // スタッフ 1 人ずつの累計(Staff.paid)と月ごとの合計は積んでいる
+        let staffExpenseThisMonth = 0
+        let staffExpenseLastMonth = 0
+        readStaffExpense.current = () => ({
+          thisMonth: staffExpenseThisMonth,
+          lastMonth: staffExpenseLastMonth,
+          total: staff.reduce((sum, worker) => sum + worker.paid, 0),
+          byStaff: staff.map((worker) => ({ id: worker.type.id, wage: worker.wage, paid: worker.paid })),
+        })
+        // 労使交渉。毎年 4 月 10 日にスタッフの能率を一定量戻す(原作の労使交渉に当たる)
+        const negotiationConfig = staffSettings.negotiation
+        let lastNegotiationYear = -1
+        {
+          const start = new Date(startDateMs + Math.floor(initialDays.current) * 86_400_000)
+          // 開始日が 4 月 10 日以降なら、その年はもう済んだ扱いにして翌年から
+          const passed = start.getUTCMonth() > negotiationConfig.month - 1
+            || (start.getUTCMonth() === negotiationConfig.month - 1 && start.getUTCDate() >= negotiationConfig.day)
+          if (passed) lastNegotiationYear = start.getUTCFullYear()
+        }
+        const runNegotiationIfDue = () => {
+          const date = new Date(startDateMs + Math.floor(elapsedDays) * 86_400_000)
+          const y = date.getUTCFullYear()
+          if (y === lastNegotiationYear) return
+          const due = date.getUTCMonth() > negotiationConfig.month - 1
+            || (date.getUTCMonth() === negotiationConfig.month - 1 && date.getUTCDate() >= negotiationConfig.day)
+          if (!due) return
+          lastNegotiationYear = y
+          if (staff.length === 0) return
+          // 成立すると能率が一定量戻り、月給が定率で上がる(原作 `FUN_800bc330` の呼び分け 1)。
+          // 断ると能率が同じだけ下がる。断る操作はまだ無いのでいまは必ず成立する
+          staff.forEach((worker) => {
+            worker.efficiency = Math.min(
+              staffSettings.efficiency.start,
+              worker.efficiency + staffSettings.efficiency.negotiationGain,
+            )
+            worker.wage = Math.min(
+              settingsConfig.maxPrice,
+              worker.wage + Math.round(worker.wage * negotiationConfig.raisePerMille / 1000),
+            )
+          })
+          refreshStrike()
+          buildMessageHandler.current('労使交渉が成立しました。月給が上がります。')
+        }
+        // セーブから復元する
+        const savedStaff = initialParkData.current?.staff
+        if (savedStaff) {
+          for (const entry of savedStaff) {
+            spawnStaff(
+              entry.id, { x: entry.x, y: entry.y }, entry.efficiency, entry.version,
+              entry.wage, entry.hireDay, entry.route, entry.paid, entry.anger, entry.name,
+              entry.homeX === undefined || entry.homeY === undefined
+                ? undefined
+                : { x: entry.homeX, y: entry.homeY },
+            )
+          }
+          refreshStrike(false)
+        }
+        monthlyExtraTask = payWages
 
         // マス目を歩く客を 1 フレーム分進める
         const updateWalkingGuest = (guest: Guest, step: number) => {
@@ -4603,6 +6544,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
               guest.paid = true
               guest.money -= guestConfig.admissionFee
               admissionHandler.current(guestConfig.admissionFee)
+              visitorsThisYear += 1
             }
             // アウトローは店にも乗り物にも設備にも用がなく、バスにも乗らない。
             // 歩き方だけ来園者と同じで、行き先の判断はすべて飛ばす
@@ -4719,9 +6661,12 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
           standStill(guest)
           if (guest.phase === 'toBus') return true
           if (guest.phase === 'toSign') {
-            // 看板の中心に着いたら下を向き、そのまま 1 マス進んでバスに乗る
-            guest.phase = 'toBus'
+            // 看板の中心に着いたら下を向き、そのまま 1 マス進んで乗り物に乗る。
+            // ガードマンに連行されたアウトローは先に看板へ着くので、
+            // 迎えのバイクが停まるまでここで待つ
             guest.facing = 0
+            if (guest.outlaw && bike?.state !== 'stopped') return false
+            guest.phase = 'toBus'
             return false
           }
           if (guest.phase === 'fromBus') {
@@ -4996,6 +6941,17 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             seasonDirty = false
             refreshSeason()
             refreshMonth()
+          // 日をまたいだら、迷子を出してよい状態へ戻すか抽選する
+          const today = Math.floor(elapsedDays)
+          if (today !== lastLostChildDay) {
+            lastLostChildDay = today
+            const year = new Date(startDateMs + today * 86_400_000).getUTCFullYear()
+            if (year !== visitorYear) { visitorYear = year; visitorsThisYear = 0 }
+            if (!lostChildArmed && !guests.some((guest) => guest.lost)) {
+              const threshold = Math.floor(parkValue / Math.max(1, visitorsThisYear) / 100)
+              lostChildArmed = Math.floor(Math.random() * 100) + 1 < threshold
+            }
+          }
           }
           const days = deltaMs * daysPerMs
           if (days <= 0) return
@@ -5020,6 +6976,7 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             if (!present && Math.random() < outlawConfig.chance) spawnBike(false)
           }
           updateBike(days)
+          updateBreakdownEffects(days)
           // 受け入れ中は時間切れで入口を閉めて動き出し、稼働が終わったら全員降ろす
           rideStates.forEach((state, placed) => {
             if (state.aboard.length === 0) return
@@ -5047,7 +7004,9 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             // アウトローは欲求も反応も持たない。歩いてキッズを怖がらせ、頃合いで帰る
             if (guest.outlaw) {
               if (guest.phase === 'walking') {
-                if (guest.waitingForRide) {
+                // ガードマンに連行されている間は自分では歩かない(絵はガードマンが動かす)
+                if (guest.arrested) { /* 何もしない */ }
+                else if (guest.waitingForRide) {
                   // ゲート下で迎えを待つ。バスが走っている間は呼べないので、空くまで待つ
                   if (!bike && !bus) spawnBike(true)
                 }
@@ -5065,6 +7024,16 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
               continue
             }
             updateGuestNeeds(guest, days)
+            // ガードマンに抱えられている間は自分では動かない(絵はガードマンが動かす)
+            if (guest.lostParent && !guest.image.visible) continue
+            // はぐれた親子は、同じマスで出会えば再会する
+            if (guest.lostParent && guest.image.visible
+              && guest.fromX === guest.lostParent.fromX && guest.fromY === guest.lostParent.fromY) {
+              reuniteLostChild(guest)
+              continue
+            }
+            // インフォメーションがあれば、はぐれた親も子もそこを目指す
+            if ((guest.lost || guest.lostParent) && !guest.path) headForInformation(guest)
             // 出ていた反応を出しきったら、今の状態から選び直す
             guest.reactionFrames = Math.max(0, guest.reactionFrames - originalFramesPerStep)
             if (guest.reactionFrames === 0) refreshStandingReaction(guest, attractionKinds)
@@ -5083,6 +7052,13 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
             }
             placeGuestImage(guest)
             placeReactionImage(guest)
+          }
+          // スタッフはメニューから雇うと足元(ゲート下)に現れる。歩き回るだけの職種も、
+          // スイーパーの実際の仕事も、来園者と同じ 1 日 15 マスの刻みで進める
+          runNegotiationIfDue()
+          for (const worker of staff) {
+            updateStaff(worker, days)
+            placeStaffImage(worker)
           }
           // 来園者数にアウトローは数えない
           const visitorCount = guests.reduce((total, guest) => total + (guest.outlaw ? 0 : 1), 0)
@@ -5130,6 +7106,10 @@ const ParkMap = forwardRef<ParkMapHandle, Props>(function ParkMap({
   useEffect(() => {
     phaserGame.current?.scene.getScene('park')?.events.emit('facility-build-mode', facilityBuild)
   }, [facilityBuild])
+
+  useEffect(() => {
+    phaserGame.current?.scene.getScene('park')?.events.emit('staff-build-mode', staffBuild)
+  }, [staffBuild])
 
   useEffect(() => {
     initialSecondsPerDay.current = secondsPerDay

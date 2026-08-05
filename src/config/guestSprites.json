@@ -1,7 +1,9 @@
 {
  "_note": [
   "来園者のスプライト。set は国ごとの PEOPLE ファイル、bank は見た目の種類。",
-  "1 枚のシートに 4 行(方向)× 4 列(コマ)+ 5 行目に着席ポーズ(列 = 方向)。",
+  "1 枚のシートに 4 行(方向)× 4 列(コマ)。",
+  "来園者は 5 行目が着席ポーズ(列 = 方向)。",
+  "スタッフは 5 行目以降が立ち止まっているときのアニメで、idleFrame から idleCount コマ。",
   "方向は 0=下 1=上 2=左 3=右。",
   "画像は /assets/park/guests/{set}-{bank}.png。anchorX/anchorY は足元の基準点。"
  ],
@@ -81,6 +83,170 @@
     "frameHeight": 25,
     "anchorX": 8,
     "anchorY": 24
+   },
+   {
+    "bank": 9,
+    "frameWidth": 18,
+    "frameHeight": 25,
+    "anchorX": 8,
+    "anchorY": 24,
+    "groups": [
+     {
+      "group": 4,
+      "frame": 16,
+      "count": 2
+     },
+     {
+      "group": 5,
+      "frame": 20,
+      "count": 2
+     },
+     {
+      "group": 6,
+      "frame": 24,
+      "count": 2
+     },
+     {
+      "group": 7,
+      "frame": 28,
+      "count": 2
+     },
+     {
+      "group": 8,
+      "frame": 32,
+      "count": 2
+     },
+     {
+      "group": 9,
+      "frame": 36,
+      "count": 4
+     },
+     {
+      "group": 10,
+      "frame": 40,
+      "count": 9
+     }
+    ]
+   },
+   {
+    "bank": 10,
+    "frameWidth": 17,
+    "frameHeight": 26,
+    "anchorX": 8,
+    "anchorY": 25,
+    "groups": [
+     {
+      "group": 4,
+      "frame": 16,
+      "count": 2
+     },
+     {
+      "group": 5,
+      "frame": 20,
+      "count": 2
+     },
+     {
+      "group": 6,
+      "frame": 24,
+      "count": 2
+     },
+     {
+      "group": 7,
+      "frame": 28,
+      "count": 2
+     },
+     {
+      "group": 8,
+      "frame": 32,
+      "count": 2
+     },
+     {
+      "group": 9,
+      "frame": 36,
+      "count": 4
+     }
+    ]
+   },
+   {
+    "bank": 11,
+    "frameWidth": 17,
+    "frameHeight": 25,
+    "anchorX": 8,
+    "anchorY": 24,
+    "groups": [
+     {
+      "group": 4,
+      "frame": 16,
+      "count": 2
+     },
+     {
+      "group": 8,
+      "frame": 20,
+      "count": 9
+     },
+     {
+      "group": 9,
+      "frame": 32,
+      "count": 4
+     }
+    ]
+   },
+   {
+    "bank": 12,
+    "frameWidth": 18,
+    "frameHeight": 25,
+    "anchorX": 8,
+    "anchorY": 24,
+    "groups": [
+     {
+      "group": 4,
+      "frame": 16,
+      "count": 2
+     },
+     {
+      "group": 5,
+      "frame": 20,
+      "count": 4
+     }
+    ]
+   },
+   {
+    "bank": 13,
+    "frameWidth": 16,
+    "frameHeight": 25,
+    "anchorX": 7,
+    "anchorY": 24,
+    "groups": [
+     {
+      "group": 4,
+      "frame": 16,
+      "count": 2
+     },
+     {
+      "group": 5,
+      "frame": 20,
+      "count": 4
+     }
+    ]
+   },
+   {
+    "bank": 14,
+    "frameWidth": 17,
+    "frameHeight": 25,
+    "anchorX": 7,
+    "anchorY": 24,
+    "groups": [
+     {
+      "group": 4,
+      "frame": 16,
+      "count": 2
+     },
+     {
+      "group": 5,
+      "frame": 20,
+      "count": 4
+     }
+    ]
    }
   ],
   "b": [
@@ -146,6 +312,170 @@
     "frameHeight": 25,
     "anchorX": 8,
     "anchorY": 24
+   },
+   {
+    "bank": 9,
+    "frameWidth": 18,
+    "frameHeight": 25,
+    "anchorX": 8,
+    "anchorY": 24,
+    "groups": [
+     {
+      "group": 4,
+      "frame": 16,
+      "count": 2
+     },
+     {
+      "group": 5,
+      "frame": 20,
+      "count": 2
+     },
+     {
+      "group": 6,
+      "frame": 24,
+      "count": 2
+     },
+     {
+      "group": 7,
+      "frame": 28,
+      "count": 2
+     },
+     {
+      "group": 8,
+      "frame": 32,
+      "count": 2
+     },
+     {
+      "group": 9,
+      "frame": 36,
+      "count": 4
+     },
+     {
+      "group": 10,
+      "frame": 40,
+      "count": 9
+     }
+    ]
+   },
+   {
+    "bank": 10,
+    "frameWidth": 17,
+    "frameHeight": 26,
+    "anchorX": 8,
+    "anchorY": 25,
+    "groups": [
+     {
+      "group": 4,
+      "frame": 16,
+      "count": 2
+     },
+     {
+      "group": 5,
+      "frame": 20,
+      "count": 2
+     },
+     {
+      "group": 6,
+      "frame": 24,
+      "count": 2
+     },
+     {
+      "group": 7,
+      "frame": 28,
+      "count": 2
+     },
+     {
+      "group": 8,
+      "frame": 32,
+      "count": 2
+     },
+     {
+      "group": 9,
+      "frame": 36,
+      "count": 4
+     }
+    ]
+   },
+   {
+    "bank": 11,
+    "frameWidth": 17,
+    "frameHeight": 25,
+    "anchorX": 8,
+    "anchorY": 24,
+    "groups": [
+     {
+      "group": 4,
+      "frame": 16,
+      "count": 2
+     },
+     {
+      "group": 8,
+      "frame": 20,
+      "count": 9
+     },
+     {
+      "group": 9,
+      "frame": 32,
+      "count": 4
+     }
+    ]
+   },
+   {
+    "bank": 12,
+    "frameWidth": 18,
+    "frameHeight": 25,
+    "anchorX": 8,
+    "anchorY": 24,
+    "groups": [
+     {
+      "group": 4,
+      "frame": 16,
+      "count": 2
+     },
+     {
+      "group": 5,
+      "frame": 20,
+      "count": 4
+     }
+    ]
+   },
+   {
+    "bank": 13,
+    "frameWidth": 16,
+    "frameHeight": 25,
+    "anchorX": 7,
+    "anchorY": 24,
+    "groups": [
+     {
+      "group": 4,
+      "frame": 16,
+      "count": 2
+     },
+     {
+      "group": 5,
+      "frame": 20,
+      "count": 4
+     }
+    ]
+   },
+   {
+    "bank": 14,
+    "frameWidth": 17,
+    "frameHeight": 25,
+    "anchorX": 7,
+    "anchorY": 24,
+    "groups": [
+     {
+      "group": 4,
+      "frame": 16,
+      "count": 2
+     },
+     {
+      "group": 5,
+      "frame": 20,
+      "count": 4
+     }
+    ]
    }
   ],
   "c": [
@@ -211,6 +541,170 @@
     "frameHeight": 25,
     "anchorX": 8,
     "anchorY": 24
+   },
+   {
+    "bank": 9,
+    "frameWidth": 18,
+    "frameHeight": 25,
+    "anchorX": 8,
+    "anchorY": 24,
+    "groups": [
+     {
+      "group": 4,
+      "frame": 16,
+      "count": 2
+     },
+     {
+      "group": 5,
+      "frame": 20,
+      "count": 2
+     },
+     {
+      "group": 6,
+      "frame": 24,
+      "count": 2
+     },
+     {
+      "group": 7,
+      "frame": 28,
+      "count": 2
+     },
+     {
+      "group": 8,
+      "frame": 32,
+      "count": 2
+     },
+     {
+      "group": 9,
+      "frame": 36,
+      "count": 4
+     },
+     {
+      "group": 10,
+      "frame": 40,
+      "count": 9
+     }
+    ]
+   },
+   {
+    "bank": 10,
+    "frameWidth": 17,
+    "frameHeight": 26,
+    "anchorX": 8,
+    "anchorY": 25,
+    "groups": [
+     {
+      "group": 4,
+      "frame": 16,
+      "count": 2
+     },
+     {
+      "group": 5,
+      "frame": 20,
+      "count": 2
+     },
+     {
+      "group": 6,
+      "frame": 24,
+      "count": 2
+     },
+     {
+      "group": 7,
+      "frame": 28,
+      "count": 2
+     },
+     {
+      "group": 8,
+      "frame": 32,
+      "count": 2
+     },
+     {
+      "group": 9,
+      "frame": 36,
+      "count": 4
+     }
+    ]
+   },
+   {
+    "bank": 11,
+    "frameWidth": 17,
+    "frameHeight": 25,
+    "anchorX": 8,
+    "anchorY": 24,
+    "groups": [
+     {
+      "group": 4,
+      "frame": 16,
+      "count": 2
+     },
+     {
+      "group": 8,
+      "frame": 20,
+      "count": 9
+     },
+     {
+      "group": 9,
+      "frame": 32,
+      "count": 4
+     }
+    ]
+   },
+   {
+    "bank": 12,
+    "frameWidth": 18,
+    "frameHeight": 25,
+    "anchorX": 8,
+    "anchorY": 24,
+    "groups": [
+     {
+      "group": 4,
+      "frame": 16,
+      "count": 2
+     },
+     {
+      "group": 5,
+      "frame": 20,
+      "count": 4
+     }
+    ]
+   },
+   {
+    "bank": 13,
+    "frameWidth": 16,
+    "frameHeight": 25,
+    "anchorX": 7,
+    "anchorY": 24,
+    "groups": [
+     {
+      "group": 4,
+      "frame": 16,
+      "count": 2
+     },
+     {
+      "group": 5,
+      "frame": 20,
+      "count": 4
+     }
+    ]
+   },
+   {
+    "bank": 14,
+    "frameWidth": 17,
+    "frameHeight": 25,
+    "anchorX": 7,
+    "anchorY": 24,
+    "groups": [
+     {
+      "group": 4,
+      "frame": 16,
+      "count": 2
+     },
+     {
+      "group": 5,
+      "frame": 20,
+      "count": 4
+     }
+    ]
    }
   ]
  }

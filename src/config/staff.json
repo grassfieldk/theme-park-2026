@@ -1,0 +1,8 @@
+[
+  {"id": "mechanic", "label": "メカニック", "role": "メカニックを雇えます。お客さんの安全のためにアトラクションを修理します。", "monthlyWage": 2000, "hireCost": 2000, "bank": 9, "idleGroup": 8, "workGroup": 4, "cap": "mechanic"},
+  {"id": "sweeper", "label": "スイーパー", "role": "スイーパーを雇えます。お客さんが快適に遊べるようにパークを清掃します。", "monthlyWage": 2000, "hireCost": 2000, "bank": 10, "routeMax": 72, "idleGroup": 8, "cap": "sweeper"},
+  {"id": "guard", "label": "ガードマン", "role": "ガードマンを雇えます。マナーのわるいお客さんからパークをまもります。", "monthlyWage": 5000, "hireCost": 5000, "cap": "guard", "bank": 11, "idleGroup": 4, "downGroup": 8},
+  {"id": "mascot-rabbit", "label": "ウサギ", "role": "ウサギのぬいぐるみを雇えます。かわいい動きでお客さんを楽しませます。", "monthlyWage": 2000, "hireCost": 2000, "cap": "entertainer", "bank": 12, "idleGroup": 4, "entertainWeight": 1},
+  {"id": "mascot-goocho", "label": "グーチョくん", "role": "グーチョくんを雇えます。おもしろい動きでお客さんを喜ばせます。", "monthlyWage": 4000, "hireCost": 4000, "cap": "entertainer", "bank": 13, "idleGroup": 4, "entertainWeight": 3},
+  {"id": "musician", "label": "ミュージシャン", "role": "ミュージシャンを雇えます。楽しい音楽でお客さんを喜ばせます。", "monthlyWage": 6000, "hireCost": 6000, "cap": "entertainer", "bank": 14, "idleGroup": 4, "entertainWeight": 2}
+]

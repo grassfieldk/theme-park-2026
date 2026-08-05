@@ -102,6 +102,19 @@ GROUP_ASSETS = {
     "path-litter-drink.png": (15, 0),
     "path-litter-food.png": (15, 1),
     "path-vomit.png": (15, 2),
+    # メカニックの拠点。雇うとそのマスのタイル種別コードが 0xbe になり、
+    # 地形描画 `FUN_800c30c4` の 0xbe の枝がグループ 20 のコマ 0 を描く
+    "mechanic-post.png": (20, 0),
+    # メカニックが修理中に敷地の外周へ建てる柵。マスの属性の 4 ビットで辺を持ち
+    # (左 0x04000000 / 上 0x08000000 / 右 0x10000000 / 下 0x20000000、`FUN_801d66dc`)、
+    # 地形描画がそれぞれグループ 17 のコマ 2 / 1 / 3 / 0 を重ねる
+    "repair-fence-bottom.png": (17, 0),
+    "repair-fence-top.png": (17, 1),
+    "repair-fence-left.png": (17, 2),
+    "repair-fence-right.png": (17, 3),
+    # ガレキ。アトラクションが爆発すると敷地のマスのタイル種別コードが 0xbf になり、
+    # 地形描画 `FUN_800c30c4` の 0xbf の枝がグループ 19 のコマ 0 を描く
+    "rubble.png": (19, 0),
 }
 # 高さマップ: UNPACK.PAK リソース 392(0x188)+ 国番号
 HEIGHT_RESOURCE_BASE = 392
@@ -288,6 +301,7 @@ def main() -> None:
         if entry:
             seasonal[entry[0]] = entry[1]
     litter_offsets = []
+    tile_offsets: dict = {}
     for name, (group, frame) in GROUP_ASSETS.items():
         descriptor_offset = group_descriptor(data, group, frame)
         entry = export_asset(data, vrams, descriptor_offset, name)
@@ -297,6 +311,10 @@ def main() -> None:
         if group == 15 and frame < 3:
             _flags, offset_x, offset_y = struct.unpack_from("<Hhh", data, descriptor_offset)
             litter_offsets.append({"x": -offset_x, "y": -offset_y})
+        # 拠点・柵・ガレキはマス内のずらしを設定に載せる(描くときの基準点になる)
+        if group in (17, 19, 20):
+            _flags, offset_x, offset_y = struct.unpack_from("<Hhh", data, descriptor_offset)
+            tile_offsets[name.removesuffix(".png")] = {"x": -offset_x, "y": -offset_y}
 
     config = {
         "_note": [
@@ -324,6 +342,7 @@ def main() -> None:
         "outside": read_outside(),
         # 歩道の汚れ。並びは 飲み物ゴミ / 食べ物ゴミ / ゲロ で、マスの基準点からのずらし
         "litterOffsets": litter_offsets,
+        "tileObjectOffsets": tile_offsets,
     }
     TERRAIN_CONFIG.write_text(json.dumps(terrain, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     print(f"seasonal assets: {len(seasonal)}, height maps: {len(heights)}")

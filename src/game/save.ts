@@ -34,6 +34,9 @@ export type ParkSnapshot = {
       version: number
       usedThisMonth: number
       usedLastMonth: number
+      /** 耐久度・修理待ちの状態。古いデータにはないので、無ければそのバージョンの満杯として扱う */
+      durability?: number
+      needsRepair?: boolean
     }
   }>
   shops: Array<{
@@ -54,6 +57,34 @@ export type ParkSnapshot = {
   }>
   facilities: Array<{ id: string, x: number, y: number, frame: number }>
   buildings: string[]
+  /** アトラクションが爆発した跡に残るガレキのマス */
+  rubble?: Array<{ x: number, y: number }>
+  /**
+   * 雇用中のスタッフ。職種・位置・能力ＵＰのバージョン・月給・雇用日・能率・
+   * スイーパーの清掃ルートだけを持ち、仕事の途中経過は初期化して再開する
+   */
+  staff?: Array<{
+    id: string
+    x: number
+    y: number
+    /**
+     * 拠点の位置。メカニックはここに拠点の絵が立ち、仕事が終わるとここへ帰る。
+     * 出動中に保存した場合、居場所(x, y)と拠点は別の場所になる
+     */
+    homeX?: number
+    homeY?: number
+    /** 個体名(原作の 60 姓から重複しないよう選ばれたもの) */
+    name?: string
+    version?: number
+    wage?: number
+    hireDay?: number
+    efficiency?: number
+    /** これまでに払った月給の累計。経営の「スタッフ経費」の内訳になる */
+    paid?: number
+    /** 怒りやすさ 1〜5。雇用時に決まり、毎月の能率の下がり方を決める */
+    anger?: number
+    route?: Array<{ x: number, y: number }>
+  }>
 }
 
 export type SaveData = {
